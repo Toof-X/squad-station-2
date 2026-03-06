@@ -8,6 +8,8 @@ pub struct Agent {
     pub role: String,
     pub command: String,
     pub created_at: String,
+    pub status: String,
+    pub status_updated_at: String,
 }
 
 pub async fn insert_agent(
@@ -56,4 +58,22 @@ pub async fn get_orchestrator(pool: &SqlitePool) -> anyhow::Result<Option<Agent>
     .fetch_optional(pool)
     .await?;
     Ok(agent)
+}
+
+/// Update agent lifecycle status. Valid values: "idle" | "busy" | "dead"
+pub async fn update_agent_status(
+    pool: &SqlitePool,
+    name: &str,
+    status: &str,
+) -> anyhow::Result<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query(
+        "UPDATE agents SET status = ?, status_updated_at = ? WHERE name = ?"
+    )
+    .bind(status)
+    .bind(&now)
+    .bind(name)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
