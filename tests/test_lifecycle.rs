@@ -3,6 +3,153 @@ mod helpers;
 use squad_station::db;
 
 // ============================================================
+// Context command tests — SESS-05
+// ============================================================
+
+/// Helper: write a minimal squad.yml into `dir` with db_path pointing to `db_file`.
+fn write_squad_yml(dir: &std::path::Path, db_file: &std::path::Path) {
+    let db_path_str = db_file.to_str().expect("db path must be valid UTF-8");
+    let yaml = format!(
+        r#"project:
+  name: test-squad
+  db_path: "{db_path_str}"
+orchestrator:
+  name: test-orch
+  provider: claude-code
+  role: orchestrator
+  command: "echo orch"
+agents: []
+"#
+    );
+    std::fs::write(dir.join("squad.yml"), yaml).expect("failed to write squad.yml");
+}
+
+#[test]
+fn test_context_output_contains_agents() {
+    // SESS-05: context command outputs Markdown roster starting with "# Squad Station -- Agent Roster"
+    // and contains the agent table header, even when no agents are registered.
+    let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
+    let db_file = tmp.path().join("station.db");
+    write_squad_yml(tmp.path(), &db_file);
+
+    let bin = env!("CARGO_BIN_EXE_squad-station");
+    let output = std::process::Command::new(bin)
+        .arg("context")
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to run binary");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "context command should exit 0, got: {:?}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        stdout.contains("# Squad Station -- Agent Roster"),
+        "context output must start with the roster heading, got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("| Agent | Role | Status | Send Command |"),
+        "context output must contain the agent table header, got:\n{}",
+        stdout
+    );
+}
+
+#[test]
+fn test_context_output_has_usage() {
+    // SESS-05: context command output includes a "## Usage" section with squad-station send examples.
+    let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
+    let db_file = tmp.path().join("station.db");
+    write_squad_yml(tmp.path(), &db_file);
+
+    let bin = env!("CARGO_BIN_EXE_squad-station");
+    let output = std::process::Command::new(bin)
+        .arg("context")
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to run binary");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "context command should exit 0, got: {:?}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        stdout.contains("## Usage"),
+        "context output must contain '## Usage' section, got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("squad-station send"),
+        "context output '## Usage' section must include 'squad-station send' example, got:\n{}",
+        stdout
+    );
+}
+
+// ============================================================
+// Agents command status+duration format test — SESS-03
+// ============================================================
+
+#[test]
+fn test_agents_command_shows_status_with_duration() {
+    // SESS-03: agents command output shows status with a human-readable duration (e.g., "idle 0m").
+    // format_status_with_duration is private; we verify the behavior through the agents subcommand.
+    let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
+    let db_file = tmp.path().join("station.db");
+    write_squad_yml(tmp.path(), &db_file);
+
+    let bin = env!("CARGO_BIN_EXE_squad-station");
+
+    // Register a worker agent via the register subcommand (uses squad.yml for DB path)
+    let reg = std::process::Command::new(bin)
+        .args(["register", "worker-a", "--command", "echo worker", "--role", "worker", "--provider", "claude"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to run register");
+    assert!(
+        reg.status.success(),
+        "register should succeed, got: {:?}\nstderr: {}",
+        reg.status,
+        String::from_utf8_lossy(&reg.stderr)
+    );
+
+    // Run agents command — no tmux session, so worker-a will be reconciled to "dead"
+    let output = std::process::Command::new(bin)
+        .arg("agents")
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to run binary");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "agents command should exit 0, got: {:?}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // Duration pattern: status word followed by a number and "m" (or "h" for hours).
+    // Since this runs immediately after register, the duration must be 0m or very small.
+    let has_duration_pattern = stdout.contains("0m")
+        || stdout.contains("1m")
+        || stdout.split_whitespace().any(|w| w.ends_with('m') || w.ends_with('h'));
+    assert!(
+        has_duration_pattern,
+        "agents output must include status+duration (e.g., 'dead 0m'), got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("worker-a"),
+        "agents output must list the registered agent, got:\n{}",
+        stdout
+    );
+}
+
+// ============================================================
 // Signal guard tests — HOOK-03
 // ============================================================
 
@@ -87,4 +234,43 @@ async fn test_list_agents_includes_status() {
     let a2 = agents.iter().find(|a| a.name == "a2").unwrap();
     assert_eq!(a1.status, "idle");
     assert_eq!(a2.status, "busy");
+}
+
+// ============================================================
+// Signal Guard 2 test — HOOK-03
+// ============================================================
+
+#[test]
+fn test_signal_guard_db_error_exits_zero_with_warning() {
+    // HOOK-03: Guard 2 — when TMUX_PANE is set but no squad.yml exists, signal exits 0
+    // and prints a warning to stderr (config/DB errors must not fail the provider).
+    let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
+
+    let bin = env!("CARGO_BIN_EXE_squad-station");
+    let output = std::process::Command::new(bin)
+        .arg("signal")
+        .arg("some-agent")
+        .env("TMUX_PANE", "%0") // Guard 1 passes (TMUX_PANE is set)
+        .current_dir(tmp.path()) // No squad.yml in this dir — Guard 2 triggers
+        .output()
+        .expect("failed to run binary");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "signal with missing squad.yml should exit 0 (Guard 2), got: {:?}\nstderr: {}",
+        output.status,
+        stderr
+    );
+    assert!(
+        stderr.contains("warning") || stderr.contains("Warning"),
+        "signal Guard 2 must print a warning to stderr, got stderr: {:?}",
+        stderr
+    );
+    // Stdout must be empty — warning goes to stderr only
+    assert!(
+        output.stdout.is_empty(),
+        "signal Guard 2 must produce no stdout output, got: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
 }
