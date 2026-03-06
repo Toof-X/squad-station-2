@@ -28,7 +28,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User can run `squad-station signal <agent>` from a hook and the orchestrator receives a completion notification; duplicate hook fires do not corrupt state
   4. User can run `squad-station list` and see messages filtered by agent, status, and limit; messages reflect correct priority levels
   5. Concurrent hook signals from multiple agents do not produce SQLite busy errors or lost writes
-**Plans**: TBD
+**Plans:** 5 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Project foundation: Cargo.toml deps, DB schema, config types, CLI skeleton, tmux module, safety primitives
+- [ ] 01-02-PLAN.md — Session management: init from squad.yml and runtime agent registration
+- [ ] 01-03-PLAN.md — Core messaging: send task to agent and signal completion to orchestrator
+- [ ] 01-04-PLAN.md — Query commands: list messages with filters and peek for pending tasks
+- [ ] 01-05-PLAN.md — Integration tests and full suite verification across all requirements
 
 ### Phase 2: Lifecycle and Hooks
 **Goal**: Agent status is always accurate (reconciled against live tmux state), hook scripts handle both Claude Code and Gemini CLI, and the orchestrator never triggers an infinite loop
@@ -60,6 +67,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Foundation | 0/TBD | Not started | - |
+| 1. Core Foundation | 0/5 | Planning complete | - |
 | 2. Lifecycle and Hooks | 0/TBD | Not started | - |
 | 3. Views and TUI | 0/TBD | Not started | - |
