@@ -47,7 +47,12 @@ Plans:
   3. Orchestrator session running a hook does not trigger itself — signal silently exits 0 when the current session is the orchestrator
   4. Hook gracefully exits without error when invoked outside tmux or when the agent is not registered
   5. Running `squad-station context` generates a file that lists available agents and usage commands, ready to paste into an orchestrator prompt
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — DB migration for agent status columns, signal command 4-layer guard refactor
+- [ ] 02-02-PLAN.md — agents command with tmux reconciliation, context command, provider hook scripts
+- [ ] 02-03-PLAN.md — Integration tests for lifecycle, guards, and phase gate verification
 
 ### Phase 3: Views and TUI
 **Goal**: Users can monitor the entire agent fleet at a glance via text commands, an interactive terminal dashboard, and a split tmux pane layout — without needing to query agents individually
@@ -68,5 +73,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Foundation | 5/5 | Complete   | 2026-03-06 |
-| 2. Lifecycle and Hooks | 0/TBD | Not started | - |
+| 2. Lifecycle and Hooks | 0/3 | Planning complete | - |
 | 3. Views and TUI | 0/TBD | Not started | - |
