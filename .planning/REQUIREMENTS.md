@@ -10,8 +10,8 @@
 - [x] **SESS-01**: User can initialize squad from squad.yml — creates DB, registers agents, creates tmux sessions, launches AI tools
 - [x] **SESS-02**: User can register new agent at runtime without editing squad.yml
 - [x] **SESS-03**: Station tracks agent status as idle, busy, or dead based on current activity
-- [ ] **SESS-04**: Station reconciles agent liveness by checking tmux session existence
-- [ ] **SESS-05**: Station auto-generates orchestrator context file listing available agents and usage commands
+- [x] **SESS-04**: Station reconciles agent liveness by checking tmux session existence
+- [x] **SESS-05**: Station auto-generates orchestrator context file listing available agents and usage commands
 
 ### Messaging
 
@@ -25,7 +25,7 @@
 ### Hook System
 
 - [x] **HOOK-01**: Signal command skips orchestrator sessions (role=orchestrator) to prevent infinite loop
-- [ ] **HOOK-02**: Hook scripts work for both Claude Code (Stop event) and Gemini CLI (AfterAgent event)
+- [x] **HOOK-02**: Hook scripts work for both Claude Code (Stop event) and Gemini CLI (AfterAgent event)
 - [x] **HOOK-03**: Hook gracefully exits when not in tmux or agent not registered (4-layer guard)
 
 ### Views
@@ -73,8 +73,8 @@
 | SESS-01 | Phase 1 | Complete |
 | SESS-02 | Phase 1 | Complete |
 | SESS-03 | Phase 2 | Complete |
-| SESS-04 | Phase 2 | Pending |
-| SESS-05 | Phase 2 | Pending |
+| SESS-04 | Phase 2 | Complete |
+| SESS-05 | Phase 2 | Complete |
 | MSG-01 | Phase 1 | Complete |
 | MSG-02 | Phase 1 | Complete |
 | MSG-03 | Phase 1 | Complete |
@@ -82,7 +82,7 @@
 | MSG-05 | Phase 1 | Complete |
 | MSG-06 | Phase 1 | Complete |
 | HOOK-01 | Phase 2 | Complete |
-| HOOK-02 | Phase 2 | Pending |
+| HOOK-02 | Phase 2 | Complete |
 | HOOK-03 | Phase 2 | Complete |
 | VIEW-01 | Phase 3 | Pending |
 | VIEW-02 | Phase 3 | Pending |

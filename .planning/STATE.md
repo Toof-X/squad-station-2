@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-03-06T06:55:39.987Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-03-06T07:00:01.238Z"
 last_activity: 2026-03-06 — Completed plan 01-04 (list + peek query commands)
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
   percent: 40
 ---
 
@@ -52,6 +52,7 @@ Progress: [████░░░░░░] 40%
 *Updated after each plan completion*
 | Phase 01-core-foundation P05 | 4 | 2 tasks | 6 files |
 | Phase 02-lifecycle-and-hooks P01 | 2 | 2 tasks | 4 files |
+| Phase 02-lifecycle-and-hooks P02 | 3 | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,9 @@ Recent decisions affecting current work:
 - [Phase 02-lifecycle-and-hooks]: Unregistered agent in signal returns Ok(()) silently — bail! replaced for hook context compatibility (HOOK-03)
 - [Phase 02-lifecycle-and-hooks]: Orchestrator self-signal guard (role == 'orchestrator') prevents AfterAgent hook infinite loop (HOOK-01)
 - [Phase 02-lifecycle-and-hooks]: Agent status updated in send (busy) and signal (idle) to maintain accurate lifecycle state across send->signal arc
+- [Phase 02-lifecycle-and-hooks]: context command has no --json flag -- always outputs Markdown for AI consumption, not TTY display
+- [Phase 02-lifecycle-and-hooks]: Reconciliation loop duplicated in agents.rs and context.rs rather than shared -- coupling two independent command files adds more complexity than the ~10 line duplication
+- [Phase 02-lifecycle-and-hooks]: Hook scripts use SQUAD_STATION_BIN env var for custom binary path and TMUX_PANE (not TMUX) for reliable pane-based session name resolution
 
 ### Pending Todos
 
@@ -92,6 +96,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-06T06:55:39.985Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-03-06T07:00:01.236Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
