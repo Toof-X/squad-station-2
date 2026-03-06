@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-03-06T05:22:27.723Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-03-06T05:22:53.990Z"
 last_activity: 2026-03-06 — Completed plan 01-04 (list + peek query commands)
 progress:
   total_phases: 3
@@ -51,6 +51,7 @@ Progress: [████░░░░░░] 40%
 
 *Updated after each plan completion*
 | Phase 01 P03 | 10 | 2 tasks | 3 files |
+| Phase 01 P02 | 9 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,11 @@ Recent decisions affecting current work:
 - [01-01]: Used serde-saphyr 0.0.17 pinned (pre-1.0 API, pin prevents breaking changes from minor updates)
 - [Phase 01-04]: ANSI-safe padding via pad_colored() helper: compute trailing spaces from raw text length to avoid ANSI escape bytes corrupting column alignment in table output
 - [Phase 01-04]: peek returns Ok(()) for no-task result — missing pending tasks is normal agent operation, not error
+- [Phase 01]: Used std::io::IsTerminal (stdlib) for terminal detection — owo-colors v3 has no stream module
+- [Phase 01-02]: Orchestrator role hardcoded to 'orchestrator' in insert_agent call — config.orchestrator.role ignored to enforce structural distinction
+- [Phase 01]: signal retrieves task_id via SELECT after UPDATE rather than RETURNING clause for SQLite compatibility
+- [Phase 01-02]: register does not launch tmux session — DB-only operation, user manages session lifecycle separately
+- [Phase 01-02]: register DB path: squad.yml in cwd preferred, SQUAD_STATION_DB env var fallback — consistent with init's resolution approach
 
 ### Pending Todos
 
@@ -80,6 +86,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-06T05:21:33.978Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-03-06T05:22:48.245Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
