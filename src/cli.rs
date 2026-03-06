@@ -71,6 +71,12 @@ pub enum Commands {
     Agents,
     /// Generate orchestrator context file
     Context,
+    /// Show project and agent status summary
+    Status,
+    /// Launch interactive TUI dashboard
+    Ui,
+    /// Open tmux tiled view of all live agent sessions
+    View,
 }
 
 /// Task priority level

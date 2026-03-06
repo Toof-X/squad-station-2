@@ -32,5 +32,8 @@ async fn run(cli: cli::Cli) -> Result<()> {
         }
         Agents => commands::agents::run(cli.json).await,
         Context => commands::context::run().await,
+        Status => commands::status::run(cli.json).await,
+        Ui => commands::ui::run().await,
+        View => commands::view::run(cli.json).await,
     }
 }
