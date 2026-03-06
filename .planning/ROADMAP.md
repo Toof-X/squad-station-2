@@ -63,7 +63,11 @@ Plans:
   2. User can run `squad-station agents` and get a list of all registered agents with their status (text output, scriptable)
   3. User can run `squad-station ui` and see a live ratatui dashboard that refreshes agent status without holding a persistent DB connection that starves WAL checkpoints
   4. User can run `squad-station view` and see all agent tmux panes arranged in a split layout within the current terminal
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — CLI wiring + status command (VIEW-01) + view command (VIEW-04) + integration tests
+- [ ] 03-02-PLAN.md — Interactive ratatui TUI dashboard (VIEW-03) + unit tests
 
 ## Progress
 
@@ -74,4 +78,4 @@ Phases execute in numeric order: 1 → 2 → 3
 |-------|----------------|--------|-----------|
 | 1. Core Foundation | 5/5 | Complete   | 2026-03-06 |
 | 2. Lifecycle and Hooks | 3/3 | Complete   | 2026-03-06 |
-| 3. Views and TUI | 0/TBD | Not started | - |
+| 3. Views and TUI | 0/2 | Not started | - |
