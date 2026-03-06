@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-03-06T09:57:01Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-03-06T10:02:11.264Z"
 last_activity: 2026-03-06 — Completed plan 03-01 (status, view, ui-stub commands)
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
-  percent: 40
+  completed_phases: 3
+  total_plans: 10
+  completed_plans: 10
+  percent: 70
 ---
 
 # Project State
@@ -55,6 +55,7 @@ Progress: [███████░░░] 70%
 | Phase 02-lifecycle-and-hooks P02 | 3 | 3 tasks | 7 files |
 | Phase 02-lifecycle-and-hooks P03 | 1 | 2 tasks | 2 files |
 | Phase 03-views-and-tui P01 | 7 | 3 tasks | 8 files |
+| Phase 03-views-and-tui P02 | 2 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,8 @@ Recent decisions affecting current work:
 - [Phase 03-01]: Reconciliation loop duplicated in status.rs — consistent with Phase 2 decision to avoid coupling independent command files
 - [Phase 03-01]: Integration tests use file-based SQLite not in-memory — binary subprocess must be able to read the same DB file via squad.yml db_path
 - [Phase 03-01]: view command filter: agents with live tmux sessions only — dead agents skipped because they have no sessions
+- [Phase 03-02]: frame.size() used instead of frame.area() — ratatui 0.26 API
+- [Phase 03-02]: connect-per-refresh: read-only pool dropped after each fetch to prevent WAL checkpoint starvation
 
 ### Pending Todos
 
@@ -103,6 +106,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-06T09:57:01Z
-Stopped at: Completed 03-01-PLAN.md
-Resume file: .planning/phases/03-views-and-tui/03-02-PLAN.md
+Last session: 2026-03-06T10:02:06.749Z
+Stopped at: Completed 03-02-PLAN.md
+Resume file: None
