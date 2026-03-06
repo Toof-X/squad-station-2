@@ -47,3 +47,13 @@ pub async fn list_agents(pool: &SqlitePool) -> anyhow::Result<Vec<Agent>> {
         .await?;
     Ok(agents)
 }
+
+/// Find the orchestrator agent (role = 'orchestrator') for notification purposes.
+pub async fn get_orchestrator(pool: &SqlitePool) -> anyhow::Result<Option<Agent>> {
+    let agent = sqlx::query_as::<_, Agent>(
+        "SELECT * FROM agents WHERE role = 'orchestrator' LIMIT 1"
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(agent)
+}
