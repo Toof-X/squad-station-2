@@ -18,9 +18,9 @@
 - [ ] **MSG-01**: Orchestrator can send task to agent via `squad-station send` — writes to DB and injects prompt into agent tmux session
 - [ ] **MSG-02**: Hook can signal agent completion via `squad-station signal` — updates DB status and notifies orchestrator via tmux send-keys
 - [ ] **MSG-03**: Send and signal operations are idempotent — duplicate hook fires do not create duplicate messages or state corruption
-- [ ] **MSG-04**: User can list messages with filters by agent, status, and limit
-- [ ] **MSG-05**: Messages support priority levels (normal, high, urgent)
-- [ ] **MSG-06**: Agent can peek for pending tasks via `squad-station peek`
+- [x] **MSG-04**: User can list messages with filters by agent, status, and limit
+- [x] **MSG-05**: Messages support priority levels (normal, high, urgent)
+- [x] **MSG-06**: Agent can peek for pending tasks via `squad-station peek`
 
 ### Hook System
 
@@ -78,9 +78,9 @@
 | MSG-01 | Phase 1 | Pending |
 | MSG-02 | Phase 1 | Pending |
 | MSG-03 | Phase 1 | Pending |
-| MSG-04 | Phase 1 | Pending |
-| MSG-05 | Phase 1 | Pending |
-| MSG-06 | Phase 1 | Pending |
+| MSG-04 | Phase 1 | Complete |
+| MSG-05 | Phase 1 | Complete |
+| MSG-06 | Phase 1 | Complete |
 | HOOK-01 | Phase 2 | Pending |
 | HOOK-02 | Phase 2 | Pending |
 | HOOK-03 | Phase 2 | Pending |
