@@ -152,3 +152,15 @@ None - no external service configuration required.
 ---
 *Phase: 01-core-foundation*
 *Completed: 2026-03-06*
+
+## Self-Check: PASSED
+
+All files verified present:
+- FOUND: Cargo.toml, build.rs, src/main.rs, src/cli.rs, src/config.rs
+- FOUND: src/db/mod.rs, src/db/migrations/0001_initial.sql, src/db/agents.rs, src/db/messages.rs
+- FOUND: src/tmux.rs, src/commands/mod.rs
+
+All task commits verified:
+- FOUND: 08d65a8 (Task 1 — CLI skeleton, config, entry point)
+- FOUND: 22fe8dd (Task 2 — DB layer)
+- FOUND: 3803d93 (Task 3 — tmux module)

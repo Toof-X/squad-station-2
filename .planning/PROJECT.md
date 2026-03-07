@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Squad Station là một stateless CLI binary (Rust + embedded SQLite) hoạt động như trạm trung chuyển messages giữa AI Orchestrator và N agents chạy trong tmux sessions. Provider-agnostic — hỗ trợ bất kỳ AI coding tool nào (Claude Code, Gemini CLI, Codex, Aider...). Người dùng chỉ tương tác với Orchestrator, Station lo việc routing messages và tracking trạng thái.
+Squad Station là một stateless CLI binary (Rust + embedded SQLite) hoạt động như trạm trung chuyển messages giữa AI Orchestrator và N agents chạy trong tmux sessions. Provider-agnostic — hỗ trợ bất kỳ AI coding tool nào (Claude Code, Gemini CLI, Codex, Aider...). Người dùng chỉ tương tác với Orchestrator, Station lo việc routing messages, tracking trạng thái agent, và cung cấp fleet monitoring qua TUI dashboard và tmux views.
 
 ## Core Value
 
@@ -12,40 +12,53 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Orchestrator gửi task đến agent qua `squad-station send` — v1.0
+- ✓ Hook-driven signal khi agent hoàn thành (`squad-station signal`) — v1.0
+- ✓ Agent registry từ `squad.yml` config (`squad-station init`) — v1.0
+- ✓ Dynamic agent registration at runtime (`squad-station register`) — v1.0
+- ✓ Multi-project isolation (DB riêng per project) — v1.0
+- ✓ Orchestrator skip trong hook (chống infinite loop) — v1.0
+- ✓ Agent lifecycle detection (idle/busy/dead) — v1.0
+- ✓ Auto-generate orchestrator context file — v1.0
+- ✓ TUI dashboard (`squad-station ui`) — v1.0
+- ✓ Split tmux view (`squad-station view`) — v1.0
+- ✓ Idempotent send/signal (duplicate hook fires safe) — v1.0
+- ✓ Message priority levels (normal, high, urgent) — v1.0
+- ✓ Peek for pending tasks (`squad-station peek`) — v1.0
+- ✓ SQLite WAL mode with busy_timeout (concurrent-safe) — v1.0
+- ✓ tmux send-keys literal mode (injection-safe) — v1.0
+- ✓ Shell readiness check before prompt injection — v1.0
+- ✓ SIGPIPE handler at binary startup — v1.0
+- ✓ 4-layer guard on signal command — v1.0
+- ✓ Text status overview (`squad-station status`) — v1.0
+- ✓ Agent list with status (`squad-station agents`) — v1.0
+- ✓ Provider hook scripts (Claude Code + Gemini CLI) — v1.0
+- ✓ Message list with filters (`squad-station list`) — v1.0
 
 ### Active
 
-- [ ] Orchestrator gửi task đến agent qua `squad-station send`
-- [ ] Hook-driven signal khi agent hoàn thành (`squad-station signal`)
-- [ ] Agent registry từ `squad.yml` config (`squad-station init`)
-- [ ] Dynamic agent registration at runtime (`squad-station register`)
-- [ ] Multi-project isolation (DB riêng per project)
-- [ ] Orchestrator skip trong hook (chống infinite loop)
-- [ ] Agent lifecycle detection (idle/busy/dead)
-- [ ] Auto-generate orchestrator context file
-- [ ] TUI dashboard (`squad-station ui`)
-- [ ] Split tmux view (`squad-station view`)
 - [ ] npm wrapper distribution
+- [ ] Cross-compile CI via GitHub Actions (darwin arm64/amd64, linux amd64/arm64)
+- [ ] Support cargo install from source
 
 ### Out of Scope
 
 - Task management / workflow logic — đó là việc của Orchestrator AI
 - Orchestration decisions / reasoning — đó là việc của AI model
-- File sync / code sharing giữa agents
-- Web UI / browser dashboard
-- Spec-driven methodology integration (v2)
-- Git conflict resolution giữa agents
+- File sync / code sharing giữa agents — agents work on same codebase via git
+- Web UI / browser dashboard — TUI sufficient, complexity not justified
+- Git conflict resolution giữa agents — orchestrator should sequence work to avoid
+- Agent-to-agent direct messaging — all communication routes through orchestrator
+- Offline mode — stateless CLI always needs tmux + DB
 
 ## Context
 
-- Dự án giải quyết vấn đề điều phối nhiều AI coding agents làm việc song song trên cùng codebase
-- Kiến trúc: User → Orchestrator (any AI tool) → Station (CLI) → Agents (tmux sessions)
-- Agent hoàn toàn passive — không biết Station tồn tại, hook layer bên ngoài tự detect và signal
-- Orchestrator tự capture-pane để đọc raw output từ agent session
-- Hook system phải xử lý đúng cho cả Claude Code (Stop event) lẫn Gemini CLI (AfterAgent event)
-- Naming convention: `<project>-<provider>-<role>` = tmux session name = agent identity
-- Tài liệu requirements chi tiết có tại Obsidian vault: `1-Projects/Agentic-Coding-Squad/`
+Shipped v1.0 MVP with 2,994 LOC Rust, 58 tests, 0 failures.
+Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.26, serde-saphyr, owo-colors 3.
+Architecture: Stateless CLI → SQLite WAL → tmux sessions. No daemon, no background process.
+Hook system: provider-agnostic shell scripts detect completion via TMUX_PANE and delegate to binary.
+Agent liveness: reconciliation loop checks tmux session_exists per agent, updates dead/revive status.
+TUI: connect-per-refresh strategy drops read-only pool after each fetch to prevent WAL starvation.
 
 ## Constraints
 
@@ -60,13 +73,18 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Rust thay vì Go | Binary nhỏ hơn, performance tốt hơn, user preference | — Pending |
-| Stateless CLI, không daemon | Đơn giản, dễ debug, event-driven qua hook chain | — Pending |
-| SQLite embedded per project | Isolation giữa projects, không cần external DB | — Pending |
-| Agent name = tmux session name | Đơn giản hóa lookup, hook tự detect qua `tmux display-message -p '#S'` | — Pending |
-| npm wrapper distribution | Target audience là developers đã có Node.js, dễ cài đặt | — Pending |
-| Provider-agnostic design | Không lock-in vào Claude Code hay Gemini CLI | — Pending |
-| Hook-driven completion | Agent passive, không cần modify agent behavior | — Pending |
+| Rust thay vì Go | Binary nhỏ hơn, performance tốt hơn, user preference | ✓ Good — 2,994 LOC, fast compile, single binary |
+| Stateless CLI, không daemon | Đơn giản, dễ debug, event-driven qua hook chain | ✓ Good — no process management complexity |
+| SQLite embedded per project | Isolation giữa projects, không cần external DB | ✓ Good — WAL mode handles concurrent writes |
+| Agent name = tmux session name | Đơn giản hóa lookup, hook tự detect qua TMUX_PANE | ✓ Good — zero-config agent identity |
+| npm wrapper distribution | Target audience là developers đã có Node.js | — Pending (v2) |
+| Provider-agnostic design | Không lock-in vào Claude Code hay Gemini CLI | ✓ Good — hooks work for both providers |
+| Hook-driven completion | Agent passive, không cần modify agent behavior | ✓ Good — clean separation of concerns |
+| sqlx over rusqlite | Already in Cargo.toml, async-native, compile-time SQL checks | ✓ Good — migration system worked well |
+| max_connections(1) write pool | Prevents async write-contention deadlock in SQLite | ✓ Good — no busy errors in testing |
+| INSERT OR IGNORE for agents | Idempotent registration, safe for duplicate hook fires | ✓ Good — MSG-03 satisfied cleanly |
+| connect-per-refresh in TUI | Prevents WAL checkpoint starvation during long TUI sessions | ✓ Good — WAL doesn't grow unbounded |
+| Reconciliation loop duplication | Each command file independent, ~10 lines not worth abstraction | ✓ Good — simple, no coupling |
 
 ---
-*Last updated: 2026-03-06 after initialization*
+*Last updated: 2026-03-06 after v1.0 milestone*
