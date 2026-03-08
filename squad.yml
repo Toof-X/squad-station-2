@@ -1,0 +1,16 @@
+project: squad-station
+orchestrator:
+  tool: claude-code
+  role: orchestrator
+  model: claude-opus-4-5
+  description: "Routes tasks between agents and synthesizes results"
+agents:
+  - name: implement
+    tool: claude-code
+    role: worker
+    model: claude-sonnet-4-5
+    description: "Implements features and fixes bugs"
+  - name: review
+    tool: gemini
+    role: worker
+    description: "Reviews code and provides feedback"

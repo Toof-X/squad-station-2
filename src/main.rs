@@ -27,8 +27,8 @@ async fn run(cli: cli::Cli) -> Result<()> {
         Signal { agent } => commands::signal::run(agent, cli.json).await,
         List { agent, status, limit } => commands::list::run(agent, status, limit, cli.json).await,
         Peek { agent } => commands::peek::run(agent, cli.json).await,
-        Register { name, command, role, provider } => {
-            commands::register::run(name, command, role, provider, cli.json).await
+        Register { name, role, tool } => {
+            commands::register::run(name, role, tool, cli.json).await
         }
         Agents => commands::agents::run(cli.json).await,
         Context => commands::context::run().await,

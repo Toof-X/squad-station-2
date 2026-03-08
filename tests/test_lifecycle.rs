@@ -6,22 +6,25 @@ use squad_station::db;
 // Context command tests — SESS-05
 // ============================================================
 
-/// Helper: write a minimal squad.yml into `dir` with db_path pointing to `db_file`.
-fn write_squad_yml(dir: &std::path::Path, db_file: &std::path::Path) {
-    let db_path_str = db_file.to_str().expect("db path must be valid UTF-8");
-    let yaml = format!(
-        r#"project:
-  name: test-squad
-  db_path: "{db_path_str}"
+/// Helper: write a minimal squad.yml into `dir` using the new format.
+/// Use SQUAD_STATION_DB env var to point commands at the test DB file.
+fn write_squad_yml(dir: &std::path::Path, _db_file: &std::path::Path) {
+    let yaml = r#"project: test-squad
 orchestrator:
   name: test-orch
-  provider: claude-code
+  tool: claude-code
   role: orchestrator
-  command: "echo orch"
 agents: []
-"#
-    );
+"#;
     std::fs::write(dir.join("squad.yml"), yaml).expect("failed to write squad.yml");
+}
+
+/// Create a Command for the binary with SQUAD_STATION_DB set to the test DB.
+fn cmd_with_db(db_path: &std::path::Path) -> std::process::Command {
+    let bin = env!("CARGO_BIN_EXE_squad-station");
+    let mut c = std::process::Command::new(bin);
+    c.env("SQUAD_STATION_DB", db_path.to_str().expect("db path must be valid UTF-8"));
+    c
 }
 
 #[test]
@@ -32,8 +35,7 @@ fn test_context_output_contains_agents() {
     let db_file = tmp.path().join("station.db");
     write_squad_yml(tmp.path(), &db_file);
 
-    let bin = env!("CARGO_BIN_EXE_squad-station");
-    let output = std::process::Command::new(bin)
+    let output = cmd_with_db(&db_file)
         .arg("context")
         .current_dir(tmp.path())
         .output()
@@ -65,8 +67,7 @@ fn test_context_output_has_usage() {
     let db_file = tmp.path().join("station.db");
     write_squad_yml(tmp.path(), &db_file);
 
-    let bin = env!("CARGO_BIN_EXE_squad-station");
-    let output = std::process::Command::new(bin)
+    let output = cmd_with_db(&db_file)
         .arg("context")
         .current_dir(tmp.path())
         .output()
@@ -103,11 +104,9 @@ fn test_agents_command_shows_status_with_duration() {
     let db_file = tmp.path().join("station.db");
     write_squad_yml(tmp.path(), &db_file);
 
-    let bin = env!("CARGO_BIN_EXE_squad-station");
-
-    // Register a worker agent via the register subcommand (uses squad.yml for DB path)
-    let reg = std::process::Command::new(bin)
-        .args(["register", "worker-a", "--command", "echo worker", "--role", "worker", "--provider", "claude"])
+    // Register a worker agent via the register subcommand (uses SQUAD_STATION_DB for DB path)
+    let reg = cmd_with_db(&db_file)
+        .args(["register", "worker-a", "--role", "worker", "--tool", "claude"])
         .current_dir(tmp.path())
         .output()
         .expect("failed to run register");
@@ -119,7 +118,7 @@ fn test_agents_command_shows_status_with_duration() {
     );
 
     // Run agents command — no tmux session, so worker-a will be reconciled to "dead"
-    let output = std::process::Command::new(bin)
+    let output = cmd_with_db(&db_file)
         .arg("agents")
         .current_dir(tmp.path())
         .output()

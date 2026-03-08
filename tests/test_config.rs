@@ -1,4 +1,4 @@
-use squad_station::config::{AgentConfig, SquadConfig};
+use squad_station::config::SquadConfig;
 
 #[test]
 fn test_project_is_string() {

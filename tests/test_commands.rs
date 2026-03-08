@@ -3,95 +3,67 @@ mod helpers;
 use squad_station::config::{self, SquadConfig};
 
 // ============================================================
-// Config parsing tests — SESS-01
+// Config parsing tests — SESS-01 (updated for new format)
 // ============================================================
 
 #[test]
 fn test_config_parse_valid_yaml() {
     let yaml = r#"
-project:
-  name: test-squad
+project: test-squad
 orchestrator:
   name: test-orchestrator
-  provider: claude-code
+  tool: claude-code
   role: orchestrator
-  command: "claude --dangerously-skip-permissions"
 agents:
   - name: frontend
-    provider: claude-code
+    tool: claude-code
     role: worker
-    command: "claude --dangerously-skip-permissions"
 "#;
 
     let config: SquadConfig = serde_saphyr::from_str(yaml).unwrap();
-    assert_eq!(config.project.name, "test-squad");
-    assert_eq!(config.orchestrator.name, "test-orchestrator");
-    assert_eq!(config.orchestrator.provider, "claude-code");
+    assert_eq!(config.project, "test-squad");
+    assert_eq!(config.orchestrator.name.as_deref(), Some("test-orchestrator"));
+    assert_eq!(config.orchestrator.tool, "claude-code");
     assert_eq!(config.agents.len(), 1);
-    assert_eq!(config.agents[0].name, "frontend");
+    assert_eq!(config.agents[0].name.as_deref(), Some("frontend"));
     assert_eq!(config.agents[0].role, "worker");
 }
 
 #[test]
 fn test_config_parse_multiple_agents() {
     let yaml = r#"
-project:
-  name: multi-squad
+project: multi-squad
 orchestrator:
   name: orch
-  provider: claude-code
+  tool: claude-code
   role: orchestrator
-  command: "claude"
 agents:
   - name: frontend
-    provider: claude-code
+    tool: claude-code
     role: worker
-    command: "claude"
   - name: backend
-    provider: gemini
+    tool: gemini
     role: worker
-    command: "gemini"
   - name: reviewer
-    provider: claude-code
+    tool: claude-code
     role: worker
-    command: "claude"
 "#;
 
     let config: SquadConfig = serde_saphyr::from_str(yaml).unwrap();
-    assert_eq!(config.project.name, "multi-squad");
+    assert_eq!(config.project, "multi-squad");
     assert_eq!(config.agents.len(), 3);
-    assert_eq!(config.agents[1].provider, "gemini");
-}
-
-#[test]
-fn test_config_parse_with_db_path() {
-    let yaml = r#"
-project:
-  name: custom-db
-  db_path: "/custom/path/station.db"
-orchestrator:
-  name: orch
-  provider: claude-code
-  role: orchestrator
-  command: "claude"
-agents: []
-"#;
-
-    let config: SquadConfig = serde_saphyr::from_str(yaml).unwrap();
-    assert_eq!(config.project.db_path.as_deref(), Some("/custom/path/station.db"));
+    assert_eq!(config.agents[1].tool, "gemini");
 }
 
 #[test]
 fn test_config_parse_missing_required_field_returns_error() {
     // YAML missing required `orchestrator` field must return an error, not panic
     let yaml = r#"
-project:
-  name: broken-squad
+project: broken-squad
 agents:
   - name: worker
-    provider: claude-code
+    tool: claude-code
     role: worker
-    command: "claude"
 "#;
 
     let result: Result<SquadConfig, _> = serde_saphyr::from_str(yaml);
@@ -105,13 +77,11 @@ agents:
 #[test]
 fn test_db_path_resolution_default() {
     let yaml = r#"
-project:
-  name: my-project
+project: my-project
 orchestrator:
   name: orch
-  provider: claude-code
+  tool: claude-code
   role: orchestrator
-  command: "claude"
 agents: []
 "#;
 
@@ -126,30 +96,6 @@ agents: []
     );
     // Should be absolute (starts from home directory)
     assert!(path.is_absolute(), "resolved DB path must be absolute");
-}
-
-#[test]
-fn test_db_path_resolution_custom() {
-    let yaml = r#"
-project:
-  name: my-project
-  db_path: "/tmp/test-squad/station.db"
-orchestrator:
-  name: orch
-  provider: claude-code
-  role: orchestrator
-  command: "claude"
-agents: []
-"#;
-
-    let config: SquadConfig = serde_saphyr::from_str(yaml).unwrap();
-    let path = config::resolve_db_path(&config).unwrap();
-
-    assert_eq!(
-        path.to_str().unwrap(),
-        "/tmp/test-squad/station.db",
-        "custom db_path must be used as-is"
-    );
 }
 
 // ============================================================

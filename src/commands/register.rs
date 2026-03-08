@@ -2,9 +2,8 @@ use crate::{config, db};
 
 pub async fn run(
     name: String,
-    command: String,
     role: String,
-    provider: String,
+    tool: String, // TODO: Plan 03 — command will be derived from tool
     json: bool,
 ) -> anyhow::Result<()> {
     // 1. Resolve DB path — look for squad.yml in current directory
@@ -24,7 +23,8 @@ pub async fn run(
     let pool = db::connect(&db_path).await?;
 
     // 3. Insert agent — INSERT OR IGNORE means duplicate name is a no-op, not an error
-    db::agents::insert_agent(&pool, &name, &provider, &role, &command).await?;
+    // TODO: Plan 03 — command derived from tool
+    db::agents::insert_agent(&pool, &name, &tool, &role, "").await?;
 
     // 4. Output result
     if json {
@@ -36,8 +36,8 @@ pub async fn run(
         println!("{}", serde_json::to_string(&output)?);
     } else {
         println!(
-            "Registered agent '{}' (role={}, provider={})",
-            name, role, provider
+            "Registered agent '{}' (role={}, tool={})",
+            name, role, tool
         );
     }
 

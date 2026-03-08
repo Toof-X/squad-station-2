@@ -62,7 +62,7 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
 
     if json {
         let output = StatusOutput {
-            project: config.project.name.clone(),
+            project: config.project.clone(),
             db_path: db_path.to_string_lossy().to_string(),
             agents: summaries,
         };
@@ -76,7 +76,7 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
     let busy_count = summaries.iter().filter(|a| a.status == "busy").count();
     let dead_count = summaries.iter().filter(|a| a.status == "dead").count();
 
-    println!("Project: {}", config.project.name);
+    println!("Project: {}", config.project);
     println!("DB: {}", db_path.display());
     println!(
         "Agents: {} -- {} idle, {} busy, {} dead",
@@ -125,4 +125,42 @@ fn pad_colored(raw: &str, colored: &str, width: usize) -> String {
     let raw_len = raw.len();
     let padding = if raw_len < width { width - raw_len } else { 0 };
     format!("{}{}", colored, " ".repeat(padding))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_status_with_duration_minutes() {
+        let now = chrono::Utc::now().to_rfc3339();
+        let result = format_status_with_duration("idle", &now);
+        assert!(result.starts_with("idle 0m") || result.starts_with("idle 1m"));
+    }
+
+    #[test]
+    fn test_format_status_with_duration_hours_format() {
+        let ts = (chrono::Utc::now() - chrono::Duration::minutes(125)).to_rfc3339();
+        let result = format_status_with_duration("busy", &ts);
+        assert!(result.contains("2h5m"), "got: {}", result);
+    }
+
+    #[test]
+    fn test_format_status_with_duration_bad_input() {
+        assert_eq!(format_status_with_duration("dead", "garbage"), "dead ?");
+    }
+
+    #[test]
+    fn test_colorize_agent_status_returns_string_with_status() {
+        for status in &["idle", "busy", "dead", "other"] {
+            let result = colorize_agent_status(status);
+            assert!(result.contains(status));
+        }
+    }
+
+    #[test]
+    fn test_pad_colored_status() {
+        let result = pad_colored("busy 10m", "busy 10m", 20);
+        assert_eq!(result.len(), 20);
+    }
 }

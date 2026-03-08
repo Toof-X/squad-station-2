@@ -13,21 +13,26 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     let pool = db::connect(&db_path).await?;
 
     // 4. Register orchestrator with hardcoded role="orchestrator"
+    // TODO: Plan 03 will complete this — orchestrator name auto-derived from project+tool+role
+    let orch_name = config
+        .orchestrator
+        .name
+        .clone()
+        .unwrap_or_else(|| format!("{}-{}-orchestrator", config.project, config.orchestrator.tool));
     db::agents::insert_agent(
         &pool,
-        &config.orchestrator.name,
-        &config.orchestrator.provider,
+        &orch_name,
+        &config.orchestrator.tool,
         "orchestrator",
-        &config.orchestrator.command,
+        "", // TODO: Plan 03 — command derived from tool
     )
     .await?;
 
     // 5. Launch orchestrator tmux session (if not already running)
-    let orch_name = &config.orchestrator.name;
-    let orch_launched = if tmux::session_exists(orch_name) {
+    let orch_launched = if tmux::session_exists(&orch_name) {
         false
     } else {
-        tmux::launch_agent(orch_name, &config.orchestrator.command)?;
+        tmux::launch_agent(&orch_name, &config.orchestrator.tool)?; // TODO: Plan 03 — real command
         true
     };
     let orch_skipped = !orch_launched;
@@ -43,28 +48,33 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     }
 
     for agent in &config.agents {
+        // TODO: Plan 03 will complete this — full agent name + command derivation
+        let agent_name = agent
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("{}-{}-worker", config.project, agent.tool));
         if let Err(e) = db::agents::insert_agent(
             &pool,
-            &agent.name,
-            &agent.provider,
+            &agent_name,
+            &agent.tool,
             &agent.role,
-            &agent.command,
+            "", // TODO: Plan 03 — command derived from tool
         )
         .await
         {
-            failed.push((agent.name.clone(), format!("{e:#}")));
+            failed.push((agent_name.clone(), format!("{e:#}")));
             continue;
         }
 
-        if tmux::session_exists(&agent.name) {
+        if tmux::session_exists(&agent_name) {
             skipped += 1;
-            skipped_names.push(agent.name.clone());
+            skipped_names.push(agent_name.clone());
             continue; // Idempotent: skip already-running agents
         }
 
-        match tmux::launch_agent(&agent.name, &agent.command) {
+        match tmux::launch_agent(&agent_name, &agent.tool) { // TODO: Plan 03 — real command
             Ok(()) => launched += 1,
-            Err(e) => failed.push((agent.name.clone(), format!("{e:#}"))),
+            Err(e) => failed.push((agent_name.clone(), format!("{e:#}"))),
         }
     }
 
@@ -80,10 +90,9 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
         });
         println!("{}", serde_json::to_string(&output)?);
     } else {
-        let project_name = &config.project.name;
         println!(
             "Initialized squad '{}' with {} agent(s)",
-            project_name, launched
+            config.project, launched
         );
         for name in &skipped_names {
             println!("  - {}: already running (skipped)", name);

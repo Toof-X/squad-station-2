@@ -113,22 +113,25 @@ fn test_views_module_compiles() {
     assert!(true);
 }
 
-/// Helper: write a minimal squad.yml into `dir` with db_path pointing to `db_file`.
-fn write_squad_yml(dir: &std::path::Path, db_file: &std::path::Path) {
-    let db_path_str = db_file.to_str().expect("db path must be valid UTF-8");
-    let yaml = format!(
-        r#"project:
-  name: test-squad
-  db_path: "{db_path_str}"
+/// Helper: write a minimal squad.yml into `dir` using the new format (project as plain string).
+/// Use SQUAD_STATION_DB env var to point commands at the test DB file.
+fn write_squad_yml(dir: &std::path::Path, _db_file: &std::path::Path) {
+    let yaml = r#"project: test-squad
 orchestrator:
   name: test-orch
-  provider: claude-code
+  tool: claude-code
   role: orchestrator
-  command: "echo orch"
 agents: []
-"#
-    );
+"#;
     std::fs::write(dir.join("squad.yml"), yaml).expect("failed to write squad.yml");
+}
+
+/// Create a Command for the binary with SQUAD_STATION_DB set to the test DB.
+fn cmd_with_db(db_path: &std::path::Path) -> std::process::Command {
+    let bin = env!("CARGO_BIN_EXE_squad-station");
+    let mut c = std::process::Command::new(bin);
+    c.env("SQUAD_STATION_DB", db_path.to_str().expect("db path must be valid UTF-8"));
+    c
 }
 
 /// Create a real SQLite file pool with migrations applied.
@@ -172,8 +175,7 @@ async fn test_status_text_output() {
 
     write_squad_yml(tmp.path(), &db_path);
 
-    let bin = env!("CARGO_BIN_EXE_squad-station");
-    let output = std::process::Command::new(bin)
+    let output = cmd_with_db(&db_path)
         .arg("status")
         .current_dir(tmp.path())
         .output()
@@ -205,8 +207,7 @@ async fn test_status_json_output() {
 
     write_squad_yml(tmp.path(), &db_path);
 
-    let bin = env!("CARGO_BIN_EXE_squad-station");
-    let output = std::process::Command::new(bin)
+    let output = cmd_with_db(&db_path)
         .args(["status", "--json"])
         .current_dir(tmp.path())
         .output()
@@ -252,8 +253,7 @@ async fn test_status_pending_count() {
 
     write_squad_yml(tmp.path(), &db_path);
 
-    let bin = env!("CARGO_BIN_EXE_squad-station");
-    let output = std::process::Command::new(bin)
+    let output = cmd_with_db(&db_path)
         .args(["status", "--json"])
         .current_dir(tmp.path())
         .output()
@@ -281,8 +281,7 @@ async fn test_status_empty_squad() {
 
     write_squad_yml(tmp.path(), &db_path);
 
-    let bin = env!("CARGO_BIN_EXE_squad-station");
-    let output = std::process::Command::new(bin)
+    let output = cmd_with_db(&db_path)
         .arg("status")
         .current_dir(tmp.path())
         .output()
@@ -318,8 +317,7 @@ async fn test_view_no_live_sessions() {
 
     write_squad_yml(tmp.path(), &db_path);
 
-    let bin = env!("CARGO_BIN_EXE_squad-station");
-    let output = std::process::Command::new(bin)
+    let output = cmd_with_db(&db_path)
         .arg("view")
         .current_dir(tmp.path())
         .output()

@@ -57,15 +57,12 @@ pub enum Commands {
     Register {
         /// Agent name
         name: String,
-        /// Command to launch the agent
-        #[arg(long)]
-        command: String,
         /// Agent role
         #[arg(long, default_value = "worker")]
         role: String,
-        /// Agent provider label
+        /// Agent tool label (e.g. claude-code, gemini)
         #[arg(long, default_value = "unknown")]
-        provider: String,
+        tool: String,                         // CONF-04: renamed from provider
     },
     /// List agents with reconciled status
     Agents,
