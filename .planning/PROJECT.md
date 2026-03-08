@@ -37,9 +37,16 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ### Active
 
-- [ ] npm wrapper distribution
-- [ ] Cross-compile CI via GitHub Actions (darwin arm64/amd64, linux amd64/arm64)
-- [ ] Support cargo install from source
+- [ ] squad.yml config: `project` as string, `model`+`description` in AgentConfig, remove `command`, rename `provider`→`tool`
+- [ ] Messages DB schema: `from_agent`/`to_agent`, `type` column, `processing` status, `completed_at`
+- [ ] Agents DB schema: add `model`, `description`, `current_task` FK; rename `provider`→`tool`
+- [ ] Notification hooks: `claude-code-notify.sh` + `gemini-cli-notify.sh`
+- [ ] CLI `send` command: change positional arg to `--body` flag
+- [ ] Agent naming: auto-prefix `<project>-<tool>-<role>` on init
+- [ ] `context` command: include `model`+`description` in output
+- [ ] Signal format: standardize to `"<agent> completed <msg-id>"`
+- [ ] Update `.planning/research/ARCHITECTURE.md` to match reality
+- [ ] Rewrite `docs/PLAYBOOK.md` after code changes complete
 
 ### Out of Scope
 
@@ -86,5 +93,19 @@ TUI: connect-per-refresh strategy drops read-only pool after each fetch to preve
 | connect-per-refresh in TUI | Prevents WAL checkpoint starvation during long TUI sessions | ✓ Good — WAL doesn't grow unbounded |
 | Reconciliation loop duplication | Each command file independent, ~10 lines not worth abstraction | ✓ Good — simple, no coupling |
 
+## Current Milestone: v1.1 Design Compliance
+
+**Goal:** Refactor codebase to match `docs/SOLUTION-DESIGN.md` exactly — close all 10 gaps identified in `docs/GAP-ANALYSIS.md`.
+
+**Target features:**
+- Fix config format (`project` string, `model`/`description`, remove `command`, `provider`→`tool`)
+- Migrate DB schema (bidirectional messages, agents with model/description/current_task)
+- Add notification hooks (Claude Code + Gemini CLI)
+- Change `send` CLI to `--body` flag
+- Enforce agent naming convention via auto-prefix
+- Update `context` output to include model/description
+- Standardize signal format to `"<agent> completed <msg-id>"`
+- Update all docs/planning files to match reality
+
 ---
-*Last updated: 2026-03-06 after v1.0 milestone*
+*Last updated: 2026-03-08 after v1.1 milestone started*
