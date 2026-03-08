@@ -133,7 +133,7 @@ fn colorize_agent_status(status: &str) -> String {
 
 fn pad_colored(raw: &str, colored: &str, width: usize) -> String {
     let raw_len = raw.len();
-    let padding = if raw_len < width { width - raw_len } else { 0 };
+    let padding = width.saturating_sub(raw_len);
     format!("{}{}", colored, " ".repeat(padding))
 }
 
