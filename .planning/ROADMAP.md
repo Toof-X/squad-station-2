@@ -22,7 +22,7 @@
 
 - [x] **Phase 4: Schema and Config Refactor** - Align DB schema and squad.yml config format with solution design (completed 2026-03-08)
 - [x] **Phase 5: Feature Completion** - Add notification hooks, fix CLI syntax, enforce naming, standardize signal format (completed 2026-03-08)
-- [ ] **Phase 6: Documentation** - Update all docs and planning files to reflect the refactored codebase
+- [x] **Phase 6: Documentation** - Update all docs and planning files to reflect the refactored codebase (completed 2026-03-08)
 
 ## Phase Details
 
@@ -81,4 +81,4 @@ Plans:
 | 3. Views and TUI | v1.0 | 2/2 | Complete | 2026-03-06 |
 | 4. Schema and Config Refactor | v1.1 | 3/3 | Complete | 2026-03-08 |
 | 5. Feature Completion | v1.1 | 2/2 | Complete | 2026-03-08 |
-| 6. Documentation | 1/2 | In Progress|  | - |
+| 6. Documentation | 2/2 | Complete   | 2026-03-08 | - |

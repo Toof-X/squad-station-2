@@ -45,7 +45,7 @@ Requirements for v1.1 Design Compliance milestone. Closes all 10 gaps vs `docs/S
 ### Docs (DOCS)
 
 - [x] **DOCS-01**: `.planning/research/ARCHITECTURE.md` reflects current sqlx + flat module structure
-- [ ] **DOCS-02**: `docs/PLAYBOOK.md` reflects correct CLI syntax and config format post-refactor
+- [x] **DOCS-02**: `docs/PLAYBOOK.md` reflects correct CLI syntax and config format post-refactor
 
 ## v2 Requirements
 
@@ -89,7 +89,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLI-03 | Phase 5 | Complete |
 | SIG-01 | Phase 5 | Complete |
 | DOCS-01 | Phase 6 | Complete |
-| DOCS-02 | Phase 6 | Pending |
+| DOCS-02 | Phase 6 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 19 total

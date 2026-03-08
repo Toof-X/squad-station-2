@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Design Compliance
 status: executing
-stopped_at: Completed 06-01-PLAN.md (DOCS-01)
-last_updated: "2026-03-08T12:27:35.106Z"
+stopped_at: Completed 06-02-PLAN.md (DOCS-02)
+last_updated: "2026-03-08T12:30:43.439Z"
 last_activity: 2026-03-08 — 05-01 notification hooks complete (claude-code-notify.sh + gemini-cli-notify.sh)
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
   percent: 43
 ---
 
@@ -48,6 +48,7 @@ Progress: [████░░░░░░] 43%
 | 3. Views and TUI | 2/2 | Complete |
 | Phase 05-feature-completion P02 | 239 | 2 tasks | 11 files |
 | Phase 06-documentation P01 | 2 | 1 tasks | 1 files |
+| Phase 06-documentation P02 | 2 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,9 @@ All v1.0 decisions logged in PROJECT.md Key Decisions table.
 - [Phase 05-02]: SIG-01: Signal notification format is '<agent> completed <msg-id>' — pattern-matchable by orchestrator
 - [Phase 06-01]: Removed 'not rusqlite' contrast phrase to meet zero-rusqlite-occurrences done criterion; document is self-evidently about sqlx
 - [Phase 06-01]: Added explicit src/tmux.rs reference in Overview for grep-based verification to work (tree diagram alone lacked src/ prefix)
+- [Phase 06-02]: Corrected all squad.yml examples to use tool field (not provider), no command field, project as plain string
+- [Phase 06-02]: All send examples updated to --body named flag syntax with full auto-prefixed agent names
+- [Phase 06-02]: Signal format documented as <agent> completed <msg-id> matching SIG-01; context output uses Markdown sections per agent (CLI-03)
 
 ### Pending Todos
 
@@ -102,6 +106,6 @@ None — all design decisions resolved, ready to build.
 
 ## Session Continuity
 
-Last session: 2026-03-08T12:27:35.104Z
-Stopped at: Completed 06-01-PLAN.md (DOCS-01)
+Last session: 2026-03-08T12:30:43.437Z
+Stopped at: Completed 06-02-PLAN.md (DOCS-02)
 Resume file: None
