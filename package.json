@@ -1,0 +1,23 @@
+{
+  "name": "squad-station",
+  "version": "0.1.0",
+  "description": "Message routing and orchestration for AI agent squads",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thientranhung/squad-station.git"
+  },
+  "bin": {
+    "squad-station": "./bin/run.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "license": "MIT"
+}
