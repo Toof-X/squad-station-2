@@ -23,9 +23,9 @@ Requirements for v1.1 Design Compliance milestone. Closes all 10 gaps vs `docs/S
 
 ### Agents Schema (AGNT)
 
-- [ ] **AGNT-01**: System stores `model` and `description` for each registered agent
-- [ ] **AGNT-02**: System tracks `current_task` FK linking agent to active message
-- [ ] **AGNT-03**: Agent records use `tool` field instead of `provider`
+- [x] **AGNT-01**: System stores `model` and `description` for each registered agent
+- [x] **AGNT-02**: System tracks `current_task` FK linking agent to active message
+- [x] **AGNT-03**: Agent records use `tool` field instead of `provider`
 
 ### Hooks (HOOK)
 
@@ -79,9 +79,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MSGS-02 | Phase 4 | Complete |
 | MSGS-03 | Phase 4 | Complete |
 | MSGS-04 | Phase 4 | Complete |
-| AGNT-01 | Phase 4 | Pending |
-| AGNT-02 | Phase 4 | Pending |
-| AGNT-03 | Phase 4 | Pending |
+| AGNT-01 | Phase 4 | Complete |
+| AGNT-02 | Phase 4 | Complete |
+| AGNT-03 | Phase 4 | Complete |
 | HOOK-01 | Phase 5 | Pending |
 | HOOK-02 | Phase 5 | Pending |
 | CLI-01 | Phase 5 | Pending |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Design Compliance
 status: in_progress
-stopped_at: "04-02-PLAN.md complete"
+stopped_at: "04-03-PLAN.md complete"
 last_updated: "2026-03-08"
-last_activity: 2026-03-08 — Completed 04-02 messages DB layer (MSGS-01/02/03/04, 22/22 tests green)
+last_activity: 2026-03-08 — Completed 04-03 schema integration wave (AGNT-01/02/03, 124/124 tests green)
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 7
-  completed_plans: 2
-  percent: 29
+  completed_plans: 3
+  percent: 43
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 ## Current Position
 
 Phase: 4 of 6 (Schema and Config Refactor)
-Plan: 2 of 3 in current phase (04-02 complete)
+Plan: 3 of 3 in current phase (04-03 complete — Phase 4 DONE)
 Status: In Progress
-Last activity: 2026-03-08 — 04-02 messages DB layer complete (MSGS-01/02/03/04, 22/22 tests green)
+Last activity: 2026-03-08 — 04-03 schema integration wave complete (AGNT-01/02/03, 124/124 tests green)
 
-Progress: [██░░░░░░░░] 29%
+Progress: [████░░░░░░] 43%
 
 ## Performance Metrics
 
@@ -72,6 +72,12 @@ All v1.0 decisions logged in PROJECT.md Key Decisions table.
 - #[sqlx(rename = "tool")] added to agents.rs provider field as bridge until Plan 03 completes full rename
 - All test suite call sites updated in this plan (blocking issue, Rule 3) — new insert_message signature required it
 
+**04-03 execution decisions:**
+- Agent.command kept as Option<String> with #[allow(dead_code)] — SELECT * includes it, removing requires explicit SELECT on 4 query fns
+- insert_agent passes '' for command column to satisfy NOT NULL constraint without ALTER TABLE
+- current_task FK lifecycle handled inline in send/signal with raw sqlx::query — keeps db::agents API minimal
+- list.rs FROM/TO columns replace AGENT column — directional routing surfaced in default table output
+
 ### Pending Todos
 
 None.
@@ -83,5 +89,5 @@ None — all design decisions resolved, ready to build.
 ## Session Continuity
 
 Last session: 2026-03-08
-Stopped at: Completed 04-02-PLAN.md (messages DB layer — migration + CRUD)
+Stopped at: Completed 04-03-PLAN.md (schema integration wave — agents DB + command wiring)
 Resume file: None

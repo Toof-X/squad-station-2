@@ -20,7 +20,7 @@
 
 **Milestone Goal:** Refactor codebase to match `docs/SOLUTION-DESIGN.md` exactly — close all 10 gaps identified in `docs/GAP-ANALYSIS.md`.
 
-- [ ] **Phase 4: Schema and Config Refactor** - Align DB schema and squad.yml config format with solution design
+- [x] **Phase 4: Schema and Config Refactor** - Align DB schema and squad.yml config format with solution design (completed 2026-03-08)
 - [ ] **Phase 5: Feature Completion** - Add notification hooks, fix CLI syntax, enforce naming, standardize signal format
 - [ ] **Phase 6: Documentation** - Update all docs and planning files to reflect the refactored codebase
 
@@ -79,6 +79,6 @@ Plans:
 | 1. Core Foundation | v1.0 | 5/5 | Complete | 2026-03-06 |
 | 2. Lifecycle and Hooks | v1.0 | 3/3 | Complete | 2026-03-06 |
 | 3. Views and TUI | v1.0 | 2/2 | Complete | 2026-03-06 |
-| 4. Schema and Config Refactor | v1.1 | 2/3 | In Progress | - |
+| 4. Schema and Config Refactor | 3/3 | Complete   | 2026-03-08 | - |
 | 5. Feature Completion | v1.1 | 0/2 | Not started | - |
 | 6. Documentation | v1.1 | 0/2 | Not started | - |
