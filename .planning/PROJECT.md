@@ -47,7 +47,12 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ### Active
 
-(None — planning next milestone)
+<!-- v1.2 Distribution — building toward these -->
+
+- [ ] GitHub Actions CI/CD cross-compiles Rust binary for all targets and creates GitHub Release
+- [ ] npm package detects platform and downloads correct binary on postinstall
+- [ ] curl | sh install script as alternative to npm
+- [ ] README.md documents all installation methods with usage quickstart
 
 ### Out of Scope
 
@@ -86,7 +91,7 @@ TUI: connect-per-refresh strategy drops read-only pool after each fetch to preve
 | Stateless CLI, không daemon | Đơn giản, dễ debug, event-driven qua hook chain | ✓ Good — no process management complexity |
 | SQLite embedded per project | Isolation giữa projects, không cần external DB | ✓ Good — WAL mode handles concurrent writes |
 | Agent name = tmux session name | Đơn giản hóa lookup, hook tự detect qua TMUX_PANE | ✓ Good — zero-config agent identity |
-| npm wrapper distribution | Target audience là developers đã có Node.js | — Pending (v2) |
+| npm wrapper distribution | Target audience là developers đã có Node.js | ◆ In progress (v1.2) |
 | Provider-agnostic design | Không lock-in vào Claude Code hay Gemini CLI | ✓ Good — hooks work for both providers |
 | Hook-driven completion | Agent passive, không cần modify agent behavior | ✓ Good — clean separation of concerns |
 | sqlx over rusqlite | Already in Cargo.toml, async-native, compile-time SQL checks | ✓ Good — migration system worked well |
@@ -101,5 +106,16 @@ TUI: connect-per-refresh strategy drops read-only pool after each fetch to preve
 | Signal format `"<agent> completed <msg-id>"` | Pattern-matchable string, no JSON parsing needed in orchestrator | ✓ Good — simple, grep-friendly |
 | SQUAD_STATION_DB env var in resolve_db_path | Single injection point benefits all commands without per-command changes | ✓ Good — cleaner test isolation |
 
+## Current Milestone: v1.2 Distribution
+
+**Goal:** Make Squad Station installable by any developer in one command — `npm install -g squad-station` or `curl | sh`.
+
+**Target features:**
+- GitHub Actions CI/CD cross-compiling Rust binaries for darwin/linux × arm64/x86_64
+- GitHub Releases with pre-built binaries attached as assets
+- npm package (`squad-station`) with postinstall platform-detection + binary download
+- curl | sh install script as npm-free alternative
+- README.md with installation instructions and usage quickstart
+
 ---
-*Last updated: 2026-03-08 after v1.1 milestone*
+*Last updated: 2026-03-08 after v1.2 milestone start*
