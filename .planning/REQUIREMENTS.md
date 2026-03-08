@@ -71,31 +71,31 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CONF-01 | — | Pending |
-| CONF-02 | — | Pending |
-| CONF-03 | — | Pending |
-| CONF-04 | — | Pending |
-| MSGS-01 | — | Pending |
-| MSGS-02 | — | Pending |
-| MSGS-03 | — | Pending |
-| MSGS-04 | — | Pending |
-| AGNT-01 | — | Pending |
-| AGNT-02 | — | Pending |
-| AGNT-03 | — | Pending |
-| HOOK-01 | — | Pending |
-| HOOK-02 | — | Pending |
-| CLI-01 | — | Pending |
-| CLI-02 | — | Pending |
-| CLI-03 | — | Pending |
-| SIG-01 | — | Pending |
-| DOCS-01 | — | Pending |
-| DOCS-02 | — | Pending |
+| CONF-01 | Phase 4 | Pending |
+| CONF-02 | Phase 4 | Pending |
+| CONF-03 | Phase 4 | Pending |
+| CONF-04 | Phase 4 | Pending |
+| MSGS-01 | Phase 4 | Pending |
+| MSGS-02 | Phase 4 | Pending |
+| MSGS-03 | Phase 4 | Pending |
+| MSGS-04 | Phase 4 | Pending |
+| AGNT-01 | Phase 4 | Pending |
+| AGNT-02 | Phase 4 | Pending |
+| AGNT-03 | Phase 4 | Pending |
+| HOOK-01 | Phase 5 | Pending |
+| HOOK-02 | Phase 5 | Pending |
+| CLI-01 | Phase 5 | Pending |
+| CLI-02 | Phase 5 | Pending |
+| CLI-03 | Phase 5 | Pending |
+| SIG-01 | Phase 5 | Pending |
+| DOCS-01 | Phase 6 | Pending |
+| DOCS-02 | Phase 6 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 19 total
-- Mapped to phases: 0
-- Unmapped: 19 ⚠️
+- Mapped to phases: 19
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-08*
-*Last updated: 2026-03-08 after initial definition*
+*Last updated: 2026-03-08 after roadmap creation*
