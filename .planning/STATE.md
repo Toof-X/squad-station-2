@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Distribution
-status: in_progress
-stopped_at: "07-01-PLAN.md — checkpoint:human-verify (Task 2: push test tag and verify 4 CI jobs + 4 release assets)"
-last_updated: "2026-03-08T15:30:00Z"
-last_activity: 2026-03-08 — Phase 7 Plan 1 Task 1 complete (release workflow created)
+status: executing
+stopped_at: Completed 07-01-PLAN.md (Phase 7 Plan 1 complete)
+last_updated: "2026-03-08T15:41:21.955Z"
+last_activity: "2026-03-08 — Phase 7 Plan 1: release workflow created (.github/workflows/release.yml)"
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 1
-  completed_plans: 0
+  completed_plans: 1
   percent: 5
 ---
 
@@ -45,6 +45,7 @@ Progress: [#░░░░░░░░░] 5%
 | 7. CI/CD Pipeline | TBD | - | - |
 | 8. npm Package | TBD | - | - |
 | 9. Install Script and Docs | TBD | - | - |
+| Phase 07-ci-cd-pipeline P01 | 45 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -64,6 +65,9 @@ All v1.0 and v1.1 decisions logged in PROJECT.md Key Decisions table.
 - softprops/action-gh-release@v2: idempotent release creation, safe for concurrent matrix uploads
 - Binary naming: squad-station-{os}-{arch} — Phases 8 and 9 depend on this exact convention
 - SQLX_OFFLINE=true always required: no .sqlx metadata present in repo
+- [Phase 07-ci-cd-pipeline]: musl over gnu for Linux targets: fully static binaries for Phase 9 install script portability
+- [Phase 07-ci-cd-pipeline]: Binary naming convention squad-station-{os}-{arch}: Phases 8 and 9 depend on this exact pattern
+- [Phase 07-ci-cd-pipeline]: musl-tools apt install required for x86_64-unknown-linux-musl: Rust musl target needs musl-gcc linker not present by default on ubuntu-latest
 
 ### Pending Todos
 
@@ -75,6 +79,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-08T15:30:00Z
-Stopped at: 07-01-PLAN.md — checkpoint:human-verify awaiting test tag push and CI verification
+Last session: 2026-03-08T15:41:21.954Z
+Stopped at: Completed 07-01-PLAN.md (Phase 7 Plan 1 complete)
 Resume file: None
