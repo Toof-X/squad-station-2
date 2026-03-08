@@ -56,8 +56,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Notification hooks: hooks/claude-code-notify.sh (HOOK-01) + hooks/gemini-cli-notify.sh (HOOK-02)
-- [ ] 05-02-PLAN.md — CLI send --body flag (CLI-01), init auto-prefix naming (CLI-02), context model/description output (CLI-03), signal format (SIG-01)
+- [x] 05-01-PLAN.md — Notification hooks: hooks/claude-code-notify.sh (HOOK-01) + hooks/gemini-cli-notify.sh (HOOK-02)
+- [x] 05-02-PLAN.md — CLI send --body flag (CLI-01), init auto-prefix naming (CLI-02), context model/description output (CLI-03), signal format (SIG-01)
 
 ### Phase 6: Documentation
 **Goal**: All docs and planning files accurately describe the refactored system — no stale references to removed fields or old CLI syntax
@@ -66,11 +66,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. `.planning/research/ARCHITECTURE.md` describes the actual sqlx + flat module structure (no stale references to pre-v1.0 design decisions)
   2. `docs/PLAYBOOK.md` shows correct `send --body` syntax, correct squad.yml format with `tool`/`model`/`description`, and correct agent naming convention
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: Update `.planning/research/ARCHITECTURE.md` to match current codebase
-- [ ] 06-02: Rewrite `docs/PLAYBOOK.md` with post-refactor CLI syntax and config format
+- [ ] 06-01-PLAN.md — Rewrite `.planning/research/ARCHITECTURE.md` to replace rusqlite/planned layout with actual sqlx/flat module structure (DOCS-01)
+- [ ] 06-02-PLAN.md — Update `docs/PLAYBOOK.md` with post-v1.1 CLI syntax, config format, agent naming, and context output (DOCS-02)
 
 ## Progress
 
@@ -80,5 +80,5 @@ Plans:
 | 2. Lifecycle and Hooks | v1.0 | 3/3 | Complete | 2026-03-06 |
 | 3. Views and TUI | v1.0 | 2/2 | Complete | 2026-03-06 |
 | 4. Schema and Config Refactor | v1.1 | 3/3 | Complete | 2026-03-08 |
-| 5. Feature Completion | 2/2 | Complete   | 2026-03-08 | - |
+| 5. Feature Completion | v1.1 | 2/2 | Complete | 2026-03-08 |
 | 6. Documentation | v1.1 | 0/2 | Not started | - |
