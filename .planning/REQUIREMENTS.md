@@ -34,13 +34,13 @@ Requirements for v1.1 Design Compliance milestone. Closes all 10 gaps vs `docs/S
 
 ### CLI (CLI)
 
-- [ ] **CLI-01**: User sends task via `send <agent> --body "task..."` flag syntax
-- [ ] **CLI-02**: `init` auto-prefixes agent names as `<project>-<tool>-<role>`
-- [ ] **CLI-03**: `context` output includes `model` and `description` per agent
+- [x] **CLI-01**: User sends task via `send <agent> --body "task..."` flag syntax
+- [x] **CLI-02**: `init` auto-prefixes agent names as `<project>-<tool>-<role>`
+- [x] **CLI-03**: `context` output includes `model` and `description` per agent
 
 ### Signal (SIG)
 
-- [ ] **SIG-01**: Signal notifications use format `"<agent> completed <msg-id>"`
+- [x] **SIG-01**: Signal notifications use format `"<agent> completed <msg-id>"`
 
 ### Docs (DOCS)
 
@@ -84,10 +84,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AGNT-03 | Phase 4 | Complete |
 | HOOK-01 | Phase 5 | Complete |
 | HOOK-02 | Phase 5 | Complete |
-| CLI-01 | Phase 5 | Pending |
-| CLI-02 | Phase 5 | Pending |
-| CLI-03 | Phase 5 | Pending |
-| SIG-01 | Phase 5 | Pending |
+| CLI-01 | Phase 5 | Complete |
+| CLI-02 | Phase 5 | Complete |
+| CLI-03 | Phase 5 | Complete |
+| SIG-01 | Phase 5 | Complete |
 | DOCS-01 | Phase 6 | Pending |
 | DOCS-02 | Phase 6 | Pending |
 

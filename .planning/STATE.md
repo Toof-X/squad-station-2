@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Design Compliance
 status: executing
-stopped_at: Completed 05-01-PLAN.md (notification hooks — HOOK-01 and HOOK-02)
-last_updated: "2026-03-08T12:04:00Z"
+stopped_at: Completed 05-02-PLAN.md (CLI-01, CLI-02, CLI-03, SIG-01)
+last_updated: "2026-03-08T12:04:53.054Z"
 last_activity: 2026-03-08 — 05-01 notification hooks complete (claude-code-notify.sh + gemini-cli-notify.sh)
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 2
+  total_plans: 5
+  completed_plans: 5
   percent: 43
 ---
 
@@ -46,6 +46,7 @@ Progress: [████░░░░░░] 43%
 | 1. Core Foundation | 5/5 | Complete |
 | 2. Lifecycle and Hooks | 3/3 | Complete |
 | 3. Views and TUI | 2/2 | Complete |
+| Phase 05-feature-completion P02 | 239 | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,10 @@ All v1.0 decisions logged in PROJECT.md Key Decisions table.
 - python3 used for JSON parsing inline — consistent with existing project hooks, no new dependencies
 - Orchestrator discovered at runtime via `squad-station agents --json` — keeps hooks stateless
 - Message format `[NOTIFY] <agent> needs permission: <message>` — prefix enables orchestrator pattern-matching
+- [Phase 05-02]: CLI-01: Send uses --body named flag — replaces positional task arg for discoverability and shell safety
+- [Phase 05-02]: CLI-02: init.rs enforces <project>-<tool>-<role> naming; squad.yml name field acts as role suffix
+- [Phase 05-02]: CLI-03: context output uses Markdown ## headings with model/description per agent, not table format
+- [Phase 05-02]: SIG-01: Signal notification format is '<agent> completed <msg-id>' — pattern-matchable by orchestrator
 
 ### Pending Todos
 
@@ -94,6 +99,6 @@ None — all design decisions resolved, ready to build.
 
 ## Session Continuity
 
-Last session: 2026-03-08
-Stopped at: Completed 05-01-PLAN.md (notification hooks — HOOK-01 and HOOK-02)
+Last session: 2026-03-08T12:04:53.052Z
+Stopped at: Completed 05-02-PLAN.md (CLI-01, CLI-02, CLI-03, SIG-01)
 Resume file: None
