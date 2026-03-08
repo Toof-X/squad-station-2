@@ -1,0 +1,9 @@
+{
+  "name": "qa-test-planner",
+  "description": "",
+  "source": "softaworks/agent-toolkit",
+  "sourceType": "github",
+  "subpath": "qa-test-planner",
+  "installedAt": "2026-03-08T03:34:39.611Z",
+  "enabled": true
+}
