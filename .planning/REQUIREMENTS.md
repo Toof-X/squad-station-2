@@ -16,10 +16,10 @@ Requirements for v1.1 Design Compliance milestone. Closes all 10 gaps vs `docs/S
 
 ### Messages Schema (MSGS)
 
-- [ ] **MSGS-01**: System tracks message direction with `from_agent` and `to_agent` fields
-- [ ] **MSGS-02**: System records message type (task_request | task_completed | notify)
-- [ ] **MSGS-03**: System supports `processing` status alongside completed/failed
-- [ ] **MSGS-04**: System records `completed_at` timestamp when message finishes
+- [x] **MSGS-01**: System tracks message direction with `from_agent` and `to_agent` fields
+- [x] **MSGS-02**: System records message type (task_request | task_completed | notify)
+- [x] **MSGS-03**: System supports `processing` status alongside completed/failed
+- [x] **MSGS-04**: System records `completed_at` timestamp when message finishes
 
 ### Agents Schema (AGNT)
 
@@ -75,10 +75,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONF-02 | Phase 4 | Complete |
 | CONF-03 | Phase 4 | Complete |
 | CONF-04 | Phase 4 | Complete |
-| MSGS-01 | Phase 4 | Pending |
-| MSGS-02 | Phase 4 | Pending |
-| MSGS-03 | Phase 4 | Pending |
-| MSGS-04 | Phase 4 | Pending |
+| MSGS-01 | Phase 4 | Complete |
+| MSGS-02 | Phase 4 | Complete |
+| MSGS-03 | Phase 4 | Complete |
+| MSGS-04 | Phase 4 | Complete |
 | AGNT-01 | Phase 4 | Pending |
 | AGNT-02 | Phase 4 | Pending |
 | AGNT-03 | Phase 4 | Pending |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Design Compliance
 status: in_progress
-stopped_at: "04-01-PLAN.md complete"
+stopped_at: "04-02-PLAN.md complete"
 last_updated: "2026-03-08"
-last_activity: 2026-03-08 — Completed 04-01 config schema refactor (4/4 tests green)
+last_activity: 2026-03-08 — Completed 04-02 messages DB layer (MSGS-01/02/03/04, 22/22 tests green)
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 7
-  completed_plans: 1
-  percent: 14
+  completed_plans: 2
+  percent: 29
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 ## Current Position
 
 Phase: 4 of 6 (Schema and Config Refactor)
-Plan: 1 of 3 in current phase (04-01 complete)
+Plan: 2 of 3 in current phase (04-02 complete)
 Status: In Progress
-Last activity: 2026-03-08 — 04-01 config schema refactor complete (4/4 CONF requirements)
+Last activity: 2026-03-08 — 04-02 messages DB layer complete (MSGS-01/02/03/04, 22/22 tests green)
 
-Progress: [█░░░░░░░░░] 14%
+Progress: [██░░░░░░░░] 29%
 
 ## Performance Metrics
 
@@ -67,6 +67,11 @@ All v1.0 decisions logged in PROJECT.md Key Decisions table.
 - init.rs uses minimal stubs (TODO: Plan 03) — agent name auto-derived from project+tool+role pattern
 - All integration test helpers updated to use cmd_with_db() for test DB injection
 
+**04-02 execution decisions:**
+- agent_name column set to to_agent value on INSERT for backward compat with peek_message/update_status subqueries
+- #[sqlx(rename = "tool")] added to agents.rs provider field as bridge until Plan 03 completes full rename
+- All test suite call sites updated in this plan (blocking issue, Rule 3) — new insert_message signature required it
+
 ### Pending Todos
 
 None.
@@ -78,5 +83,5 @@ None — all design decisions resolved, ready to build.
 ## Session Continuity
 
 Last session: 2026-03-08
-Stopped at: Completed 04-01-PLAN.md (config schema refactor)
+Stopped at: Completed 04-02-PLAN.md (messages DB layer — migration + CRUD)
 Resume file: None

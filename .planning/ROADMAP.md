@@ -38,8 +38,8 @@
 **Plans**: 3 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Config refactor: SquadConfig.project→String, AgentConfig tool/model/description, remove command, update squad.yml
-- [ ] 04-02-PLAN.md — Messages schema migration: 0003_v11.sql, messages.rs struct/CRUD, test_db.rs message tests
+- [x] 04-01-PLAN.md — Config refactor: SquadConfig.project→String, AgentConfig tool/model/description, remove command, update squad.yml
+- [x] 04-02-PLAN.md — Messages schema migration: 0003_v11.sql, messages.rs struct/CRUD, test_db.rs message tests
 - [ ] 04-03-PLAN.md — Agents schema migration + command callers: agents.rs struct/CRUD, init/register/send/signal/agents/list/status wired
 
 ### Phase 5: Feature Completion
@@ -79,6 +79,6 @@ Plans:
 | 1. Core Foundation | v1.0 | 5/5 | Complete | 2026-03-06 |
 | 2. Lifecycle and Hooks | v1.0 | 3/3 | Complete | 2026-03-06 |
 | 3. Views and TUI | v1.0 | 2/2 | Complete | 2026-03-06 |
-| 4. Schema and Config Refactor | 1/3 | In Progress|  | - |
+| 4. Schema and Config Refactor | v1.1 | 2/3 | In Progress | - |
 | 5. Feature Completion | v1.1 | 0/2 | Not started | - |
 | 6. Documentation | v1.1 | 0/2 | Not started | - |
