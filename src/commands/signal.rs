@@ -94,8 +94,12 @@ pub async fn run(agent: String, json: bool) -> anyhow::Result<()> {
         false
     };
 
-    // After successful signal, set agent status back to idle.
+    // After successful signal, set agent status back to idle and clear current_task FK.
     if rows > 0 {
+        // AGNT-02: clear current_task FK on the signaling agent
+        sqlx::query("UPDATE agents SET current_task = NULL WHERE name = ?")
+            .bind(&agent)
+            .execute(&pool).await?;
         db::agents::update_agent_status(&pool, &agent, "idle").await?;
     }
 

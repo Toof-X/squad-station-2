@@ -38,10 +38,10 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
     }
 
     // 5. Table mode
-    // Columns: NAME (15), ROLE (12), STATUS (20), PROVIDER (15)
+    // Columns: NAME (15), ROLE (12), STATUS (20), TOOL (15)
     println!(
         "{:<15}  {:<12}  {:<20}  {:<15}",
-        "NAME", "ROLE", "STATUS", "PROVIDER"
+        "NAME", "ROLE", "STATUS", "TOOL"
     );
     for agent in &agents {
         let raw_status = format_status_with_duration(&agent.status, &agent.status_updated_at);
@@ -53,7 +53,7 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
 
         println!(
             "{:<15}  {:<12}  {}  {:<15}",
-            agent.name, agent.role, status_cell, agent.provider
+            agent.name, agent.role, status_cell, agent.tool
         );
     }
 
@@ -92,4 +92,64 @@ fn pad_colored(raw: &str, colored: &str, width: usize) -> String {
     let raw_len = raw.len();
     let padding = if raw_len < width { width - raw_len } else { 0 };
     format!("{}{}", colored, " ".repeat(padding))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_status_with_duration_valid_timestamp() {
+        // Recent timestamp should produce a duration like "Xm"
+        let now = chrono::Utc::now().to_rfc3339();
+        let result = format_status_with_duration("idle", &now);
+        assert!(result.starts_with("idle "));
+        assert!(result.contains("0m") || result.contains("1m"));
+    }
+
+    #[test]
+    fn test_format_status_with_duration_hours() {
+        // 90 minutes ago should produce "1h30m"
+        let ts = (chrono::Utc::now() - chrono::Duration::minutes(90)).to_rfc3339();
+        let result = format_status_with_duration("busy", &ts);
+        assert!(result.starts_with("busy "));
+        assert!(result.contains("1h30m"), "got: {}", result);
+    }
+
+    #[test]
+    fn test_format_status_with_duration_invalid_timestamp() {
+        let result = format_status_with_duration("dead", "not-a-timestamp");
+        assert_eq!(result, "dead ?");
+    }
+
+    #[test]
+    fn test_colorize_agent_status_idle() {
+        let result = colorize_agent_status("idle");
+        assert!(result.contains("idle"));
+    }
+
+    #[test]
+    fn test_colorize_agent_status_busy() {
+        let result = colorize_agent_status("busy");
+        assert!(result.contains("busy"));
+    }
+
+    #[test]
+    fn test_colorize_agent_status_dead() {
+        let result = colorize_agent_status("dead");
+        assert!(result.contains("dead"));
+    }
+
+    #[test]
+    fn test_colorize_agent_status_unknown() {
+        let result = colorize_agent_status("custom");
+        assert_eq!(result, "custom");
+    }
+
+    #[test]
+    fn test_pad_colored_agents() {
+        let result = pad_colored("idle 5m", "idle 5m", 20);
+        assert_eq!(result.len(), 20);
+        assert!(result.starts_with("idle 5m"));
+    }
 }

@@ -13,12 +13,15 @@ fn mock_agent(name: &str, status: &str) -> squad_station::db::agents::Agent {
     squad_station::db::agents::Agent {
         id: "test-id".into(),
         name: name.into(),
-        provider: "test".into(),
+        tool: "test".into(),
         role: "worker".into(),
-        command: "echo".into(),
+        command: None,
         created_at: "2026-01-01T00:00:00Z".into(),
         status: status.into(),
         status_updated_at: "2026-01-01T00:00:00Z".into(),
+        model: None,
+        description: None,
+        current_task: None,
     }
 }
 

@@ -24,7 +24,8 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
         &orch_name,
         &config.orchestrator.tool,
         "orchestrator",
-        "", // TODO: Plan 03 — command derived from tool
+        config.orchestrator.model.as_deref(),
+        config.orchestrator.description.as_deref(),
     )
     .await?;
 
@@ -58,7 +59,8 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
             &agent_name,
             &agent.tool,
             &agent.role,
-            "", // TODO: Plan 03 — command derived from tool
+            agent.model.as_deref(),
+            agent.description.as_deref(),
         )
         .await
         {

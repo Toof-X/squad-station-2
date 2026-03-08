@@ -212,7 +212,7 @@ async fn test_list_text_output_with_messages() {
     assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
     // Table header
     assert!(stdout.contains("ID"), "table must have ID column, got:\n{}", stdout);
-    assert!(stdout.contains("AGENT"), "table must have AGENT column, got:\n{}", stdout);
+    assert!(stdout.contains("TO"), "table must have TO column, got:\n{}", stdout);
     assert!(stdout.contains("STATUS"), "table must have STATUS column, got:\n{}", stdout);
     assert!(stdout.contains("PRIORITY"), "table must have PRIORITY column, got:\n{}", stdout);
     assert!(stdout.contains("TASK"), "table must have TASK column, got:\n{}", stdout);
@@ -713,11 +713,11 @@ async fn test_agents_json_output() {
     let arr = parsed.as_array().unwrap();
     assert_eq!(arr.len(), 2);
 
-    // Should include name, role, provider, status fields
+    // Should include name, role, tool, status fields
     for agent in arr {
         assert!(agent["name"].is_string());
         assert!(agent["role"].is_string());
-        assert!(agent["provider"].is_string());
+        assert!(agent["tool"].is_string());
         assert!(agent["status"].is_string());
     }
 }

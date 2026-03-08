@@ -23,8 +23,7 @@ pub async fn run(
     let pool = db::connect(&db_path).await?;
 
     // 3. Insert agent — INSERT OR IGNORE means duplicate name is a no-op, not an error
-    // TODO: Plan 03 — command derived from tool
-    db::agents::insert_agent(&pool, &name, &tool, &role, "").await?;
+    db::agents::insert_agent(&pool, &name, &tool, &role, None, None).await?;
 
     // 4. Output result
     if json {

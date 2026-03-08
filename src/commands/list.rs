@@ -42,8 +42,8 @@ pub async fn run(
 
 fn print_table_header() {
     println!(
-        "{:<8}  {:<15}  {:<10}  {:<8}  {:<42}  {:<10}",
-        "ID", "AGENT", "STATUS", "PRIORITY", "TASK", "CREATED"
+        "{:<8}  {:<15}  {:<15}  {:<10}  {:<8}  {:<42}  {:<10}",
+        "ID", "FROM", "TO", "STATUS", "PRIORITY", "TASK", "CREATED"
     );
 }
 
@@ -65,6 +65,10 @@ fn print_table_row(msg: &db::messages::Message) {
         &msg.created_at
     };
 
+    // FROM / TO columns: use directional fields, fall back to agent_name for legacy rows
+    let from_display = msg.from_agent.as_deref().unwrap_or("-");
+    let to_display = msg.to_agent.as_deref().unwrap_or(msg.agent_name.as_str());
+
     // STATUS: colorize when terminal supports it.
     // ANSI codes add invisible bytes so we pad the raw status text manually,
     // then append the colored string (without fmt padding, which would count escape bytes).
@@ -74,9 +78,10 @@ fn print_table_row(msg: &db::messages::Message) {
     let status_cell = pad_colored(status_raw, &status_colored, 10);
 
     println!(
-        "{:<8}  {:<15}  {}  {:<8}  {:<42}  {:<10}",
+        "{:<8}  {:<15}  {:<15}  {}  {:<8}  {:<42}  {:<10}",
         id_short,
-        msg.agent_name,
+        from_display,
+        to_display,
         status_cell,
         msg.priority,
         task_display,
@@ -93,6 +98,10 @@ fn pad_colored(raw: &str, colored: &str, width: usize) -> String {
 
 fn colorize_status(status: &str) -> String {
     match status {
+        "processing" => format!(
+            "{}",
+            status.if_supports_color(Stream::Stdout, |s| s.yellow())
+        ),
         "pending" => format!(
             "{}",
             status.if_supports_color(Stream::Stdout, |s| s.yellow())
@@ -106,5 +115,71 @@ fn colorize_status(status: &str) -> String {
             status.if_supports_color(Stream::Stdout, |s| s.red())
         ),
         _ => status.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pad_colored_adds_spaces() {
+        let result = pad_colored("hi", "hi", 10);
+        assert_eq!(result, "hi        ");
+        assert_eq!(result.len(), 10);
+    }
+
+    #[test]
+    fn test_pad_colored_no_padding_when_exact() {
+        let result = pad_colored("hello", "hello", 5);
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_pad_colored_no_padding_when_longer() {
+        let result = pad_colored("toolong", "toolong", 3);
+        assert_eq!(result, "toolong");
+    }
+
+    #[test]
+    fn test_pad_colored_with_ansi_codes() {
+        // Colored string is longer due to ANSI escape codes,
+        // but padding is based on raw string length
+        let raw = "ok";
+        let colored = "\x1b[32mok\x1b[0m"; // green "ok"
+        let result = pad_colored(raw, colored, 6);
+        // Should have 4 spaces of padding based on raw length (2), not colored length
+        assert!(result.starts_with("\x1b[32mok\x1b[0m"));
+        assert!(result.ends_with("    "));
+    }
+
+    #[test]
+    fn test_colorize_status_processing() {
+        let result = colorize_status("processing");
+        assert!(result.contains("processing"));
+    }
+
+    #[test]
+    fn test_colorize_status_pending() {
+        let result = colorize_status("pending");
+        assert!(result.contains("pending"));
+    }
+
+    #[test]
+    fn test_colorize_status_completed() {
+        let result = colorize_status("completed");
+        assert!(result.contains("completed"));
+    }
+
+    #[test]
+    fn test_colorize_status_failed() {
+        let result = colorize_status("failed");
+        assert!(result.contains("failed"));
+    }
+
+    #[test]
+    fn test_colorize_status_unknown() {
+        let result = colorize_status("something_else");
+        assert_eq!(result, "something_else");
     }
 }
