@@ -35,12 +35,12 @@
   2. Messages table tracks `from_agent`, `to_agent`, `type`, `processing` status, and `completed_at` — visible in `list` output
   3. Agents table stores `model`, `description`, `current_task` FK, and `tool` — visible in `agents` output
   4. Migration runs cleanly on a fresh DB and on an existing v1.0 DB without data loss
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: Config refactor (squad.yml parser: `project` string, `model`/`description`, remove `command`, `provider`→`tool`)
-- [ ] 04-02: Messages schema migration (`from_agent`, `to_agent`, `type`, `processing`, `completed_at`)
-- [ ] 04-03: Agents schema migration (`model`, `description`, `current_task` FK, `provider`→`tool`)
+- [ ] 04-01-PLAN.md — Config refactor: SquadConfig.project→String, AgentConfig tool/model/description, remove command, update squad.yml
+- [ ] 04-02-PLAN.md — Messages schema migration: 0003_v11.sql, messages.rs struct/CRUD, test_db.rs message tests
+- [ ] 04-03-PLAN.md — Agents schema migration + command callers: agents.rs struct/CRUD, init/register/send/signal/agents/list/status wired
 
 ### Phase 5: Feature Completion
 **Goal**: All user-facing behavioral changes land — new hooks ship, CLI syntax is correct, naming is enforced, signal format is standard
@@ -79,6 +79,6 @@ Plans:
 | 1. Core Foundation | v1.0 | 5/5 | Complete | 2026-03-06 |
 | 2. Lifecycle and Hooks | v1.0 | 3/3 | Complete | 2026-03-06 |
 | 3. Views and TUI | v1.0 | 2/2 | Complete | 2026-03-06 |
-| 4. Schema and Config Refactor | v1.1 | 0/3 | Not started | - |
+| 4. Schema and Config Refactor | v1.1 | 0/3 | Planned | - |
 | 5. Feature Completion | v1.1 | 0/2 | Not started | - |
 | 6. Documentation | v1.1 | 0/2 | Not started | - |
