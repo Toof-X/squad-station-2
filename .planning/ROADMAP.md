@@ -58,7 +58,10 @@ Plans:
   2. After install, `squad-station --version` works in a new shell without any additional PATH configuration
   3. The postinstall script downloads the binary that matches the current OS and CPU architecture
   4. `package.json` correctly declares `bin`, `version`, `repository`, and `engines` fields
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 08-01-PLAN.md — Create package.json, postinstall script, and JS bin wrapper
+- [ ] 08-02-PLAN.md — Local smoke test: npm pack, install from tarball, human verify
 
 ### Phase 9: Install Script and Docs
 **Goal**: A curl-based install alternative exists and README documents all ways to install and get started
@@ -82,6 +85,6 @@ Plans:
 | 4. Schema and Config Refactor | v1.1 | 3/3 | Complete | 2026-03-08 |
 | 5. Feature Completion | v1.1 | 2/2 | Complete | 2026-03-08 |
 | 6. Documentation | v1.1 | 2/2 | Complete | 2026-03-08 |
-| 7. CI/CD Pipeline | 1/1 | Complete   | 2026-03-08 | - |
-| 8. npm Package | v1.2 | 0/? | Not started | - |
+| 7. CI/CD Pipeline | v1.2 | 1/1 | Complete | 2026-03-08 |
+| 8. npm Package | v1.2 | 0/2 | Not started | - |
 | 9. Install Script and Docs | v1.2 | 0/? | Not started | - |
