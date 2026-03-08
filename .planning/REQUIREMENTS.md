@@ -1,69 +1,57 @@
 # Requirements: Squad Station
 
 **Defined:** 2026-03-08
-**Core Value:** Routing messages reliably between Orchestrator and agents — send task to right agent, receive completion signal, notify Orchestrator — all via stateless CLI commands, no daemon
+**Core Value:** Routing messages reliably between Orchestrator and agents — all via stateless CLI commands, no daemon
 
-## v1.1 Requirements
+## v1.2 Requirements
 
-Requirements for v1.1 Design Compliance milestone. Closes all 10 gaps vs `docs/SOLUTION-DESIGN.md`.
+Requirements for v1.2 Distribution milestone. Each maps to roadmap phases.
 
-### Config (CONF)
+### CI/CD
 
-- [x] **CONF-01**: User can configure project using `project: myapp` string format in squad.yml
-- [x] **CONF-02**: User can specify `model` and `description` for each agent and orchestrator in squad.yml
-- [x] **CONF-03**: squad.yml no longer requires `command` field (tool infers launch command)
-- [x] **CONF-04**: squad.yml and DB use `tool` field instead of `provider`
+- [ ] **CICD-01**: GitHub Actions workflow builds Rust binary for 4 targets: `darwin-arm64`, `darwin-x86_64`, `linux-arm64`, `linux-x86_64`
+- [ ] **CICD-02**: Workflow triggers on git tag push (`v*`) and creates a GitHub Release
+- [ ] **CICD-03**: GitHub Release has 4 pre-built binary assets attached (one per target)
 
-### Messages Schema (MSGS)
+### npm Package
 
-- [x] **MSGS-01**: System tracks message direction with `from_agent` and `to_agent` fields
-- [x] **MSGS-02**: System records message type (task_request | task_completed | notify)
-- [x] **MSGS-03**: System supports `processing` status alongside completed/failed
-- [x] **MSGS-04**: System records `completed_at` timestamp when message finishes
+- [ ] **NPM-01**: `npm install -g squad-station` installs the binary globally
+- [ ] **NPM-02**: Postinstall script detects OS + CPU architecture and downloads the correct binary from GitHub Releases
+- [ ] **NPM-03**: Binary is placed in the npm bin directory and is executable without extra steps
+- [ ] **NPM-04**: `package.json` is correctly configured (`bin`, `version`, `repository`, `engines`)
 
-### Agents Schema (AGNT)
+### Install Script
 
-- [x] **AGNT-01**: System stores `model` and `description` for each registered agent
-- [x] **AGNT-02**: System tracks `current_task` FK linking agent to active message
-- [x] **AGNT-03**: Agent records use `tool` field instead of `provider`
+- [ ] **INST-01**: `curl -fsSL https://... | sh` installs the binary to `/usr/local/bin` (or `~/.local/bin` fallback)
+- [ ] **INST-02**: Install script detects platform + arch, downloads correct binary from GitHub Releases
+- [ ] **INST-03**: Install script verifies download succeeded and binary is executable
 
-### Hooks (HOOK)
+### Documentation
 
-- [x] **HOOK-01**: User can register Notification hook for Claude Code
-- [x] **HOOK-02**: User can register Notification hook for Gemini CLI
+- [ ] **DOC-01**: README.md documents all installation methods (npm, curl, build from source)
+- [ ] **DOC-02**: README.md includes a quickstart — first steps after install (init, send, signal)
+- [ ] **DOC-03**: README.md includes project description, architecture overview, and link to PLAYBOOK.md
 
-### CLI (CLI)
+## Future Requirements
 
-- [x] **CLI-01**: User sends task via `send <agent> --body "task..."` flag syntax
-- [x] **CLI-02**: `init` auto-prefixes agent names as `<project>-<tool>-<role>`
-- [x] **CLI-03**: `context` output includes `model` and `description` per agent
+### Verification / Integrity
 
-### Signal (SIG)
+- **VER-01**: Install script verifies checksum of downloaded binary (SHA256)
+- **VER-02**: GitHub Release includes `checksums.txt` with SHA256 for all assets
 
-- [x] **SIG-01**: Signal notifications use format `"<agent> completed <msg-id>"`
+### Extended Distribution
 
-### Docs (DOCS)
-
-- [x] **DOCS-01**: `.planning/research/ARCHITECTURE.md` reflects current sqlx + flat module structure
-- [x] **DOCS-02**: `docs/PLAYBOOK.md` reflects correct CLI syntax and config format post-refactor
-
-## v2 Requirements
-
-Deferred to future milestone.
-
-- npm wrapper distribution
-- Cross-compile CI via GitHub Actions (darwin arm64/amd64, linux amd64/arm64)
-- Support `cargo install` from source
+- **DIST-01**: Homebrew formula for `brew install squad-station`
+- **DIST-02**: AUR package for Arch Linux users
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Task management / workflow logic | Orchestrator AI responsibility |
-| Web UI / browser dashboard | TUI sufficient |
-| Agent-to-agent direct messaging | All routing via orchestrator |
-| Git conflict resolution | Orchestrator sequences work |
-| Backward compatibility with v1.0 DB | Clean migration, no legacy support needed |
+| Windows support | tmux not available on Windows; out of scope by architecture |
+| Checksum verification | Good practice but adds complexity — defer to v1.3 |
+| Homebrew tap | Additional maintenance burden — defer to v1.3 |
+| Auto-update mechanism | Complexity not justified for v1.2 |
 
 ## Traceability
 
@@ -71,31 +59,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CONF-01 | Phase 4 | Complete |
-| CONF-02 | Phase 4 | Complete |
-| CONF-03 | Phase 4 | Complete |
-| CONF-04 | Phase 4 | Complete |
-| MSGS-01 | Phase 4 | Complete |
-| MSGS-02 | Phase 4 | Complete |
-| MSGS-03 | Phase 4 | Complete |
-| MSGS-04 | Phase 4 | Complete |
-| AGNT-01 | Phase 4 | Complete |
-| AGNT-02 | Phase 4 | Complete |
-| AGNT-03 | Phase 4 | Complete |
-| HOOK-01 | Phase 5 | Complete |
-| HOOK-02 | Phase 5 | Complete |
-| CLI-01 | Phase 5 | Complete |
-| CLI-02 | Phase 5 | Complete |
-| CLI-03 | Phase 5 | Complete |
-| SIG-01 | Phase 5 | Complete |
-| DOCS-01 | Phase 6 | Complete |
-| DOCS-02 | Phase 6 | Complete |
+| CICD-01 | — | Pending |
+| CICD-02 | — | Pending |
+| CICD-03 | — | Pending |
+| NPM-01 | — | Pending |
+| NPM-02 | — | Pending |
+| NPM-03 | — | Pending |
+| NPM-04 | — | Pending |
+| INST-01 | — | Pending |
+| INST-02 | — | Pending |
+| INST-03 | — | Pending |
+| DOC-01 | — | Pending |
+| DOC-02 | — | Pending |
+| DOC-03 | — | Pending |
 
 **Coverage:**
-- v1.1 requirements: 19 total
-- Mapped to phases: 19
-- Unmapped: 0 ✓
+- v1.2 requirements: 13 total
+- Mapped to phases: 0
+- Unmapped: 13 ⚠️
 
 ---
 *Requirements defined: 2026-03-08*
-*Last updated: 2026-03-08 after roadmap creation*
+*Last updated: 2026-03-08 after initial definition*
