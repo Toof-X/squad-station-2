@@ -194,8 +194,8 @@ async fn test_list_text_output_with_messages() {
     let pool = setup_file_db(&db_path).await;
 
     db::agents::insert_agent(&pool, "worker-1", "claude", "worker", "echo").await.unwrap();
-    db::messages::insert_message(&pool, "worker-1", "implement feature X", "normal").await.unwrap();
-    db::messages::insert_message(&pool, "worker-1", "fix bug Y", "high").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "worker-1", "task_request", "implement feature X", "normal").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "worker-1", "task_request", "fix bug Y", "high").await.unwrap();
 
     // Close the pool before running the binary (single-writer)
     pool.close().await;
@@ -229,7 +229,7 @@ async fn test_list_json_output() {
     let pool = setup_file_db(&db_path).await;
 
     db::agents::insert_agent(&pool, "worker-1", "claude", "worker", "echo").await.unwrap();
-    db::messages::insert_message(&pool, "worker-1", "test task", "urgent").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "worker-1", "task_request", "test task", "urgent").await.unwrap();
     pool.close().await;
 
     write_squad_yml(tmp.path(), &db_path);
@@ -250,7 +250,7 @@ async fn test_list_json_output() {
     assert_eq!(arr[0]["agent_name"], "worker-1");
     assert_eq!(arr[0]["task"], "test task");
     assert_eq!(arr[0]["priority"], "urgent");
-    assert_eq!(arr[0]["status"], "pending");
+    assert_eq!(arr[0]["status"], "processing");
 }
 
 #[tokio::test]
@@ -284,8 +284,8 @@ async fn test_list_filter_by_agent() {
 
     db::agents::insert_agent(&pool, "alpha", "claude", "worker", "echo").await.unwrap();
     db::agents::insert_agent(&pool, "beta", "claude", "worker", "echo").await.unwrap();
-    db::messages::insert_message(&pool, "alpha", "alpha task", "normal").await.unwrap();
-    db::messages::insert_message(&pool, "beta", "beta task", "normal").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "alpha", "task_request", "alpha task", "normal").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "beta", "task_request", "beta task", "normal").await.unwrap();
     pool.close().await;
 
     write_squad_yml(tmp.path(), &db_path);
@@ -312,8 +312,8 @@ async fn test_list_filter_by_status() {
     let pool = setup_file_db(&db_path).await;
 
     db::agents::insert_agent(&pool, "worker", "claude", "worker", "echo").await.unwrap();
-    db::messages::insert_message(&pool, "worker", "task 1", "normal").await.unwrap();
-    db::messages::insert_message(&pool, "worker", "task 2", "normal").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "worker", "task_request", "task 1", "normal").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "worker", "task_request", "task 2", "normal").await.unwrap();
     // Complete the most recent one
     db::messages::update_status(&pool, "worker").await.unwrap();
     pool.close().await;
@@ -343,7 +343,7 @@ async fn test_list_with_limit() {
 
     db::agents::insert_agent(&pool, "worker", "claude", "worker", "echo").await.unwrap();
     for i in 0..10u32 {
-        db::messages::insert_message(&pool, "worker", &format!("task {}", i), "normal")
+        db::messages::insert_message(&pool, "orchestrator", "worker", "task_request", &format!("task {}", i), "normal")
             .await
             .unwrap();
     }
@@ -376,7 +376,7 @@ async fn test_peek_text_with_pending_task() {
     let pool = setup_file_db(&db_path).await;
 
     db::agents::insert_agent(&pool, "worker-1", "claude", "worker", "echo").await.unwrap();
-    db::messages::insert_message(&pool, "worker-1", "do something important", "high")
+    db::messages::insert_message(&pool, "orchestrator", "worker-1", "task_request", "do something important", "high")
         .await
         .unwrap();
     pool.close().await;
@@ -402,7 +402,7 @@ async fn test_peek_json_with_pending_task() {
     let pool = setup_file_db(&db_path).await;
 
     db::agents::insert_agent(&pool, "worker-1", "claude", "worker", "echo").await.unwrap();
-    db::messages::insert_message(&pool, "worker-1", "json task", "urgent").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "worker-1", "task_request", "json task", "urgent").await.unwrap();
     pool.close().await;
 
     write_squad_yml(tmp.path(), &db_path);
@@ -419,7 +419,7 @@ async fn test_peek_json_with_pending_task() {
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("must be valid JSON");
     assert_eq!(parsed["task"], "json task");
     assert_eq!(parsed["priority"], "urgent");
-    assert_eq!(parsed["status"], "pending");
+    assert_eq!(parsed["status"], "processing");
     assert!(parsed["id"].is_string(), "must have id field");
 }
 
@@ -482,9 +482,9 @@ async fn test_peek_priority_ordering() {
     let pool = setup_file_db(&db_path).await;
 
     db::agents::insert_agent(&pool, "worker-1", "claude", "worker", "echo").await.unwrap();
-    db::messages::insert_message(&pool, "worker-1", "normal task", "normal").await.unwrap();
-    db::messages::insert_message(&pool, "worker-1", "high task", "high").await.unwrap();
-    db::messages::insert_message(&pool, "worker-1", "urgent task", "urgent").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "worker-1", "task_request", "normal task", "normal").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "worker-1", "task_request", "high task", "high").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "worker-1", "task_request", "urgent task", "urgent").await.unwrap();
     pool.close().await;
 
     write_squad_yml(tmp.path(), &db_path);
@@ -573,7 +573,7 @@ async fn test_signal_completes_message_and_resets_status() {
     let pool = helpers::setup_test_db().await;
 
     db::agents::insert_agent(&pool, "sig-agent", "claude", "worker", "echo").await.unwrap();
-    db::messages::insert_message(&pool, "sig-agent", "a task", "normal").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "sig-agent", "task_request", "a task", "normal").await.unwrap();
     db::agents::update_agent_status(&pool, "sig-agent", "busy").await.unwrap();
 
     // Signal: complete the message
@@ -599,18 +599,18 @@ async fn test_signal_multiple_messages_completes_most_recent() {
     let pool = helpers::setup_test_db().await;
 
     db::agents::insert_agent(&pool, "multi-agent", "claude", "worker", "echo").await.unwrap();
-    db::messages::insert_message(&pool, "multi-agent", "task 1", "normal").await.unwrap();
-    db::messages::insert_message(&pool, "multi-agent", "task 2", "normal").await.unwrap();
-    db::messages::insert_message(&pool, "multi-agent", "task 3", "normal").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "multi-agent", "task_request", "task 1", "normal").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "multi-agent", "task_request", "task 2", "normal").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "multi-agent", "task_request", "task 3", "normal").await.unwrap();
 
     // Signal once — should complete only 1 message
     let rows = db::messages::update_status(&pool, "multi-agent").await.unwrap();
     assert_eq!(rows, 1);
 
-    let pending = db::messages::list_messages(&pool, Some("multi-agent"), Some("pending"), 100)
+    let pending = db::messages::list_messages(&pool, Some("multi-agent"), Some("processing"), 100)
         .await
         .unwrap();
-    assert_eq!(pending.len(), 2, "2 messages should still be pending");
+    assert_eq!(pending.len(), 2, "2 messages should still be processing");
 
     let completed = db::messages::list_messages(&pool, Some("multi-agent"), Some("completed"), 100)
         .await
@@ -628,7 +628,7 @@ async fn test_signal_orchestrator_self_signal_guard() {
 
     // Register as orchestrator
     db::agents::insert_agent(&pool, "orch-test", "claude", "orchestrator", "echo").await.unwrap();
-    db::messages::insert_message(&pool, "orch-test", "orch task", "normal").await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "orch-test", "task_request", "orch task", "normal").await.unwrap();
     pool.close().await;
 
     write_squad_yml(tmp.path(), &db_path);
@@ -646,7 +646,7 @@ async fn test_signal_orchestrator_self_signal_guard() {
     );
     // The message should NOT have been completed (guard blocks signal)
     let pool2 = setup_file_db(&db_path).await;
-    let pending = db::messages::list_messages(&pool2, Some("orch-test"), Some("pending"), 10)
+    let pending = db::messages::list_messages(&pool2, Some("orch-test"), Some("processing"), 10)
         .await
         .unwrap();
     assert_eq!(
@@ -788,7 +788,7 @@ async fn test_full_workflow_register_send_peek_signal() {
     assert_eq!(agent.unwrap().status, "idle");
 
     // 2. Send task (DB operations only, skip tmux)
-    let msg_id = db::messages::insert_message(&pool, "e2e-agent", "build the feature", "high")
+    let msg_id = db::messages::insert_message(&pool, "orchestrator", "e2e-agent", "task_request", "build the feature", "high")
         .await
         .unwrap();
     assert_eq!(msg_id.len(), 36); // UUID

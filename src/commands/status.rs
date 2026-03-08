@@ -48,7 +48,7 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
     // 5. Count pending messages per agent
     let mut summaries: Vec<AgentStatusSummary> = Vec::new();
     for agent in &agents {
-        let pending = db::messages::list_messages(&pool, Some(&agent.name), Some("pending"), 9999)
+        let pending = db::messages::list_messages(&pool, Some(&agent.name), Some("processing"), 9999)
             .await?
             .len();
         summaries.push(AgentStatusSummary {

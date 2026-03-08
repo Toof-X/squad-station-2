@@ -4,7 +4,8 @@ use sqlx::SqlitePool;
 pub struct Agent {
     pub id: String,
     pub name: String,
-    pub provider: String,
+    #[sqlx(rename = "tool")]
+    pub provider: String,  // DB column renamed to 'tool' in migration 0003; Rust field kept as 'provider' for compatibility until Plan 03
     pub role: String,
     pub command: String,
     pub created_at: String,
@@ -22,7 +23,7 @@ pub async fn insert_agent(
     let id = uuid::Uuid::new_v4().to_string();
     let created_at = chrono::Utc::now().to_rfc3339();
     sqlx::query(
-        "INSERT OR IGNORE INTO agents (id, name, provider, role, command, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+        "INSERT OR IGNORE INTO agents (id, name, tool, role, command, created_at) VALUES (?, ?, ?, ?, ?, ?)"
     )
     .bind(id)
     .bind(name)

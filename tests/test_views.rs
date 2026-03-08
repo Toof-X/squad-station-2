@@ -160,14 +160,14 @@ async fn test_status_text_output() {
 
     // Insert agents
     sqlx::query(
-        "INSERT INTO agents (id, name, provider, role, command, status, status_updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO agents (id, name, tool, role, command, status, status_updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind("id-1").bind("agent-alpha").bind("claude-code").bind("worker")
     .bind("echo alpha").bind("idle").bind("2026-03-06T00:00:00Z").bind("2026-03-06T00:00:00Z")
     .execute(&pool).await.expect("insert agent-alpha");
 
     sqlx::query(
-        "INSERT INTO agents (id, name, provider, role, command, status, status_updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO agents (id, name, tool, role, command, status, status_updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind("id-2").bind("agent-beta").bind("gemini-cli").bind("worker")
     .bind("echo beta").bind("dead").bind("2026-03-06T00:00:00Z").bind("2026-03-06T00:00:00Z")
@@ -199,7 +199,7 @@ async fn test_status_json_output() {
     let pool = setup_file_db(&db_path).await;
 
     sqlx::query(
-        "INSERT INTO agents (id, name, provider, role, command, status, status_updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO agents (id, name, tool, role, command, status, status_updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind("id-1").bind("agent-alpha").bind("claude-code").bind("worker")
     .bind("echo alpha").bind("idle").bind("2026-03-06T00:00:00Z").bind("2026-03-06T00:00:00Z")
@@ -238,7 +238,7 @@ async fn test_status_pending_count() {
     let pool = setup_file_db(&db_path).await;
 
     sqlx::query(
-        "INSERT INTO agents (id, name, provider, role, command, status, status_updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO agents (id, name, tool, role, command, status, status_updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind("id-1").bind("agent-alpha").bind("claude-code").bind("worker")
     .bind("echo alpha").bind("idle").bind("2026-03-06T00:00:00Z").bind("2026-03-06T00:00:00Z")
@@ -246,7 +246,7 @@ async fn test_status_pending_count() {
 
     // Insert 3 pending messages
     for i in 0..3u32 {
-        db::messages::insert_message(&pool, "agent-alpha", &format!("task {}", i), "normal")
+        db::messages::insert_message(&pool, "orchestrator", "agent-alpha", "task_request", &format!("task {}", i), "normal")
             .await
             .expect("insert message");
     }
@@ -309,7 +309,7 @@ async fn test_view_no_live_sessions() {
     let pool = setup_file_db(&db_path).await;
 
     sqlx::query(
-        "INSERT INTO agents (id, name, provider, role, command, status, status_updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO agents (id, name, tool, role, command, status, status_updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind("id-1").bind("agent-alpha").bind("claude-code").bind("worker")
     .bind("echo alpha").bind("idle").bind("2026-03-06T00:00:00Z").bind("2026-03-06T00:00:00Z")

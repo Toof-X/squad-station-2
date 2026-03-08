@@ -29,7 +29,7 @@ pub async fn run(agent: String, task: String, priority: cli::Priority, json: boo
 
     // 5. Write message to DB with priority
     let priority_str = priority.to_string();
-    let msg_id = db::messages::insert_message(&pool, &agent, &task, &priority_str).await?;
+    let msg_id = db::messages::insert_message(&pool, "orchestrator", &agent, "task_request", &task, &priority_str).await?;
 
     // 5b. Mark agent as busy now that a task has been sent
     db::agents::update_agent_status(&pool, &agent, "busy").await?;
