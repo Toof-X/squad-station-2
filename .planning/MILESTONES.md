@@ -1,5 +1,23 @@
 # Milestones
 
+## v1.1 Design Compliance (Shipped: 2026-03-08)
+
+**Phases:** 4-6 | **Plans:** 7 | **Files changed:** 47
+**Lines of code:** 4,367 Rust (+6,302 / -828) | **Timeline:** 1 day (2026-03-08)
+**Git range:** feat(04-01) config refactor → feat(06-02) PLAYBOOK rewrite
+
+**Key accomplishments:**
+- Refactored `squad.yml` config: `project` as string, `model`/`description` per agent, removed `command`, renamed `provider`→`tool`
+- Bidirectional messages schema: `from_agent`/`to_agent`, `type` column, `processing` status, `completed_at` timestamp
+- Agents schema extended: `model`, `description`, `current_task` FK linking agent to active message
+- Notification hooks for Claude Code and Gemini CLI forwarding permission prompts to orchestrator
+- `send` CLI changed to `--body` flag; `init` auto-prefixes agent names as `<project>-<tool>-<role>`; signal format standardized to `"<agent> completed <msg-id>"`
+- ARCHITECTURE.md and PLAYBOOK.md rewritten to accurately document post-v1.1 codebase (19/19 requirements complete)
+
+**Archives:** [v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md) | [v1.1-REQUIREMENTS.md](milestones/v1.1-REQUIREMENTS.md)
+
+---
+
 ## v1.0 MVP (Shipped: 2026-03-06)
 
 **Phases:** 3 | **Plans:** 10 | **Tests:** 58

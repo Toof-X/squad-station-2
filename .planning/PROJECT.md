@@ -34,19 +34,20 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 - ✓ Agent list with status (`squad-station agents`) — v1.0
 - ✓ Provider hook scripts (Claude Code + Gemini CLI) — v1.0
 - ✓ Message list with filters (`squad-station list`) — v1.0
+- ✓ squad.yml config: `project` string, `model`/`description`, removed `command`, `provider`→`tool` — v1.1
+- ✓ Messages DB schema: `from_agent`/`to_agent`, `type`, `processing` status, `completed_at` — v1.1
+- ✓ Agents DB schema: `model`, `description`, `current_task` FK, `tool` field — v1.1
+- ✓ Notification hooks: `claude-code-notify.sh` + `gemini-cli-notify.sh` — v1.1
+- ✓ CLI `send --body` flag (positional arg removed) — v1.1
+- ✓ Agent naming auto-prefix `<project>-<tool>-<role>` on init — v1.1
+- ✓ `context` output includes `model` + `description` per agent — v1.1
+- ✓ Signal format standardized to `"<agent> completed <msg-id>"` — v1.1
+- ✓ ARCHITECTURE.md updated to reflect actual sqlx + flat module structure — v1.1
+- ✓ PLAYBOOK.md rewritten with correct CLI syntax and config format — v1.1
 
 ### Active
 
-- [ ] squad.yml config: `project` as string, `model`+`description` in AgentConfig, remove `command`, rename `provider`→`tool`
-- [ ] Messages DB schema: `from_agent`/`to_agent`, `type` column, `processing` status, `completed_at`
-- [ ] Agents DB schema: add `model`, `description`, `current_task` FK; rename `provider`→`tool`
-- [ ] Notification hooks: `claude-code-notify.sh` + `gemini-cli-notify.sh`
-- [ ] CLI `send` command: change positional arg to `--body` flag
-- [ ] Agent naming: auto-prefix `<project>-<tool>-<role>` on init
-- [ ] `context` command: include `model`+`description` in output
-- [ ] Signal format: standardize to `"<agent> completed <msg-id>"`
-- [ ] Update `.planning/research/ARCHITECTURE.md` to match reality
-- [ ] Rewrite `docs/PLAYBOOK.md` after code changes complete
+(None — planning next milestone)
 
 ### Out of Scope
 
@@ -60,11 +61,12 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ## Context
 
-Shipped v1.0 MVP with 2,994 LOC Rust, 58 tests, 0 failures.
+Shipped v1.1 Design Compliance with 4,367 LOC Rust (+1,373 from v1.0), 47 files changed.
 Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.26, serde-saphyr, owo-colors 3.
 Architecture: Stateless CLI → SQLite WAL → tmux sessions. No daemon, no background process.
-Hook system: provider-agnostic shell scripts detect completion via TMUX_PANE and delegate to binary.
-Agent liveness: reconciliation loop checks tmux session_exists per agent, updates dead/revive status.
+Hook system: 4 provider hooks (Stop/Notification for Claude Code, AfterAgent/Notification for Gemini CLI).
+Agent identity: auto-prefixed `<project>-<tool>-<role>` on init; stored as tmux session name.
+Messages: bidirectional routing (`from_agent`/`to_agent`), typed (`task_request`/`task_completed`/`notify`), `processing` lifecycle.
 TUI: connect-per-refresh strategy drops read-only pool after each fetch to prevent WAL starvation.
 
 ## Constraints
@@ -92,20 +94,12 @@ TUI: connect-per-refresh strategy drops read-only pool after each fetch to preve
 | INSERT OR IGNORE for agents | Idempotent registration, safe for duplicate hook fires | ✓ Good — MSG-03 satisfied cleanly |
 | connect-per-refresh in TUI | Prevents WAL checkpoint starvation during long TUI sessions | ✓ Good — WAL doesn't grow unbounded |
 | Reconciliation loop duplication | Each command file independent, ~10 lines not worth abstraction | ✓ Good — simple, no coupling |
-
-## Current Milestone: v1.1 Design Compliance
-
-**Goal:** Refactor codebase to match `docs/SOLUTION-DESIGN.md` exactly — close all 10 gaps identified in `docs/GAP-ANALYSIS.md`.
-
-**Target features:**
-- Fix config format (`project` string, `model`/`description`, remove `command`, `provider`→`tool`)
-- Migrate DB schema (bidirectional messages, agents with model/description/current_task)
-- Add notification hooks (Claude Code + Gemini CLI)
-- Change `send` CLI to `--body` flag
-- Enforce agent naming convention via auto-prefix
-- Update `context` output to include model/description
-- Standardize signal format to `"<agent> completed <msg-id>"`
-- Update all docs/planning files to match reality
+| `--body` flag for `send` | Named flags more discoverable and shell-safe than positional args | ✓ Good — cleaner UX, pattern-matchable |
+| Auto-prefix agent naming | Enforces `<project>-<tool>-<role>` convention without manual coordination | ✓ Good — avoids name collisions across projects |
+| `provider`→`tool` rename | Matches solution design terminology; aligns with squad.yml and DB | ✓ Good — consistent naming across all layers |
+| Notification hooks separate from Stop hooks | Notification fires on permission prompts, not task completion — distinct behavior | ✓ Good — both hook types needed |
+| Signal format `"<agent> completed <msg-id>"` | Pattern-matchable string, no JSON parsing needed in orchestrator | ✓ Good — simple, grep-friendly |
+| SQUAD_STATION_DB env var in resolve_db_path | Single injection point benefits all commands without per-command changes | ✓ Good — cleaner test isolation |
 
 ---
-*Last updated: 2026-03-08 after v1.1 milestone started*
+*Last updated: 2026-03-08 after v1.1 milestone*
