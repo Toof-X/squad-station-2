@@ -28,8 +28,8 @@ Requirements for v1.3: Antigravity & Hooks Optimization. Each maps to roadmap ph
 
 ### Safe Tmux Injection
 
-- [ ] **TMUX-01**: `tmux.rs` implements `load-buffer`/`paste-buffer` pattern for safe multiline injection via temp file + cleanup
-- [ ] **TMUX-02**: `send` command uses safe tmux adapter for all body content delivery (replaces direct `send-keys` for content)
+- [x] **TMUX-01**: `tmux.rs` implements `load-buffer`/`paste-buffer` pattern for safe multiline injection via temp file + cleanup
+- [x] **TMUX-02**: `send` command uses safe tmux adapter for all body content delivery (replaces direct `send-keys` for content)
 
 ### Documentation
 
@@ -102,8 +102,8 @@ Requirements for v1.3: Antigravity & Hooks Optimization. Each maps to roadmap ph
 | AGNT-04 | Phase 12 | Complete |
 | AGNT-05 | Phase 12 | Complete |
 | AGNT-06 | Phase 12 | Complete |
-| TMUX-01 | Phase 13 | Pending |
-| TMUX-02 | Phase 13 | Pending |
+| TMUX-01 | Phase 13 | Complete |
+| TMUX-02 | Phase 13 | Complete |
 | DOCS-01 | Phase 13 | Pending |
 | DOCS-02 | Phase 13 | Pending |
 | DOCS-03 | Phase 13 | Pending |
