@@ -3,13 +3,37 @@ use std::io::IsTerminal;
 
 use crate::{config, db, tmux};
 
-pub async fn run(agent: String, json: bool) -> anyhow::Result<()> {
-    // GUARD 1: Not in tmux -- silent exit 0 (HOOK-03)
-    // Cheapest check first: if TMUX_PANE is not set, we are not inside a tmux session.
+pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
+    // GUARD 1: Not in tmux and no explicit agent -- silent exit 0 (HOOK-03)
+    // Cheapest check first: if TMUX_PANE is not set and no agent arg, not in tmux context.
     // This catches invocations outside tmux (e.g. unit tests, CI, raw shell).
-    if std::env::var("TMUX_PANE").is_err() {
+    let tmux_pane = std::env::var("TMUX_PANE").ok();
+    if agent.is_none() && tmux_pane.is_none() {
         return Ok(());
     }
+
+    // GUARD 1b: resolve agent name from pane ID
+    // Two cases that require pane resolution:
+    //   a) agent is None → read $TMUX_PANE from env, resolve to session name
+    //   b) agent starts with "%" (pane ID passed as arg, e.g. signal $TMUX_PANE expands to signal %3)
+    let agent: String = match agent {
+        Some(name) if !name.starts_with('%') => name, // explicit session name — use as-is
+        Some(pane_id) => {
+            // pane ID provided as arg (e.g. %3 from $TMUX_PANE expansion)
+            match tmux::session_name_from_pane(&pane_id) {
+                Some(name) => name,
+                None => return Ok(()), // cannot determine session -- silent exit 0
+            }
+        }
+        None => {
+            // No agent arg -- read $TMUX_PANE (guaranteed Some by GUARD 1 above)
+            let pane = tmux_pane.unwrap();
+            match tmux::session_name_from_pane(&pane) {
+                Some(name) => name,
+                None => return Ok(()), // cannot determine session -- silent exit 0
+            }
+        }
+    };
 
     // GUARD 2: Config/DB connection -- warning to stderr + exit 0 on failure
     // Per locked decision: real errors go to stderr but NEVER fail the provider (exit 0 always).

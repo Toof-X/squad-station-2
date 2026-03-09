@@ -34,8 +34,8 @@ pub enum Commands {
     },
     /// Signal agent completion
     Signal {
-        /// Agent name
-        agent: String,
+        /// Agent name or tmux pane ID (e.g. %3). Omit to auto-detect from $TMUX_PANE.
+        agent: Option<String>,
     },
     /// List messages
     List {
