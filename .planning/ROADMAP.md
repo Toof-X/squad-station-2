@@ -122,4 +122,4 @@ Plans:
 | 10. Centralized Hooks | v1.3 | 2/2 | Complete | 2026-03-09 |
 | 11. Antigravity Provider Core | 2/2 | Complete    | 2026-03-09 | - |
 | 12. IDE Context & Hook Setup | 2/2 | Complete    | 2026-03-09 | - |
-| 13. Safe Injection & Documentation | 2/2 | Complete   | 2026-03-09 | - |
+| 13. Safe Injection & Documentation | 2/2 | Complete    | 2026-03-09 | - |
