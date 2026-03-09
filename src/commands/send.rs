@@ -54,8 +54,8 @@ pub async fn run(
     // 5c. Mark agent as busy now that a task has been sent
     db::agents::update_agent_status(&pool, &agent, "busy").await?;
 
-    // 6. Inject task into agent tmux session (literal send-keys, SAFE-02)
-    tmux::send_keys_literal(&agent, &body)?;
+    // 6. Inject task into agent tmux session via load-buffer/paste-buffer (TMUX-01, TMUX-02)
+    tmux::inject_body(&agent, &body)?;
 
     // 7. Output result
     if json {
