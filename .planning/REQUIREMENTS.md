@@ -22,9 +22,9 @@ Requirements for v1.3: Antigravity & Hooks Optimization. Each maps to roadmap ph
 
 ### IDE Context Generation
 
-- [ ] **AGNT-04**: `context.rs` generates `.agent/workflows/squad-delegate.md` for IDE orchestrators (delegation instructions + exact CLI commands)
-- [ ] **AGNT-05**: `context.rs` generates `.agent/workflows/squad-monitor.md` for IDE orchestrators (polling/monitoring with behavioral anti-context-decay rules)
-- [ ] **AGNT-06**: `context.rs` generates `.agent/workflows/squad-roster.md` for IDE orchestrators (agent list with names, models, descriptions)
+- [x] **AGNT-04**: `context.rs` generates `.agent/workflows/squad-delegate.md` for IDE orchestrators (delegation instructions + exact CLI commands)
+- [x] **AGNT-05**: `context.rs` generates `.agent/workflows/squad-monitor.md` for IDE orchestrators (polling/monitoring with behavioral anti-context-decay rules)
+- [x] **AGNT-06**: `context.rs` generates `.agent/workflows/squad-roster.md` for IDE orchestrators (agent list with names, models, descriptions)
 
 ### Safe Tmux Injection
 
@@ -99,9 +99,9 @@ Requirements for v1.3: Antigravity & Hooks Optimization. Each maps to roadmap ph
 | AGNT-01 | Phase 11 | Complete |
 | AGNT-02 | Phase 11 | Complete |
 | AGNT-03 | Phase 11 | Complete |
-| AGNT-04 | Phase 12 | Pending |
-| AGNT-05 | Phase 12 | Pending |
-| AGNT-06 | Phase 12 | Pending |
+| AGNT-04 | Phase 12 | Complete |
+| AGNT-05 | Phase 12 | Complete |
+| AGNT-06 | Phase 12 | Complete |
 | TMUX-01 | Phase 13 | Pending |
 | TMUX-02 | Phase 13 | Pending |
 | DOCS-01 | Phase 13 | Pending |

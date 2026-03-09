@@ -120,5 +120,5 @@ Plans:
 | 9. Install Script and Docs | v1.2 | 2/2 | Complete | 2026-03-09 |
 | 10. Centralized Hooks | v1.3 | 2/2 | Complete | 2026-03-09 |
 | 11. Antigravity Provider Core | 2/2 | Complete    | 2026-03-09 | - |
-| 12. IDE Context & Hook Setup | v1.3 | 0/2 | Not started | - |
+| 12. IDE Context & Hook Setup | 1/2 | In Progress|  | - |
 | 13. Safe Injection & Documentation | v1.3 | 0/? | Not started | - |
