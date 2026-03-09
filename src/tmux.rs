@@ -40,6 +40,16 @@ fn list_sessions_args() -> Vec<String> {
     ]
 }
 
+fn list_panes_args(pane_id: &str) -> Vec<String> {
+    vec![
+        "list-panes".into(),
+        "-t".into(),
+        pane_id.to_string(),
+        "-F".into(),
+        "#S".into(),
+    ]
+}
+
 fn kill_window_args(window_name: &str) -> Vec<String> {
     vec!["kill-window".into(), "-t".into(), window_name.to_string()]
 }
@@ -157,6 +167,22 @@ pub fn create_view_window(window_name: &str, sessions: &[String]) -> Result<()> 
     Ok(())
 }
 
+/// Resolve tmux session name from a pane ID (e.g. "%3" → "my-agent").
+/// Returns None if tmux is not running or pane ID is invalid.
+pub fn session_name_from_pane(pane_id: &str) -> Option<String> {
+    let args = list_panes_args(pane_id);
+    let output = Command::new("tmux").args(&args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+}
+
 /// Launch an agent in a new detached tmux session (SAFE-03)
 ///
 /// Passes the command directly to `new-session` to avoid shell readiness race conditions.
@@ -260,6 +286,23 @@ mod tests {
         assert_eq!(args[1], "-t");
         assert_eq!(args[2], "squad-view");
         assert_eq!(args[3], "tiled");
+    }
+
+    #[test]
+    fn test_list_panes_args() {
+        let args = list_panes_args("%3");
+        assert_eq!(args[0], "list-panes");
+        assert_eq!(args[1], "-t");
+        assert_eq!(args[2], "%3");
+        assert_eq!(args[3], "-F");
+        assert_eq!(args[4], "#S", "#S must not be escaped — plain tmux format string");
+    }
+
+    #[test]
+    fn test_list_panes_args_arbitrary_pane_id() {
+        let args = list_panes_args("%42");
+        assert_eq!(args[2], "%42");
+        assert_eq!(args[4], "#S");
     }
 
     #[test]
