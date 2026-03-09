@@ -126,7 +126,7 @@ fn write_squad_yml(dir: &std::path::Path, _db_file: &std::path::Path) {
     let yaml = r#"project: test-squad
 orchestrator:
   name: test-orch
-  tool: claude-code
+  provider: claude-code
   role: orchestrator
 agents: []
 "#;

@@ -20,12 +20,12 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
         .unwrap_or("orchestrator");
     let orch_name = format!(
         "{}-{}-{}",
-        config.project, config.orchestrator.tool, orch_role
+        config.project, config.orchestrator.provider, orch_role
     );
     db::agents::insert_agent(
         &pool,
         &orch_name,
-        &config.orchestrator.tool,
+        &config.orchestrator.provider,
         "orchestrator",
         config.orchestrator.model.as_deref(),
         config.orchestrator.description.as_deref(),
@@ -41,7 +41,8 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     } else if tmux::session_exists(&orch_name) {
         false
     } else {
-        tmux::launch_agent(&orch_name, &config.orchestrator.tool)?;
+        let cmd = get_launch_command(&config.orchestrator.provider);
+        tmux::launch_agent(&orch_name, cmd)?;
         true
     };
     let orch_skipped = !orch_launched && !config.orchestrator.is_db_only();
@@ -58,11 +59,11 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
 
     for agent in &config.agents {
         let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
-        let agent_name = format!("{}-{}-{}", config.project, agent.tool, role_suffix);
+        let agent_name = format!("{}-{}-{}", config.project, agent.provider, role_suffix);
         if let Err(e) = db::agents::insert_agent(
             &pool,
             &agent_name,
-            &agent.tool,
+            &agent.provider,
             &agent.role,
             agent.model.as_deref(),
             agent.description.as_deref(),
@@ -79,7 +80,8 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
             continue; // Idempotent: skip already-running agents
         }
 
-        match tmux::launch_agent(&agent_name, &agent.tool) {
+        let cmd = get_launch_command(&agent.provider);
+        match tmux::launch_agent(&agent_name, cmd) {
             Ok(()) => launched += 1,
             Err(e) => failed.push((agent_name.clone(), format!("{e:#}"))),
         }
@@ -123,83 +125,37 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     // 9. Hook setup: merge into settings.json or print instructions
     // In JSON mode, skip stdout instructions (to preserve machine-parseable output).
     if !json {
-        let providers: &[(&str, &str)] = &[
-            (".claude/settings.json", "Stop"),
-            (".gemini/settings.json", "AfterAgent"),
+        let providers: &[(&str, &str, &str)] = &[
+            (".claude/settings.json", "Stop", "*"),
+            (".claude/settings.json", "Notification", "permission_prompt"),
+            (".claude/settings.json", "Notification", "idle_prompt"),
+            (".gemini/settings.json", "AfterAgent", "*"),
+            (".gemini/settings.json", "Notification", "*"),
         ];
-        for &(settings_path, hook_event) in providers {
-            let path = std::path::Path::new(settings_path);
-            if path.exists() {
-                match merge_hook_entry(path, hook_event) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        // Graceful: warn but do not abort init
-                        eprintln!("  Warning: could not merge hook into {}: {}", settings_path, e);
-                        print_hook_instructions(settings_path, hook_event);
-                    }
-                }
-            } else {
-                print_hook_instructions(settings_path, hook_event);
-            }
+        for &(settings_path, hook_event, matcher) in providers {
+            print_hook_instructions(settings_path, hook_event, matcher);
         }
     }
 
     Ok(())
 }
 
-fn merge_hook_entry(path: &std::path::Path, event: &str) -> anyhow::Result<()> {
-    // 1. Backup
-    let bak = path.with_extension("json.bak");
-    std::fs::copy(path, &bak)?;
-
-    // 2. Parse (graceful fallback on malformed JSON)
-    let content = std::fs::read_to_string(path)?;
-    let mut root: serde_json::Value = serde_json::from_str(&content)
-        .unwrap_or_else(|_| serde_json::json!({}));
-
-    // 3. Ensure hooks object exists
-    if root.get("hooks").is_none() {
-        root["hooks"] = serde_json::json!({});
+fn get_launch_command(provider: &str) -> &str {
+    match provider {
+        "claude-code" => "claude",
+        "gemini-cli" => "gemini",
+        other => other,
     }
-
-    // 4. Ensure event array exists
-    if root["hooks"].get(event).is_none() {
-        root["hooks"][event] = serde_json::json!([]);
-    }
-
-    // 5. Append entry if not already present (dedup on "command" field)
-    let hook_cmd = "squad-station signal $TMUX_PANE";
-    let already_present = root["hooks"][event]
-        .as_array()
-        .map(|arr| {
-            arr.iter().any(|entry| {
-                entry.get("command").and_then(|c| c.as_str()) == Some(hook_cmd)
-            })
-        })
-        .unwrap_or(false);
-
-    if !already_present {
-        let entry = serde_json::json!({ "type": "command", "command": hook_cmd });
-        root["hooks"][event]
-            .as_array_mut()
-            .expect("ensured above")
-            .push(entry);
-    }
-
-    // 6. Write back (pretty-printed)
-    let output = serde_json::to_string_pretty(&root)? + "\n";
-    std::fs::write(path, output)?;
-    println!("  Updated {} (backup: {}.bak)", path.display(), path.display());
-    Ok(())
 }
 
-fn print_hook_instructions(settings_path: &str, event: &str) {
+
+fn print_hook_instructions(settings_path: &str, event: &str, matcher: &str) {
     println!(
-        "\nHook setup instructions for {}:\n\n  \
+        "\nHook setup instructions for {} (event: {}):\n\n  \
         Create the file with the following content, or add to your existing hooks:\n\n  \
         {{\n    \"hooks\": {{\n      \"{}\": [\n        \
-        {{ \"type\": \"command\", \"command\": \"squad-station signal $TMUX_PANE\" }}\n      \
+        {{ \"matcher\": \"{}\", \"hooks\": [ {{ \"type\": \"command\", \"command\": \"squad-station signal $(tmux display-message -p '#S')\" }} ] }}\n      \
         ]\n    }}\n  }}",
-        settings_path, event
+        settings_path, event, event, matcher
     );
 }

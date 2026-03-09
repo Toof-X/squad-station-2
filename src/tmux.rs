@@ -54,6 +54,10 @@ fn kill_window_args(window_name: &str) -> Vec<String> {
     vec!["kill-window".into(), "-t".into(), window_name.to_string()]
 }
 
+fn kill_session_args(session_name: &str) -> Vec<String> {
+    vec!["kill-session".into(), "-t".into(), session_name.to_string()]
+}
+
 fn new_window_args(window_name: &str, command: &str) -> Vec<String> {
     vec![
         "new-window".into(),
@@ -166,8 +170,8 @@ pub fn inject_body(target: &str, body: &str) -> Result<()> {
 pub fn session_exists(session_name: &str) -> bool {
     Command::new("tmux")
         .args(["has-session", "-t", session_name])
-        .status()
-        .map(|s| s.success())
+        .output()
+        .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
@@ -189,6 +193,14 @@ pub fn list_live_session_names() -> Vec<String> {
 pub fn kill_window(window_name: &str) -> Result<()> {
     let _ = Command::new("tmux")
         .args(kill_window_args(window_name))
+        .status();
+    Ok(())
+}
+
+/// Kill a tmux session by name (idempotent — ignores errors if session does not exist).
+pub fn kill_session(session_name: &str) -> Result<()> {
+    let _ = Command::new("tmux")
+        .args(kill_session_args(session_name))
         .status();
     Ok(())
 }
@@ -219,6 +231,44 @@ pub fn create_view_window(window_name: &str, sessions: &[String]) -> Result<()> 
     // Apply tiled layout
     Command::new("tmux")
         .args(select_layout_args(window_name, "tiled"))
+        .status()?;
+
+    Ok(())
+}
+
+/// Create a dedicated monitor session with tiled panes, one per agent session.
+///
+/// Each pane runs `sh -c 'TMUX= tmux attach-session -t <agent>'` to bypass the
+/// nested-tmux restriction ($TMUX set in the calling environment).
+/// The session is named `squad-monitor-<project>` to avoid conflicts across projects.
+pub fn create_view_session(session_name: &str, agent_sessions: &[String]) -> Result<()> {
+    if agent_sessions.is_empty() {
+        return Ok(());
+    }
+
+    // First pane: create a new detached session attaching to the first agent
+    let first_cmd = format!(
+        "sh -c 'TMUX= tmux attach-session -t {}'",
+        agent_sessions[0]
+    );
+    let status = Command::new("tmux")
+        .args(launch_args(session_name, &first_cmd))
+        .status()?;
+    if !status.success() {
+        bail!("tmux new-session failed for monitor session: {}", session_name);
+    }
+
+    // Remaining panes: split-window within the new session
+    for agent in agent_sessions.iter().skip(1) {
+        let cmd = format!("sh -c 'TMUX= tmux attach-session -t {}'", agent);
+        Command::new("tmux")
+            .args(split_window_args(session_name, &cmd))
+            .status()?;
+    }
+
+    // Apply tiled layout
+    Command::new("tmux")
+        .args(select_layout_args(session_name, "tiled"))
         .status()?;
 
     Ok(())

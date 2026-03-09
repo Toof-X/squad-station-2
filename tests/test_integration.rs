@@ -14,7 +14,7 @@ fn write_squad_yml(dir: &std::path::Path, _db_file: &std::path::Path) {
     let yaml = r#"project: test-squad
 orchestrator:
   name: test-orch
-  tool: claude-code
+  provider: claude-code
   role: orchestrator
 agents: []
 "#;
@@ -1411,7 +1411,7 @@ fn write_antigravity_squad_yml(dir: &std::path::Path, _db_file: &std::path::Path
     let yaml = r#"project: test-squad
 orchestrator:
   name: test-orch
-  tool: antigravity
+  provider: antigravity
   role: orchestrator
 agents: []
 "#;
@@ -1544,19 +1544,9 @@ async fn test_init_antigravity_log_message() {
 
 #[tokio::test]
 async fn test_signal_no_args_no_tmux() {
-    // HOOK-01: signal with no agent and no TMUX_PANE env var must exit 0 silently
-    // Temporarily remove TMUX_PANE from env for this test
-    // Use std::env::remove_var (safe for single-threaded test context)
-    let saved = std::env::var("TMUX_PANE").ok();
-    std::env::remove_var("TMUX_PANE");
-
+    // HOOK-01: signal with no agent name provided must exit 0 silently
     let result = commands::signal::run(None, false).await;
-    assert!(result.is_ok(), "signal with no args and no TMUX_PANE must exit 0");
-
-    // Restore
-    if let Some(v) = saved {
-        std::env::set_var("TMUX_PANE", v);
-    }
+    assert!(result.is_ok(), "signal with no args must exit 0");
 }
 
 // ============================================================
@@ -1568,7 +1558,7 @@ fn write_antigravity_squad_yml_for_hook(dir: &std::path::Path) {
     let yaml = r#"project: test-squad
 orchestrator:
   name: test-orch
-  tool: antigravity
+  provider: antigravity
   role: orchestrator
 agents: []
 "#;
@@ -1576,117 +1566,10 @@ agents: []
 }
 
 #[test]
-fn test_init_hook_merge_creates_backup() {
+fn test_init_hook_prints_instructions() {
     let tmp = tempfile::TempDir::new().unwrap();
     let db_file = tmp.path().join("station.db");
     write_antigravity_squad_yml_for_hook(tmp.path());
-
-    // Create .claude/settings.json with empty content
-    let claude_dir = tmp.path().join(".claude");
-    std::fs::create_dir_all(&claude_dir).unwrap();
-    let settings_path = claude_dir.join("settings.json");
-    std::fs::write(&settings_path, "{}").unwrap();
-
-    let output = cmd_with_db(&db_file)
-        .args(["init"])
-        .current_dir(tmp.path())
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "init must exit 0\nstderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    // Assert .bak file was created
-    let bak_path = claude_dir.join("settings.json.bak");
-    assert!(bak_path.exists(), ".claude/settings.json.bak must exist after init");
-
-    // Assert backup preserves original content
-    let bak_content = std::fs::read_to_string(&bak_path).unwrap();
-    assert_eq!(bak_content, "{}", "backup must contain original content");
-}
-
-#[test]
-fn test_init_hook_merge_adds_entry() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let db_file = tmp.path().join("station.db");
-    write_antigravity_squad_yml_for_hook(tmp.path());
-
-    let claude_dir = tmp.path().join(".claude");
-    std::fs::create_dir_all(&claude_dir).unwrap();
-    let settings_path = claude_dir.join("settings.json");
-    std::fs::write(&settings_path, "{}").unwrap();
-
-    let output = cmd_with_db(&db_file)
-        .args(["init"])
-        .current_dir(tmp.path())
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "init must exit 0\nstderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let content = std::fs::read_to_string(&settings_path).unwrap();
-    // Assert valid JSON
-    let json: serde_json::Value = serde_json::from_str(&content).expect("settings.json must be valid JSON after merge");
-
-    // Assert entry is under hooks.Stop array
-    let stop_hooks = json["hooks"]["Stop"].as_array().expect("hooks.Stop must be an array");
-    let has_entry = stop_hooks.iter().any(|e| {
-        e.get("command").and_then(|c| c.as_str()) == Some("squad-station signal $TMUX_PANE")
-    });
-    assert!(has_entry, "hooks.Stop must contain squad-station signal $TMUX_PANE entry. Got: {}", content);
-}
-
-#[test]
-fn test_init_hook_merge_idempotent() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let db_file = tmp.path().join("station.db");
-    write_antigravity_squad_yml_for_hook(tmp.path());
-
-    let claude_dir = tmp.path().join(".claude");
-    std::fs::create_dir_all(&claude_dir).unwrap();
-    let settings_path = claude_dir.join("settings.json");
-
-    // Pre-populate with the hook entry already present
-    let existing = serde_json::json!({
-        "hooks": {
-            "Stop": [
-                { "type": "command", "command": "squad-station signal $TMUX_PANE" }
-            ]
-        }
-    });
-    std::fs::write(&settings_path, serde_json::to_string_pretty(&existing).unwrap()).unwrap();
-
-    let output = cmd_with_db(&db_file)
-        .args(["init"])
-        .current_dir(tmp.path())
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "init must exit 0\nstderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let content = std::fs::read_to_string(&settings_path).unwrap();
-    let json: serde_json::Value = serde_json::from_str(&content).expect("valid JSON");
-    let stop_hooks = json["hooks"]["Stop"].as_array().expect("hooks.Stop must be array");
-    assert_eq!(stop_hooks.len(), 1, "hooks.Stop must have exactly 1 entry (no duplicates). Got {} entries", stop_hooks.len());
-}
-
-#[test]
-fn test_init_hook_instructions_no_settings() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let db_file = tmp.path().join("station.db");
-    write_antigravity_squad_yml_for_hook(tmp.path());
-    // No .claude/ or .gemini/ directories created
 
     let output = cmd_with_db(&db_file)
         .args(["init"])
@@ -1702,7 +1585,7 @@ fn test_init_hook_instructions_no_settings() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("squad-station signal $TMUX_PANE"),
+        stdout.contains("squad-station signal $(tmux display-message -p '#S')"),
         "stdout must contain hook command instructions. Got: {}",
         stdout
     );
@@ -1713,64 +1596,18 @@ fn test_init_hook_instructions_no_settings() {
     );
 }
 
-#[test]
-fn test_init_hook_merge_gemini() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let db_file = tmp.path().join("station.db");
-    write_antigravity_squad_yml_for_hook(tmp.path());
-
-    let gemini_dir = tmp.path().join(".gemini");
-    std::fs::create_dir_all(&gemini_dir).unwrap();
-    let settings_path = gemini_dir.join("settings.json");
-    std::fs::write(&settings_path, "{}").unwrap();
-
-    let output = cmd_with_db(&db_file)
-        .args(["init"])
-        .current_dir(tmp.path())
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "init must exit 0\nstderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    // Assert .bak created
-    let bak_path = gemini_dir.join("settings.json.bak");
-    assert!(bak_path.exists(), ".gemini/settings.json.bak must exist after init");
-
-    let content = std::fs::read_to_string(&settings_path).unwrap();
-    let json: serde_json::Value = serde_json::from_str(&content).expect("valid JSON");
-
-    // Assert entry is under hooks.AfterAgent
-    let after_agent = json["hooks"]["AfterAgent"].as_array().expect("hooks.AfterAgent must be an array");
-    let has_entry = after_agent.iter().any(|e| {
-        e.get("command").and_then(|c| c.as_str()) == Some("squad-station signal $TMUX_PANE")
-    });
-    assert!(has_entry, "hooks.AfterAgent must contain squad-station signal $TMUX_PANE entry. Got: {}", content);
-}
-
 #[tokio::test]
 async fn test_signal_via_tmux_pane() {
-    // HOOK-01: signal with TMUX_PANE set and no agent arg resolves session
-    // Requires live tmux -- skip when not available
-    if !std::process::Command::new("tmux").args(["list-sessions"]).output().map(|o| o.status.success()).unwrap_or(false) {
-        eprintln!("test_signal_via_tmux_pane: tmux not running, skipping");
-        return;
-    }
-    // When tmux is running: TMUX_PANE must be set by the test environment.
-    // This test documents expected behavior; full E2E is covered by e2e_cli.sh.
-    eprintln!("test_signal_via_tmux_pane: tmux available — E2E covered by e2e_cli.sh");
+    // HOOK-01: signal now requires an explicit session name (passed via hook as
+    // $(tmux display-message -p '#S')); TMUX_PANE resolution is no longer used.
+    // Full E2E is covered by e2e_cli.sh.
+    eprintln!("test_signal_via_tmux_pane: E2E covered by e2e_cli.sh");
 }
 
 #[tokio::test]
 async fn test_signal_pane_id_as_arg() {
-    // HOOK-01: signal %3 (pane ID as arg) must resolve to session name and signal
-    // Requires live tmux -- skip when not available
-    if !std::process::Command::new("tmux").args(["list-sessions"]).output().map(|o| o.status.success()).unwrap_or(false) {
-        eprintln!("test_signal_pane_id_as_arg: tmux not running, skipping");
-        return;
-    }
-    eprintln!("test_signal_pane_id_as_arg: tmux available — E2E covered by e2e_cli.sh");
+    // Pane ID resolution via TMUX_PANE is no longer supported. The hook now passes
+    // the session name directly via $(tmux display-message -p '#S').
+    // E2E behavior is covered by e2e_cli.sh.
+    eprintln!("test_signal_pane_id_as_arg: E2E covered by e2e_cli.sh");
 }

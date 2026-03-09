@@ -30,19 +30,24 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
 
     let n = live_agent_names.len();
 
-    // 5. Kill existing squad-view window (idempotent)
-    tmux::kill_window("squad-view")?;
+    // 5. Kill existing monitor session for this project (idempotent)
+    let monitor_session = format!("squad-monitor-{}", config.project);
+    tmux::kill_session(&monitor_session)?;
 
-    // 6. Create new tiled view window
-    tmux::create_view_window("squad-view", &live_agent_names)?;
+    // 6. Create new monitor session with tiled panes (TMUX= unset per pane to allow nested attach)
+    tmux::create_view_session(&monitor_session, &live_agent_names)?;
 
     if json {
         println!(
-            r#"{{"message":"Created squad-view with {} panes","panes":{}}}"#,
-            n, n
+            r#"{{"message":"Created {} with {} panes","session":"{}","panes":{}}}"#,
+            monitor_session, n, monitor_session, n
         );
     } else {
-        println!("Created squad-view with {} panes", n);
+        println!(
+            "Created monitor session '{}' with {} pane(s)",
+            monitor_session, n
+        );
+        println!("Attach with: tmux attach -t {}", monitor_session);
     }
 
     Ok(())

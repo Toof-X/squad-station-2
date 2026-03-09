@@ -13,11 +13,11 @@ fn test_config_parse_valid_yaml() {
 project: test-squad
 orchestrator:
   name: test-orchestrator
-  tool: claude-code
+  provider: claude-code
   role: orchestrator
 agents:
   - name: frontend
-    tool: claude-code
+    provider: claude-code
     role: worker
 "#;
 
@@ -27,7 +27,7 @@ agents:
         config.orchestrator.name.as_deref(),
         Some("test-orchestrator")
     );
-    assert_eq!(config.orchestrator.tool, "claude-code");
+    assert_eq!(config.orchestrator.provider, "claude-code");
     assert_eq!(config.agents.len(), 1);
     assert_eq!(config.agents[0].name.as_deref(), Some("frontend"));
     assert_eq!(config.agents[0].role, "worker");
@@ -39,24 +39,24 @@ fn test_config_parse_multiple_agents() {
 project: multi-squad
 orchestrator:
   name: orch
-  tool: claude-code
+  provider: claude-code
   role: orchestrator
 agents:
   - name: frontend
-    tool: claude-code
+    provider: claude-code
     role: worker
   - name: backend
-    tool: gemini
+    provider: gemini-cli
     role: worker
   - name: reviewer
-    tool: claude-code
+    provider: claude-code
     role: worker
 "#;
 
     let config: SquadConfig = serde_saphyr::from_str(yaml).unwrap();
     assert_eq!(config.project, "multi-squad");
     assert_eq!(config.agents.len(), 3);
-    assert_eq!(config.agents[1].tool, "gemini");
+    assert_eq!(config.agents[1].provider, "gemini-cli");
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn test_config_parse_missing_required_field_returns_error() {
 project: broken-squad
 agents:
   - name: worker
-    tool: claude-code
+    provider: claude-code
     role: worker
 "#;
 
@@ -87,7 +87,7 @@ fn test_db_path_resolution_default() {
 project: my-project
 orchestrator:
   name: orch
-  tool: claude-code
+  provider: claude-code
   role: orchestrator
 agents: []
 "#;
