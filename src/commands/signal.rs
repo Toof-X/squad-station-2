@@ -99,9 +99,12 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
         if let Some(orch) = orchestrator {
             let task_id_str = task_id.as_deref().unwrap_or("unknown");
             let notification = format!("{} completed {}", agent, task_id_str);
-            // Only notify if orchestrator tmux session is running.
-            // If session is down, signal is persisted in DB — not an error (per user decision).
-            if tmux::session_exists(&orch.name) {
+            if orch.tool == "antigravity" {
+                // DB-only orchestrator: polls DB for completions, no push notification needed.
+                false
+            } else if tmux::session_exists(&orch.name) {
+                // Only notify if orchestrator tmux session is running.
+                // If session is down, signal is persisted in DB — not an error (per user decision).
                 tmux::send_keys_literal(&orch.name, &notification)?;
                 true
             } else {

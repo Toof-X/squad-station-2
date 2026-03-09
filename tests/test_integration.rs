@@ -1127,6 +1127,75 @@ async fn test_full_workflow_register_send_peek_signal() {
 }
 
 // ============================================================
+// Antigravity provider integration tests (AGNT-02 / AGNT-03)
+// ============================================================
+
+fn write_antigravity_squad_yml(dir: &std::path::Path, _db_file: &std::path::Path) {
+    let yaml = r#"project: test-squad
+orchestrator:
+  name: test-orch
+  tool: antigravity
+  role: orchestrator
+agents: []
+"#;
+    std::fs::write(dir.join("squad.yml"), yaml).expect("failed to write squad.yml");
+}
+
+#[tokio::test]
+async fn test_signal_antigravity_orchestrator_db_only() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let db_file = tmp.path().join("station.db");
+    write_antigravity_squad_yml(tmp.path(), &db_file);
+    // Register orchestrator and a worker agent in DB directly
+    let pool = setup_file_db(&db_file).await;
+    db::agents::insert_agent(&pool, "test-squad-antigravity-test-orch", "antigravity", "orchestrator", None, None).await.unwrap();
+    db::agents::insert_agent(&pool, "test-squad-claude-code-worker", "claude-code", "worker", None, None).await.unwrap();
+    // Send a task to the worker
+    db::messages::insert_message(&pool, "orchestrator", "test-squad-claude-code-worker", "task_request", "test task", "normal").await.unwrap();
+    pool.close().await;
+    // Signal the worker
+    let output = cmd_with_db(&db_file)
+        .args(["signal", "test-squad-claude-code-worker", "--json"])
+        .env("TMUX_PANE", "%0")
+        .current_dir(tmp.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "signal must exit 0: {:?}", output);
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["signaled"], true);
+    assert_eq!(json["orchestrator_notified"], false, "antigravity orch must NOT be notified via tmux");
+}
+
+#[tokio::test]
+async fn test_signal_antigravity_message_completed() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let db_file = tmp.path().join("station.db");
+    write_antigravity_squad_yml(tmp.path(), &db_file);
+    let pool = setup_file_db(&db_file).await;
+    db::agents::insert_agent(&pool, "test-squad-antigravity-test-orch", "antigravity", "orchestrator", None, None).await.unwrap();
+    db::agents::insert_agent(&pool, "test-squad-claude-code-worker", "claude-code", "worker", None, None).await.unwrap();
+    db::messages::insert_message(&pool, "orchestrator", "test-squad-claude-code-worker", "task_request", "do work", "normal").await.unwrap();
+    pool.close().await;
+    let output = cmd_with_db(&db_file)
+        .args(["signal", "test-squad-claude-code-worker"])
+        .env("TMUX_PANE", "%0")
+        .current_dir(tmp.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    // Verify DB state: message completed, agent idle
+    let pool2 = setup_file_db(&db_file).await;
+    let msg: (String,) = sqlx::query_as("SELECT status FROM messages WHERE agent_name = ? ORDER BY created_at DESC LIMIT 1")
+        .bind("test-squad-claude-code-worker")
+        .fetch_one(&pool2).await.unwrap();
+    assert_eq!(msg.0, "completed");
+    let agent: (String,) = sqlx::query_as("SELECT status FROM agents WHERE name = ?")
+        .bind("test-squad-claude-code-worker")
+        .fetch_one(&pool2).await.unwrap();
+    assert_eq!(agent.0, "idle");
+}
+
+// ============================================================
 // HOOK-01: signal auto-detection tests
 // ============================================================
 
