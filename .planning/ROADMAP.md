@@ -55,10 +55,11 @@
   1. Running `squad-station signal` inside a provider hook (with `$TMUX_PANE` set) correctly identifies and signals the agent without any additional arguments
   2. The inline hook command `squad-station signal $TMUX_PANE` can be placed directly in `settings.json` Stop/AfterAgent hooks with no wrapper script
   3. Existing `hooks/claude-code.sh` and `hooks/gemini-cli.sh` have deprecation notices in their file headers
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 10-01: TBD
+- [ ] 10-01-PLAN.md — Make `signal` agent arg optional with pane-to-session resolution (HOOK-01)
+- [ ] 10-02-PLAN.md — Add deprecation headers to hook shell scripts (HOOK-02)
 
 ### Phase 11: Antigravity Provider Core
 **Goal**: Antigravity IDE orchestrator is a recognized provider that gets DB-only operations (no tmux interaction)
@@ -115,7 +116,7 @@ Plans:
 | 7. CI/CD Pipeline | v1.2 | 1/1 | Complete | 2026-03-08 |
 | 8. npm Package | v1.2 | 2/2 | Complete | 2026-03-08 |
 | 9. Install Script and Docs | v1.2 | 2/2 | Complete | 2026-03-09 |
-| 10. Centralized Hooks | v1.3 | 0/? | Not started | - |
+| 10. Centralized Hooks | v1.3 | 0/2 | In progress | - |
 | 11. Antigravity Provider Core | v1.3 | 0/? | Not started | - |
 | 12. IDE Context & Hook Setup | v1.3 | 0/? | Not started | - |
 | 13. Safe Injection & Documentation | v1.3 | 0/? | Not started | - |
