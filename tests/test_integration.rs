@@ -1196,6 +1196,72 @@ async fn test_signal_antigravity_message_completed() {
 }
 
 // ============================================================
+// AGNT-03: init skips tmux launch for antigravity orchestrator
+// ============================================================
+
+#[tokio::test]
+async fn test_init_antigravity_orchestrator_skips_tmux() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let db_file = tmp.path().join("station.db");
+    write_antigravity_squad_yml(tmp.path(), &db_file);
+    let output = cmd_with_db(&db_file)
+        .args(["init", "--json"])
+        .current_dir(tmp.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "init must exit 0: {:?}\nstderr: {}", output, String::from_utf8_lossy(&output.stderr));
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    // Orchestrator is db-only: launched count for total init must be 0 (no tmux sessions)
+    assert_eq!(json["launched"], 0, "no tmux sessions launched for antigravity-only squad");
+    assert_eq!(json["failed"], serde_json::json!([]), "no failures");
+}
+
+#[tokio::test]
+async fn test_init_antigravity_registers_in_db() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let db_file = tmp.path().join("station.db");
+    write_antigravity_squad_yml(tmp.path(), &db_file);
+    let output = cmd_with_db(&db_file)
+        .args(["init"])
+        .current_dir(tmp.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "init must exit 0: {:?}\nstderr: {}", output, String::from_utf8_lossy(&output.stderr));
+    // Orchestrator must be in DB even though no tmux session created
+    let pool = setup_file_db(&db_file).await;
+    let rec: Option<(String, String)> = sqlx::query_as(
+        "SELECT tool, role FROM agents WHERE name = 'test-squad-antigravity-test-orch'"
+    )
+    .fetch_optional(&pool).await.unwrap();
+    assert!(rec.is_some(), "orchestrator must be registered in DB");
+    let (tool, role) = rec.unwrap();
+    assert_eq!(tool, "antigravity");
+    assert_eq!(role, "orchestrator");
+}
+
+#[tokio::test]
+async fn test_init_antigravity_log_message() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let db_file = tmp.path().join("station.db");
+    write_antigravity_squad_yml(tmp.path(), &db_file);
+    let output = cmd_with_db(&db_file)
+        .args(["init"])
+        .current_dir(tmp.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "init must exit 0: {:?}\nstderr: {}", output, String::from_utf8_lossy(&output.stderr));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("db-only"),
+        "stdout must contain 'db-only' to explain DB-only registration. Got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("already running"),
+        "db-only message must be distinct from already-running message. Got: {stdout}"
+    );
+}
+
+// ============================================================
 // HOOK-01: signal auto-detection tests
 // ============================================================
 

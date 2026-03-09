@@ -32,14 +32,19 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     )
     .await?;
 
-    // 5. Launch orchestrator tmux session (if not already running)
-    let orch_launched = if tmux::session_exists(&orch_name) {
+    // 5. Launch orchestrator tmux session (or skip if db-only provider)
+    let mut db_only_names: Vec<String> = vec![];
+    let orch_launched = if config.orchestrator.is_db_only() {
+        // Antigravity: DB-only orchestrator — register to DB only, no tmux session.
+        db_only_names.push(orch_name.clone());
+        false
+    } else if tmux::session_exists(&orch_name) {
         false
     } else {
         tmux::launch_agent(&orch_name, &config.orchestrator.tool)?;
         true
     };
-    let orch_skipped = !orch_launched;
+    let orch_skipped = !orch_launched && !config.orchestrator.is_db_only();
 
     // 6. Register and launch each worker agent — continue on partial failure
     let mut failed: Vec<(String, String)> = vec![];
@@ -99,6 +104,9 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
         for name in &skipped_names {
             println!("  - {}: already running (skipped)", name);
         }
+        for name in &db_only_names {
+            println!("  {}: db-only (antigravity orchestrator — no tmux session)", name);
+        }
         for (name, error) in &failed {
             println!("  x {}: {}", name, error);
         }
@@ -106,7 +114,8 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     }
 
     // 8. Exit code: return Err only if ALL agents failed (including orchestrator)
-    let total = config.agents.len() + 1; // +1 for orchestrator
+    // DB-only orchestrator is excluded from total: it is never launched and never fails.
+    let total = config.agents.len() + if config.orchestrator.is_db_only() { 0 } else { 1 };
     if !failed.is_empty() && failed.len() == total {
         anyhow::bail!("All {} agent(s) failed to launch", total);
     }
