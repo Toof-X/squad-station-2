@@ -9,7 +9,7 @@ Requirements for v1.3: Antigravity & Hooks Optimization. Each maps to roadmap ph
 
 ### Hooks
 
-- [ ] **HOOK-01**: `signal` command accepts `$TMUX_PANE` env var to auto-detect agent session name (hook requires no args beyond env var)
+- [x] **HOOK-01**: `signal` command accepts `$TMUX_PANE` env var to auto-detect agent session name (hook requires no args beyond env var)
 - [ ] **HOOK-02**: `hooks/claude-code.sh` and `hooks/gemini-cli.sh` marked deprecated in file headers (kept as reference only)
 - [ ] **HOOK-03**: `init` merges hook entries into existing `settings.json` with `.bak` backup before modification
 - [ ] **HOOK-04**: `init` prints human-readable hook setup instructions when no `settings.json` exists
@@ -92,7 +92,7 @@ Requirements for v1.3: Antigravity & Hooks Optimization. Each maps to roadmap ph
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| HOOK-01 | Phase 10 | Pending |
+| HOOK-01 | Phase 10 | Complete |
 | HOOK-02 | Phase 10 | Pending |
 | HOOK-03 | Phase 12 | Pending |
 | HOOK-04 | Phase 12 | Pending |
