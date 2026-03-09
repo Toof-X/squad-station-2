@@ -1,4 +1,11 @@
 #!/bin/bash
+# DEPRECATED: This script is no longer required as of squad-station v1.3.
+# Use the inline hook command instead (register directly in settings.json):
+#
+#   squad-station signal $TMUX_PANE
+#
+# This file is kept for reference only. It remains functional for users on older setups.
+#
 # hooks/claude-code.sh -- Signal squad-station when Claude Code finishes a response
 # Registered under Stop event in .claude/settings.json or ~/.claude/settings.json
 #

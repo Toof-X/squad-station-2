@@ -1,4 +1,11 @@
 #!/bin/bash
+# DEPRECATED: This script is no longer required as of squad-station v1.3.
+# Use the inline hook command instead (register directly in settings.json):
+#
+#   squad-station signal $TMUX_PANE
+#
+# This file is kept for reference only. It remains functional for users on older setups.
+#
 # hooks/gemini-cli.sh -- Signal squad-station when Gemini CLI finishes a response
 # Registered under AfterAgent event in .gemini/settings.json
 #
