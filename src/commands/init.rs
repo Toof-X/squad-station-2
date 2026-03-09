@@ -125,6 +125,11 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     // 9. Hook setup: merge into settings.json or print instructions
     // In JSON mode, skip stdout instructions (to preserve machine-parseable output).
     if !json {
+        println!("\n==================================");
+        println!("  Squad Setup Complete");
+        println!("==================================\n");
+        println!("Please manually configure the following hooks to enable task completion signals:\n");
+
         let providers: &[(&str, &str, &str)] = &[
             (".claude/settings.json", "Stop", "*"),
             (".claude/settings.json", "Notification", "permission_prompt"),
@@ -135,6 +140,15 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
         for &(settings_path, hook_event, matcher) in providers {
             print_hook_instructions(settings_path, hook_event, matcher);
         }
+
+        println!("\nGenerating IDE orchestration context...");
+        if let Err(e) = crate::commands::context::run().await {
+            println!("Warning: Failed to generate context files: {}", e);
+        }
+
+        println!("\nGet Started:");
+        println!("  - To send a task: squad-station send <agent_name> --body \"<task>\"");
+        println!("  - To check status: squad-station list");
     }
 
     Ok(())
