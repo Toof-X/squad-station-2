@@ -41,7 +41,7 @@
 **Milestone Goal:** Add Antigravity IDE orchestrator support and centralize the hook system into a single CLI command with safe tmux injection.
 
 - [x] **Phase 10: Centralized Hooks** — signal reads `$TMUX_PANE`; shell scripts marked deprecated (completed 2026-03-09)
-- [ ] **Phase 11: Antigravity Provider Core** — provider enum + conditional skip-notify + skip-init behavior
+- [x] **Phase 11: Antigravity Provider Core** — provider enum + conditional skip-notify + skip-init behavior (completed 2026-03-09)
 - [ ] **Phase 12: IDE Context & Hook Setup** — `.agent/workflows/` generation + safe settings.json merge
 - [ ] **Phase 13: Safe Injection & Documentation** — load-buffer/paste-buffer + PLAYBOOK rewrite
 
@@ -118,6 +118,6 @@ Plans:
 | 8. npm Package | v1.2 | 2/2 | Complete | 2026-03-08 |
 | 9. Install Script and Docs | v1.2 | 2/2 | Complete | 2026-03-09 |
 | 10. Centralized Hooks | v1.3 | 2/2 | Complete | 2026-03-09 |
-| 11. Antigravity Provider Core | 1/2 | In Progress|  | - |
+| 11. Antigravity Provider Core | 2/2 | Complete   | 2026-03-09 | - |
 | 12. IDE Context & Hook Setup | v1.3 | 0/? | Not started | - |
 | 13. Safe Injection & Documentation | v1.3 | 0/? | Not started | - |

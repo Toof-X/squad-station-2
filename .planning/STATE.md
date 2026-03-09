@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Antigravity & Hooks Optimization
 status: planning
-stopped_at: Completed 11-antigravity-provider-core-01-PLAN.md
-last_updated: "2026-03-09T07:18:30.121Z"
+stopped_at: Completed 11-antigravity-provider-core-02-PLAN.md
+last_updated: "2026-03-09T07:24:16.243Z"
 last_activity: 2026-03-09 — v1.3 roadmap created, 4 phases mapped to 15 requirements
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -48,6 +48,8 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 10-centralized-hooks]: HOOK-01: signal exits 0 silently on pane resolution failure — providers must never see errors from hooks
 - [Phase 10-centralized-hooks]: HOOK-02: Deprecation block inserted after shebang before existing description header — all executable logic unchanged for backward compatibility
 - [Phase 11-antigravity-provider-core]: is_db_only() checks tool == 'antigravity' — tool remains open string so unknown providers continue as tmux providers
+- [Phase 11-antigravity-provider-core]: Use inline orch.tool == 'antigravity' in signal.rs (not is_db_only()) — Agent DB struct should not couple to config domain knowledge
+- [Phase 11-antigravity-provider-core]: DB-only orchestrator excluded from all-failed total count — it is never launched so can never fail
 
 ### Pending Todos
 
@@ -59,6 +61,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-09T07:18:30.120Z
-Stopped at: Completed 11-antigravity-provider-core-01-PLAN.md
+Last session: 2026-03-09T07:24:16.241Z
+Stopped at: Completed 11-antigravity-provider-core-02-PLAN.md
 Resume file: None
