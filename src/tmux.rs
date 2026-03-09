@@ -81,6 +81,21 @@ fn select_layout_args(target: &str, layout: &str) -> Vec<String> {
     ]
 }
 
+fn load_buffer_args(path: &str) -> Vec<String> {
+    vec![
+        "load-buffer".to_string(),
+        path.to_string(),
+    ]
+}
+
+fn paste_buffer_args(target: &str) -> Vec<String> {
+    vec![
+        "paste-buffer".to_string(),
+        "-t".to_string(),
+        target.to_string(),
+    ]
+}
+
 // --- Public API ---
 
 /// Send text literally to a tmux target, followed by Enter (SAFE-02)
@@ -96,6 +111,48 @@ pub fn send_keys_literal(target: &str, text: &str) -> Result<()> {
     }
 
     // Step 2: Send Enter as separate key (NOT -l, so Enter key is recognized)
+    let enter = enter_args(target);
+    let status = Command::new("tmux").args(&enter).status()?;
+    if !status.success() {
+        bail!("tmux send-keys Enter failed for target: {}", target);
+    }
+
+    Ok(())
+}
+
+/// Inject arbitrary body content into a tmux target using load-buffer/paste-buffer.
+///
+/// Writes content to a uniquely-named temp file, loads it into the tmux paste buffer,
+/// pastes it to the target session, sends Enter, and cleans up the temp file on all paths.
+/// This replaces send_keys_literal for body delivery — handles multiline content safely.
+pub fn inject_body(target: &str, body: &str) -> Result<()> {
+    // Step 1: Write content to temp file with unique name
+    let temp_path = std::env::temp_dir()
+        .join(format!("squad-station-msg-{}", uuid::Uuid::new_v4()));
+    std::fs::write(&temp_path, body)?;
+
+    let path_str = temp_path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("temp path contains invalid UTF-8"))?
+        .to_string();
+
+    // Step 2: Load temp file into tmux paste buffer
+    let load_args = load_buffer_args(&path_str);
+    let status = Command::new("tmux").args(&load_args).status()?;
+    if !status.success() {
+        let _ = std::fs::remove_file(&temp_path);
+        bail!("tmux load-buffer failed for target: {}", target);
+    }
+
+    // Step 3: Paste buffer into target session
+    let paste_args = paste_buffer_args(target);
+    let status = Command::new("tmux").args(&paste_args).status()?;
+    let _ = std::fs::remove_file(&temp_path); // always cleanup regardless of outcome
+    if !status.success() {
+        bail!("tmux paste-buffer failed for target: {}", target);
+    }
+
+    // Step 4: Send Enter (paste-buffer does NOT send Enter automatically)
     let enter = enter_args(target);
     let status = Command::new("tmux").args(&enter).status()?;
     if !status.success() {
@@ -315,5 +372,37 @@ mod tests {
             "SAFE-02: -l flag required even with special chars like [, newlines"
         );
         assert_eq!(args[4], special);
+    }
+
+    #[test]
+    fn test_load_buffer_args() {
+        let args = load_buffer_args("/tmp/squad-station-msg-abc");
+        assert_eq!(args[0], "load-buffer");
+        assert_eq!(args[1], "/tmp/squad-station-msg-abc");
+        assert_eq!(args.len(), 2, "load-buffer takes only the path, no extra flags");
+    }
+
+    #[test]
+    fn test_load_buffer_args_with_spaces_in_path() {
+        let args = load_buffer_args("/tmp/my path/file");
+        assert_eq!(args[1], "/tmp/my path/file", "path with spaces must be preserved as single arg element");
+    }
+
+    #[test]
+    fn test_paste_buffer_args() {
+        let args = paste_buffer_args("my-agent");
+        assert_eq!(args[0], "paste-buffer");
+        assert_eq!(args[1], "-t");
+        assert_eq!(args[2], "my-agent");
+        assert_eq!(args.len(), 3);
+    }
+
+    #[test]
+    fn test_paste_buffer_args_no_p_flag() {
+        let args = paste_buffer_args("my-agent");
+        assert!(
+            !args.contains(&"-p".to_string()),
+            "paste-buffer must use -t not -p; -p pastes to current pane ignoring -t target"
+        );
     }
 }
