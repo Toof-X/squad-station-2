@@ -16,7 +16,7 @@ Requirements for v1.3: Antigravity & Hooks Optimization. Each maps to roadmap ph
 
 ### Antigravity Provider
 
-- [ ] **AGNT-01**: `config.rs` supports `provider: antigravity` as valid orchestrator provider value with integration tests
+- [x] **AGNT-01**: `config.rs` supports `provider: antigravity` as valid orchestrator provider value with integration tests
 - [ ] **AGNT-02**: `signal.rs` skips `tmux send-keys` notification when orchestrator provider is `antigravity` (DB update only)
 - [ ] **AGNT-03**: `init.rs` skips tmux session creation for `antigravity` orchestrator — DB-only registration with clear log message
 
@@ -96,7 +96,7 @@ Requirements for v1.3: Antigravity & Hooks Optimization. Each maps to roadmap ph
 | HOOK-02 | Phase 10 | Complete |
 | HOOK-03 | Phase 12 | Pending |
 | HOOK-04 | Phase 12 | Pending |
-| AGNT-01 | Phase 11 | Pending |
+| AGNT-01 | Phase 11 | Complete |
 | AGNT-02 | Phase 11 | Pending |
 | AGNT-03 | Phase 11 | Pending |
 | AGNT-04 | Phase 12 | Pending |

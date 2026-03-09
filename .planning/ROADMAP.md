@@ -118,6 +118,6 @@ Plans:
 | 8. npm Package | v1.2 | 2/2 | Complete | 2026-03-08 |
 | 9. Install Script and Docs | v1.2 | 2/2 | Complete | 2026-03-09 |
 | 10. Centralized Hooks | v1.3 | 2/2 | Complete | 2026-03-09 |
-| 11. Antigravity Provider Core | v1.3 | 0/2 | Not started | - |
+| 11. Antigravity Provider Core | 1/2 | In Progress|  | - |
 | 12. IDE Context & Hook Setup | v1.3 | 0/? | Not started | - |
 | 13. Safe Injection & Documentation | v1.3 | 0/? | Not started | - |
