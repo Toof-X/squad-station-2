@@ -147,10 +147,34 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
         }
 
         println!("\nGet Started (IDE Orchestrator):");
-        println!("  1. Open your AI Assistant (e.g., Antigravity, Cursor, Gemini)");
-        println!("  2. Point it to the generated workflows, for example:");
-        println!("     \"Please read .agent/workflows/squad-orchestrator.md and start delegating tasks.\"");
-        println!("  3. Your AI will autonomously use squad-station to orchestrate the worker agents.");
+        println!("  1. Start the orchestrator with the following command:\n");
+
+        let (cli_cmd, playbook_path) = match config.orchestrator.provider.as_str() {
+            "claude-code" => {
+                let model = config.orchestrator.model.as_deref().unwrap_or("haiku");
+                (
+                    format!("claude --dangerously-skip-permissions --model {}", model),
+                    ".claude/commands/squad-orchestrator.md",
+                )
+            },
+            "gemini-cli"  => {
+                let model = config.orchestrator.model.as_deref().unwrap_or("gemini-2.0-flash");
+                (
+                    format!("gemini --model {}", model),
+                    ".gemini/commands/squad-orchestrator.md",
+                )
+            },
+            _             => {
+                (
+                    "# See your AI assistant's documentation for invocation".to_string(),
+                    ".agent/workflows/squad-orchestrator.md",
+                )
+            },
+        };
+        println!("     {}", cli_cmd);
+        println!("\n  2. Once the orchestrator is running, point it to the workflows:");
+        println!("     \"Please read {} and start delegating tasks.\"", playbook_path);
+        println!("\n  3. Your AI will autonomously use squad-station to orchestrate the worker agents.");
     }
 
     Ok(())
@@ -158,8 +182,8 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
 
 fn get_launch_command(provider: &str) -> &str {
     match provider {
-        "claude-code" => "claude",
-        "gemini-cli" => "gemini",
+        "claude-code" => "zsh",  // Keep shell alive for claude to send commands
+        "gemini-cli" => "zsh",   // Keep shell alive for gemini to send commands
         other => other,
     }
 }
