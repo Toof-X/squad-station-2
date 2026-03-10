@@ -4,35 +4,39 @@ description: AI Orchestrator — delegate tasks to squad agents with direct comm
 trigger: explicit
 ---
 
-# Squad Orchestrator
+# Squad Orchestrator — Active Coordination
 
-Coordinate and delegate tasks to squad agents in the squad-station project. The orchestrator automatically bootstraps configuration from `squad.yml` and routes your task to the appropriate agent based on task type.
+Delegate tasks to squad agents by invoking the orchestrator with a task description. The orchestrator will execute a **7-step coordination workflow** to bootstrap configuration, select the appropriate agent, delegate work, monitor completion, and report results.
 
-> **Activation:** This skill is triggered only when explicitly called by name (e.g., `/squad-orchestrator`, use the skill `squad-orchestrator`, or reference this skill directly).
+> **Activation:** When invoked as `/squad-orchestrator <task>`, the orchestrator immediately begins executing the full coordination protocol defined in `.claude/commands/squad-orchestrator.md`.
 
 ---
 
-## Quick Start
+## Quick Start — Task Examples
 
 **Simple bug fix:**
 ```
-"Fix the failing test in test_integration.rs"
+/squad-orchestrator Fix the failing test in test_integration.rs
 ```
+→ Routes to `implement` agent, sends task, monitors, returns results
 
 **Feature implementation:**
 ```
-"Implement Windows path support in config loading"
+/squad-orchestrator Implement Windows path support in config loading
 ```
+→ Routes to `implement` agent, executes, verifies, reports
 
 **Code review/analysis:**
 ```
-"Review the signal handling logic for edge cases"
+/squad-orchestrator Review the signal handling logic for edge cases
 ```
+→ Routes to `brainstorm` agent for deep analysis
 
 **Complex architectural task:**
 ```
-"Design a caching strategy for squad-station that works across multiple projects"
+/squad-orchestrator Design a caching strategy for squad-station that works across multiple projects
 ```
+→ Routes to `brainstorm` agent first (design), then `implement` (if needed)
 
 ---
 
@@ -42,101 +46,142 @@ Coordinate and delegate tasks to squad agents in the squad-station project. The 
 /squad-orchestrator <task description>
 ```
 
-Or directly through the CLI:
+The task is passed as the argument, and the orchestrator immediately begins execution.
 
-```bash
-/squad-orchestrator Fix the failing test in test_integration.rs
-/squad-orchestrator Implement Windows path support in config loading
-/squad-orchestrator Review the signal handling logic for edge cases
-```
+## How It Works — 7-Step Execution Protocol
 
-## How It Works
+When you invoke `/squad-orchestrator <task>`, the orchestrator executes:
 
-1. **Bootstrap:** Reads `squad.yml` to load:
-   - Project name
-   - Orchestrator role, model, provider
-   - Available agents (name, role, model, tmux-session)
-   - SDD (Spec-Driven Development) playbook references
+### **STEP 1: Bootstrap**
+- Reads `squad.yml` to load project config, agents, SDD references
+- Validates setup via `scripts/validate-squad.sh`
+- Reads SDD playbook to learn available workflow commands
+- **Report:** "✓ Bootstrap complete: [project], [N agents], SDD: [name]"
 
-2. **Read Playbook:** Consults the generated `squad-orchestrator.md` which defines:
-   - Available agents and their capabilities
-   - Delegation workflow (how to send tasks)
-   - Monitoring protocol (how to wait for results)
-   - Agent selection matrix (which agent for which task type)
+### **STEP 2: Analyze Task & Consult SDD**
+- Parses the input task
+- Consults SDD playbook for available workflow commands
+- Checks project state per SDD's own method
+- **Report:** "Task analyzed. Available workflow commands: [list]"
 
-3. **Delegate:** Routes the task to the appropriate agent:
-   - Analysis/architecture → brainstorm agent
-   - Implementation/fix → implement agent
-   - Complex work → brainstorm first, then implement
+### **STEP 3: Spec-Driven Decision Loop**
+- Applies the decision framework (Consult → Select Workflow → Select Agent → Compose → Delegate → Monitor → Verify)
+- Reads architecture decisions from `docs/` if present
+- **Report:** "Decision loop applied. Next: Agent selection"
 
-4. **Monitor:** Tracks task completion via:
-   - `squad-station list` to check message status
-   - Signal-based waiting (preferred over polling)
-   - `tmux capture-pane` to read final output
+### **STEP 4: Select Agent**
+- Matches task type to agent role:
+  - **Analysis/architecture/review** → brainstorm agent (opus model)
+  - **Implementation/bug fix/testing** → implement agent (sonnet model)
+  - **Complex (both)** → brainstorm first, then implement
+- **Report:** "Agent selected: [agent name] ([role], model: [model])"
 
-## Command Syntax
+### **STEP 5: Delegate**
+- Composes message with workflow command + full context
+- Sends via `scripts/tmux-send.sh <agent-tmux-session> "<message>"`
+- **Report:** "✓ Task delegated to [agent name]"
 
-### Simple Task Delegation
+### **STEP 6: Monitor**
+- Waits with adaptive timeout (10s-90s based on complexity)
+- Checks status: `squad-station list --agent <agent>`
+- Recovers if tmux session dies
+- **Report:** "Monitoring [agent]. Wait time: [calculated]"
 
-```
-/squad-orchestrator Implement X feature
-```
-
-- **What it does:** Reads squad.yml, selects best agent for the task, sends delegation
-- **Returns:** Agent name and task ID for tracking
-
-### With Context Preservation
-
-```
-/squad-orchestrator <task text>
-```
-
-The full task text is preserved and passed to the selected agent, maintaining conversation context.
-
-## Workflow
-
-### For Straightforward Tasks
-
-1. `/squad-orchestrator <simple implementation task>`
-2. Orchestrator picks implement agent → sends task
-3. Wait for completion signal (hook notification or `squad-station list`)
-4. Read output → verify → continue or next task
-
-### For Complex Tasks Requiring Analysis First
-
-1. `/squad-orchestrator <complex task needing architecture review>`
-2. Orchestrator picks brainstorm agent for analysis
-3. Wait for analysis result
-4. Review findings, then delegate to implement agent if needed
-
-## Playbook Location
-
-The orchestrator uses the provider-aware playbook:
-
-- **Claude Code:** `.claude/commands/squad-orchestrator.md`
-- **Gemini CLI:** `.gemini/commands/squad-orchestrator.md`
-- **Fallback:** `.agent/workflows/squad-orchestrator.md`
-
-The playbook is auto-generated by `squad-station init` or `squad-station context`.
+### **STEP 7: Verify & Report**
+- Reads agent output: `tmux capture-pane -t <agent> -p`
+- Verifies output matches task requirements
+- Returns results with summary
+- **Report:** "✓ Task complete. Output: [summary]. Status: [success/review]"
 
 ## Agent Selection Rules
 
-| Task Type | Agent | Reasoning |
-|-----------|-------|-----------|
-| Bug fixes, implementation, testing | `implement` | Fast execution, focused on code |
-| Architecture, design, code review, analysis | `brainstorm` | High reasoning model, careful analysis |
-| Complex (analysis + coding) | brainstorm → implement | Sequential: plan first, then execute |
+The orchestrator automatically routes based on task type:
 
-## Tips
+| Task Type | Selected Agent | Model | Execution |
+|-----------|---|---|---|
+| Bug fixes | implement | sonnet | Direct execution |
+| Implementation | implement | sonnet | Direct execution |
+| Testing | implement | sonnet | Direct execution |
+| Architecture | brainstorm | opus | Direct analysis |
+| Code review | brainstorm | opus | Direct analysis |
+| Complex (analysis + code) | brainstorm + implement | opus → sonnet | Sequential: analyze first, then code |
 
-- **Keep tasks focused:** One clear objective per delegation
-- **Provide context:** More details = better routing decision
-- **Monitor actively:** Use `squad-station list` to track all pending/completed messages
-- **Check output:** Always verify agent results before next step using `tmux capture-pane -t <agent-name> -p`
+## Execution Examples
 
-## See Also
+### Straightforward Implementation Task
 
-- `squad.yml` — Agent configuration and SDD references
-- `.planning/quick/` — GSD quick task tracking
-- `scripts/setup-sessions.sh` — Initialize tmux sessions for all agents
-- `scripts/validate-squad.sh` — Check squad configuration health
+```
+/squad-orchestrator Fix the bug in src/config.rs where resolve_db_path fails on Windows
+```
+
+**Orchestrator executes:**
+1. ✓ Bootstraps from squad.yml
+2. ✓ Task type: bug fix → routes to `implement` agent
+3. ✓ Sends via `squad-station send`
+4. ✓ Monitors with adaptive wait (90s for bug fix)
+5. ✓ Reads agent output and verifies fix
+6. ✓ Reports: "✓ Task complete. Agent implemented fix and ran tests. All passing."
+
+### Complex Architectural Task
+
+```
+/squad-orchestrator Design a distributed caching layer that handles multi-project concurrency
+```
+
+**Orchestrator executes:**
+1. ✓ Bootstraps from squad.yml
+2. ✓ Task type: design → routes to `brainstorm` agent first
+3. ✓ Sends: "Design a distributed caching layer..."
+4. ✓ Monitors: waits 60s for design document
+5. ✓ Reviews brainstorm output (architecture design)
+6. ✓ If implementation needed, delegates design to `implement` agent
+7. ✓ Monitors implementation, verifies, reports results
+
+## Orchestrator Playbook
+
+The coordination protocol is defined in the provider-aware playbook:
+
+- **Claude Code:** `.claude/commands/squad-orchestrator.md` (executable protocol)
+- **Gemini CLI:** `.gemini/commands/squad-orchestrator.md` (executable protocol)
+- **Fallback:** `.agent/workflows/squad-orchestrator.md` (executable protocol)
+
+The playbook contains the 7-step execution workflow that the orchestrator follows when invoked with a task argument.
+
+## Best Practices
+
+**Task Description:**
+- ✓ Keep focused (one clear objective)
+- ✓ Provide context (more details = better routing)
+- ✓ Be specific (what needs to be done, why, any constraints)
+
+**Monitoring:**
+- ✓ Orchestrator automatically monitors completion
+- ✓ Adaptive wait times prevent timeout issues
+- ✓ Reports progress at each step
+
+**Results:**
+- ✓ Orchestrator verifies output matches task requirements
+- ✓ Reports success/issues clearly
+- ✓ Includes agent output for verification
+
+**Examples of Good Task Descriptions:**
+- ❌ "Fix the code" → ✓ "Fix the bug in src/config.rs where resolve_db_path fails on Windows paths"
+- ❌ "Implement something" → ✓ "Implement support for Windows path separators in the config loader, ensuring all existing tests pass"
+- ❌ "Review code" → ✓ "Review the signal handling in src/commands/signal.rs for potential race conditions with concurrent delegations"
+
+## Ground Rules
+
+1. **Orchestrator handles coordination** — You invoke with a task; orchestrator does the rest
+2. **Automatic agent selection** — Task type determines routing (no manual agent selection needed)
+3. **Built-in monitoring** — Orchestrator waits and verifies automatically
+4. **Full context preservation** — Task context passed through all delegation steps
+5. **Error recovery** — Orchestrator handles tmux failures and retries
+
+## References
+
+- **Coordination Protocol:** `.claude/commands/squad-orchestrator.md`
+- **Squad Config:** `squad.yml`
+- **Agent Setup:** `scripts/setup-sessions.sh`
+- **Setup Validation:** `scripts/validate-squad.sh`
+- **Task Tracking:** `squad-station list --agent <name>`
+- **Manual Delegation:** `scripts/tmux-send.sh <session> "<message>"`
