@@ -7,6 +7,27 @@ description: AI Orchestrator — manage and coordinate squad agents
 > If NOT → re-execute §1 Bootstrap immediately before doing anything else.
 > This rule survives context compaction. Do not skip it.
 
+## Slash Command Reference
+
+Use these commands to invoke the orchestrator with context:
+
+```
+/orchestrator task: <task description>
+/orchestrator message: <message text>
+/orchestrator
+```
+
+**Examples:**
+```
+/orchestrator task: Check why the init command isn't showing CLI invocation instructions
+
+/orchestrator message: Deploy the latest changes to staging environment
+
+/orchestrator
+```
+
+**Note:** When using `task:` or `message:` arguments, the full request is passed as context. Always bootstrap (read squad.yml and playbooks) before delegating.
+
 # 1. Bootstrap (MUST EXECUTE FIRST)
 
 Read `squad.yml` at project root to load all context:
