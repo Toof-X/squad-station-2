@@ -1,25 +1,52 @@
 ---
 name: squad-orchestrator
 description: AI Orchestrator — delegate tasks to squad agents with direct command syntax
+trigger: explicit
 ---
 
-# Squad Orchestrator Skill
+# Squad Orchestrator
 
-Coordinate and delegate tasks to squad agents using a simple command format.
+Coordinate and delegate tasks to squad agents in the squad-station project. The orchestrator automatically bootstraps configuration from `squad.yml` and routes your task to the appropriate agent based on task type.
+
+> **Activation:** This skill is triggered only when explicitly called by name (e.g., `/squad-orchestrator`, use the skill `squad-orchestrator`, or reference this skill directly).
+
+---
+
+## Quick Start
+
+**Simple bug fix:**
+```
+"Fix the failing test in test_integration.rs"
+```
+
+**Feature implementation:**
+```
+"Implement Windows path support in config loading"
+```
+
+**Code review/analysis:**
+```
+"Review the signal handling logic for edge cases"
+```
+
+**Complex architectural task:**
+```
+"Design a caching strategy for squad-station that works across multiple projects"
+```
+
+---
 
 ## Usage
 
 ```
-/squad-orchestrator <task text>
+/squad-orchestrator <task description>
 ```
 
-**Examples:**
+Or directly through the CLI:
 
-```
+```bash
 /squad-orchestrator Fix the failing test in test_integration.rs
-
-/squad-orchestrator Implement support for Windows paths in config loading
-
+/squad-orchestrator Implement Windows path support in config loading
 /squad-orchestrator Review the signal handling logic for edge cases
 ```
 
