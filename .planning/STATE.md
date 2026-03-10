@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Unified Playbook & Local DB
-status: defining_requirements
-stopped_at: —
+status: ready_to_plan
+stopped_at: Phase 14 ready to plan
 last_updated: "2026-03-10T00:00:00.000Z"
-last_activity: 2026-03-10 — Milestone v1.4 started
+last_activity: 2026-03-10 — Roadmap created, phases 14-15 defined
 progress:
-  total_phases: 0
+  total_phases: 2
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,16 +21,31 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-10 after v1.4 milestone start)
 
 **Core value:** Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task đúng agent, nhận signal khi hoàn thành, notify Orchestrator — tất cả qua stateless CLI commands không cần daemon
-**Current focus:** Defining requirements
+**Current focus:** Phase 14 — Unified Orchestrator Playbook
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-10 — Milestone v1.4 started
+Phase: 14 of 15 (Unified Orchestrator Playbook)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-03-10 — Roadmap created for v1.4, phases 14-15 defined
 
 Progress: [░░░░░░░░░░] 0%
+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 0 (this milestone)
+- Average duration: —
+- Total execution time: —
+
+**By Phase:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| - | - | - | - |
+
+*Updated after each plan completion*
 
 ## Accumulated Context
 
@@ -38,23 +53,11 @@ Progress: [░░░░░░░░░░] 0%
 
 All decisions logged in PROJECT.md Key Decisions table.
 
-**v1.3 context:**
-- Phases 10-13 cover: centralized hooks, antigravity provider, IDE context generation, safe tmux injection
-- Hook shell scripts deprecated in favor of inline `squad-station signal $TMUX_PANE`
-- Antigravity provider = DB-only orchestrator (no tmux sessions, no tmux notifications)
-- `.agent/workflows/` is the new IDE orchestrator context path (3 files: delegate, monitor, roster)
-- Safe multiline injection via load-buffer/paste-buffer replaces direct send-keys for content delivery
-- [Phase 10-centralized-hooks]: Signal pane ID detection via starts_with('%') prefix — tmux pane IDs always use % prefix, session names cannot
-- [Phase 10-centralized-hooks]: HOOK-01: signal exits 0 silently on pane resolution failure — providers must never see errors from hooks
-- [Phase 10-centralized-hooks]: HOOK-02: Deprecation block inserted after shebang before existing description header — all executable logic unchanged for backward compatibility
-- [Phase 11-antigravity-provider-core]: is_db_only() checks tool == 'antigravity' — tool remains open string so unknown providers continue as tmux providers
-- [Phase 11-antigravity-provider-core]: Use inline orch.tool == 'antigravity' in signal.rs (not is_db_only()) — Agent DB struct should not couple to config domain knowledge
-- [Phase 11-antigravity-provider-core]: DB-only orchestrator excluded from all-failed total count — it is never launched so can never fail
-- [Phase 12-ide-context-hook-setup]: context command is read-only: removed tmux reconciliation loop — context writes .agent/workflows/ files from DB state without mutating tmux or DB
-- [Phase 12-ide-context-hook-setup]: JSON mode guard in init.rs: hook instructions suppressed from stdout when --json flag active to preserve machine-parseable output
-- [Phase 12-ide-context-hook-setup]: HOOK-03/04: merge_hook_entry uses dedup on command field, graceful fallback on malformed JSON, .json.bak backup via path.with_extension
-- [Phase 13-safe-injection-and-documentation]: inject_body uses load-buffer/paste-buffer with uuid-named temp file; -t flag not -p for paste-buffer; temp cleanup on all paths
-- [Phase 13-safe-injection-and-documentation]: PLAYBOOK.md v1.3: inline hook command is canonical (hooks/claude-code.sh deprecated), Notification hook uses permission_prompt matcher, Antigravity polling is expected behavior
+**v1.3 context (relevant carry-overs):**
+- `context` command is read-only — no tmux reconciliation, writes `.agent/workflows/` from DB state only
+- JSON mode guard in `init.rs` — hook instructions suppressed from stdout when `--json` active
+- `.agent/workflows/` is the IDE orchestrator context path (3 files in v1.3; v1.4 replaces with 1 file)
+- `SQUAD_STATION_DB` env var in `resolve_db_path` — single injection point for all commands; override must survive v1.4 path change
 
 ### Pending Todos
 
@@ -67,5 +70,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-10
-Stopped at: Milestone v1.4 initialized — defining requirements
+Stopped at: Roadmap written — Phase 14 ready to plan
 Resume file: None

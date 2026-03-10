@@ -59,4 +59,4 @@ None — both gaps are fully scoped for v1.4.
 
 ---
 *Requirements defined: 2026-03-10*
-*Last updated: 2026-03-10 after initial definition*
+*Last updated: 2026-03-10 — traceability updated after ROADMAP.md creation*
