@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Squad Station is a stateless Rust CLI that routes messages between an AI orchestrator and N agents running in tmux sessions. It is provider-agnostic (Claude Code, Gemini CLI, etc.) and uses embedded SQLite (WAL mode) for persistence. Each project gets its own DB at `~/.agentic-squad/<project-name>/station.db`.
+Squad Station is a stateless Rust CLI that routes messages between an AI orchestrator and N agents running in tmux sessions. It is provider-agnostic (Claude Code, Gemini CLI, etc.) and uses embedded SQLite (WAL mode) for persistence. Each project gets its own DB at `.squad/station.db` inside the project directory.
 
 ## Build & Test Commands
 

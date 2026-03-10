@@ -2,7 +2,7 @@
 
 Message routing and orchestration for AI agent squads — stateless CLI, no daemon.
 
-Squad Station routes messages between an AI orchestrator and N agents running in tmux sessions. It is provider-agnostic: works with Claude Code, Gemini CLI, or any tool. Each project stores its state in its own SQLite database at `~/.agentic-squad/<project>/station.db`.
+Squad Station routes messages between an AI orchestrator and N agents running in tmux sessions. It is provider-agnostic: works with Claude Code, Gemini CLI, or any tool. Each project stores its state in a local SQLite database at `.squad/station.db` inside the project directory.
 
 ## Installation
 
