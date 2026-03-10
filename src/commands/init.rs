@@ -146,9 +146,11 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
             println!("Warning: Failed to generate context files: {}", e);
         }
 
-        println!("\nGet Started:");
-        println!("  - To send a task: squad-station send <agent_name> --body \"<task>\"");
-        println!("  - To check status: squad-station list");
+        println!("\nGet Started (IDE Orchestrator):");
+        println!("  1. Open your AI Assistant (e.g., Antigravity, Cursor, Gemini)");
+        println!("  2. Point it to the generated workflows, for example:");
+        println!("     \"Please read .agent/workflows/squad-delegate.md and start delegating tasks.\"");
+        println!("  3. Your AI will autonomously use squad-station to orchestrate the worker agents.");
     }
 
     Ok(())
