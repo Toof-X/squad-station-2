@@ -32,8 +32,8 @@ fn cmd_with_db(db_path: &std::path::Path) -> std::process::Command {
 
 #[test]
 fn test_context_output_contains_agents() {
-    // SESS-05 (updated): context command writes .agent/workflows/ files and prints a 1-line summary.
-    // The old stdout roster format has been replaced by file generation (AGNT-04, AGNT-05, AGNT-06).
+    // SESS-05 (updated): context command writes a single .agent/workflows/squad-orchestrator.md
+    // and prints a 1-line summary. (GAP-18 / PLAY-01: unified single-file output)
     let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
     let db_file = tmp.path().join("station.db");
     write_squad_yml(tmp.path(), &db_file);
@@ -57,17 +57,17 @@ fn test_context_output_contains_agents() {
         "context output must contain 1-line summary, got:\n{}",
         stdout
     );
-    // Roster file must exist
+    // Single unified file must exist (PLAY-01)
     assert!(
-        tmp.path().join(".agent/workflows/squad-roster.md").exists(),
-        ".agent/workflows/squad-roster.md must be created"
+        tmp.path().join(".agent/workflows/squad-orchestrator.md").exists(),
+        ".agent/workflows/squad-orchestrator.md must be created"
     );
 }
 
 #[test]
 fn test_context_output_has_usage() {
-    // SESS-05 (updated): context command writes .agent/workflows/ files.
-    // Delegation instructions are now in squad-delegate.md (not stdout).
+    // SESS-05 (updated): context command writes a single unified squad-orchestrator.md.
+    // Delegation instructions are now merged into squad-orchestrator.md (PLAY-01, PLAY-02).
     let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
     let db_file = tmp.path().join("station.db");
     write_squad_yml(tmp.path(), &db_file);
@@ -84,19 +84,19 @@ fn test_context_output_has_usage() {
         output.status,
         String::from_utf8_lossy(&output.stderr)
     );
-    // Delegation/usage is now in squad-delegate.md
-    let delegate_path = tmp.path().join(".agent/workflows/squad-delegate.md");
-    assert!(delegate_path.exists(), ".agent/workflows/squad-delegate.md must be created");
-    let delegate = std::fs::read_to_string(&delegate_path).unwrap();
+    // Delegation/usage is now in unified squad-orchestrator.md (PLAY-01)
+    let orchestrator_path = tmp.path().join(".agent/workflows/squad-orchestrator.md");
+    assert!(orchestrator_path.exists(), ".agent/workflows/squad-orchestrator.md must be created");
+    let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
-        delegate.contains("squad-station send"),
-        "squad-delegate.md must include 'squad-station send' example, got:\n{}",
-        delegate
+        content.contains("squad-station send"),
+        "squad-orchestrator.md must include 'squad-station send' example, got:\n{}",
+        content
     );
     assert!(
-        delegate.contains("How to Delegate"),
-        "squad-delegate.md must contain 'How to Delegate' section, got:\n{}",
-        delegate
+        content.contains("How to Delegate"),
+        "squad-orchestrator.md must contain 'How to Delegate' section, got:\n{}",
+        content
     );
 }
 

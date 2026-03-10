@@ -1043,14 +1043,14 @@ async fn test_context_lists_registered_agents() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Updated: check file contents instead of stdout
-    let roster_path = tmp.path().join(".agent/workflows/squad-roster.md");
-    assert!(roster_path.exists(), ".agent/workflows/squad-roster.md must exist");
-    let roster = std::fs::read_to_string(&roster_path).unwrap();
+    // Updated for unified single-file output (GAP-18 / PLAY-01)
+    let orchestrator_path = tmp.path().join(".agent/workflows/squad-orchestrator.md");
+    assert!(orchestrator_path.exists(), ".agent/workflows/squad-orchestrator.md must exist");
+    let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
-        roster.contains("ctx-worker"),
-        "roster must contain agent name, got:\n{}",
-        roster
+        content.contains("ctx-worker"),
+        "squad-orchestrator.md must contain agent name, got:\n{}",
+        content
     );
 }
 
@@ -1079,18 +1079,19 @@ async fn test_context_generates_delegate_file() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let delegate_path = tmp.path().join(".agent/workflows/squad-delegate.md");
-    assert!(delegate_path.exists(), ".agent/workflows/squad-delegate.md must exist");
+    // Updated: single unified file contains delegation content (PLAY-01)
+    let orchestrator_path = tmp.path().join(".agent/workflows/squad-orchestrator.md");
+    assert!(orchestrator_path.exists(), ".agent/workflows/squad-orchestrator.md must exist");
 
-    let content = std::fs::read_to_string(&delegate_path).unwrap();
+    let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
         content.contains("ctx-worker"),
-        "delegate.md must contain agent name, got:\n{}",
+        "squad-orchestrator.md must contain agent name, got:\n{}",
         content
     );
     assert!(
         content.contains("squad-station send"),
-        "delegate.md must contain squad-station send command, got:\n{}",
+        "squad-orchestrator.md must contain squad-station send command, got:\n{}",
         content
     );
 }
@@ -1114,11 +1115,12 @@ async fn test_context_delegate_content() {
         .output()
         .unwrap();
 
-    let delegate_path = tmp.path().join(".agent/workflows/squad-delegate.md");
-    let content = std::fs::read_to_string(&delegate_path).unwrap();
+    // Updated: delegation content is in unified squad-orchestrator.md (PLAY-01)
+    let orchestrator_path = tmp.path().join(".agent/workflows/squad-orchestrator.md");
+    let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
         content.contains("BEHAVIORAL RULE"),
-        "delegate.md must contain BEHAVIORAL RULE header, got:\n{}",
+        "squad-orchestrator.md must contain BEHAVIORAL RULE header, got:\n{}",
         content
     );
 }
@@ -1148,18 +1150,19 @@ async fn test_context_generates_monitor_file() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let monitor_path = tmp.path().join(".agent/workflows/squad-monitor.md");
-    assert!(monitor_path.exists(), ".agent/workflows/squad-monitor.md must exist");
+    // Updated: monitoring content is in unified squad-orchestrator.md (PLAY-01)
+    let orchestrator_path = tmp.path().join(".agent/workflows/squad-orchestrator.md");
+    assert!(orchestrator_path.exists(), ".agent/workflows/squad-orchestrator.md must exist");
 
-    let content = std::fs::read_to_string(&monitor_path).unwrap();
+    let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
         content.contains("squad-station agents"),
-        "monitor.md must contain squad-station agents command, got:\n{}",
+        "squad-orchestrator.md must contain squad-station agents command, got:\n{}",
         content
     );
     assert!(
         content.contains("squad-station list"),
-        "monitor.md must contain squad-station list command, got:\n{}",
+        "squad-orchestrator.md must contain squad-station list command, got:\n{}",
         content
     );
 }
@@ -1183,16 +1186,17 @@ async fn test_context_monitor_content() {
         .output()
         .unwrap();
 
-    let monitor_path = tmp.path().join(".agent/workflows/squad-monitor.md");
-    let content = std::fs::read_to_string(&monitor_path).unwrap();
+    // Updated: monitoring content is in unified squad-orchestrator.md (PLAY-01)
+    let orchestrator_path = tmp.path().join(".agent/workflows/squad-orchestrator.md");
+    let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
         content.contains("Anti-Context-Decay"),
-        "monitor.md must contain Anti-Context-Decay section, got:\n{}",
+        "squad-orchestrator.md must contain Anti-Context-Decay section, got:\n{}",
         content
     );
     assert!(
         content.contains("re-read") && content.contains(".agent/workflows"),
-        "monitor.md must contain re-read .agent/workflows instruction, got:\n{}",
+        "squad-orchestrator.md must contain re-read .agent/workflows instruction, got:\n{}",
         content
     );
 }
@@ -1236,23 +1240,24 @@ async fn test_context_generates_roster_file() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let roster_path = tmp.path().join(".agent/workflows/squad-roster.md");
-    assert!(roster_path.exists(), ".agent/workflows/squad-roster.md must exist");
+    // Updated: roster content is in unified squad-orchestrator.md (PLAY-01, PLAY-03)
+    let orchestrator_path = tmp.path().join(".agent/workflows/squad-orchestrator.md");
+    assert!(orchestrator_path.exists(), ".agent/workflows/squad-orchestrator.md must exist");
 
-    let content = std::fs::read_to_string(&roster_path).unwrap();
+    let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
         content.contains("ctx-worker"),
-        "roster.md must contain agent name, got:\n{}",
+        "squad-orchestrator.md must contain agent name, got:\n{}",
         content
     );
     assert!(
         content.contains("claude-sonnet"),
-        "roster.md must contain model, got:\n{}",
+        "squad-orchestrator.md must contain model, got:\n{}",
         content
     );
     assert!(
         content.contains("Test agent"),
-        "roster.md must contain description, got:\n{}",
+        "squad-orchestrator.md must contain description, got:\n{}",
         content
     );
 }
@@ -1276,11 +1281,12 @@ async fn test_context_roster_content() {
         .output()
         .unwrap();
 
-    let roster_path = tmp.path().join(".agent/workflows/squad-roster.md");
-    let content = std::fs::read_to_string(&roster_path).unwrap();
+    // Updated: roster table is in unified squad-orchestrator.md (PLAY-01, PLAY-03)
+    let orchestrator_path = tmp.path().join(".agent/workflows/squad-orchestrator.md");
+    let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
         content.contains("| Agent |"),
-        "roster.md must contain Markdown table header '| Agent |', got:\n{}",
+        "squad-orchestrator.md must contain Markdown table header '| Agent |', got:\n{}",
         content
     );
 }
@@ -1322,10 +1328,8 @@ async fn test_context_idempotent() {
         String::from_utf8_lossy(&out2.stderr)
     );
 
-    // Files must still exist
-    assert!(tmp.path().join(".agent/workflows/squad-delegate.md").exists());
-    assert!(tmp.path().join(".agent/workflows/squad-monitor.md").exists());
-    assert!(tmp.path().join(".agent/workflows/squad-roster.md").exists());
+    // Updated: single unified file must exist (PLAY-01)
+    assert!(tmp.path().join(".agent/workflows/squad-orchestrator.md").exists());
 }
 
 // ============================================================
