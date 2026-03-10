@@ -3,6 +3,7 @@
 > Source of truth. Based on Obsidian `02. Solution Design - Squad Station.md`.
 > Confirmed decisions: **Rust** (not Go), **sqlx** (not rusqlite).
 > Updated with: `04. Upgrade Design — Antigravity & Hooks Optimization`.
+> Updated with: `05. Local DB — .squad/station.db in project directory`.
 > Go-specific sections replaced by `TECH-STACK.md`.
 
 ---
@@ -111,7 +112,7 @@ agents:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `project` | string | Project name, used for DB path + agent name prefix |
+| `project` | string | Project name, used for agent name prefix |
 | `orchestrator` | object | Exactly 1 orchestrator per squad |
 | `orchestrator.provider` | string | AI tool label (`claude`, `gemini`, `antigravity`, etc.) |
 | `orchestrator.model` | string | AI model name |
@@ -129,7 +130,7 @@ agents:
 
   Read squad.yml
       │
-      ├── Create ~/.agentic-squad/myapp/station.db
+      ├── Create .squad/station.db (in project directory)
       │
       ├── Register agents in DB (role = orchestrator | worker):
       │   myapp-claude-orchestrator    role=orchestrator  ← hook will SKIP
@@ -138,10 +139,16 @@ agents:
       │   myapp-claude-docs            role=worker
       │   myapp-claude-test            role=worker
       │
-      ├── Create tmux sessions + launch AI tools
+      ├── Create tmux sessions with interactive shells
       │   └── If orchestrator.provider = antigravity:
       │       → SKIP tmux session for orchestrator (IDE manages itself)
       │       → Only create tmux sessions for worker agents
+      │
+      ├── ⚠️  User must manually launch AI tools in sessions:
+      │   tmux send-keys -t <session-name> "<tool-command>" Enter
+      │   (e.g., "claude" for Claude Code, "gemini" for Gemini CLI)
+      │
+      └── AI tools stay running, receive tasks via squad-station send
       │
       └── Generate orchestrator context
           ├── CLI Orchestrator: write context .md file
@@ -270,9 +277,9 @@ Workflow files include **behavioral rules** that reinforce orchestrator discipli
 ### 4.5 Multiple projects simultaneously
 
 ```
-  Project myapp:     DB: ~/.agentic-squad/myapp/station.db
-  Project api-svc:   DB: ~/.agentic-squad/api-svc/station.db
-  → Fully isolated, separate DBs, different agent name prefixes
+  Project myapp:     DB: /path/to/myapp/.squad/station.db
+  Project api-svc:   DB: /path/to/api-svc/.squad/station.db
+  → Fully isolated, separate DBs in each project directory, different agent name prefixes
 ```
 
 ## 5. Workflow Diagrams
@@ -425,7 +432,99 @@ Every command exits after completion. No daemon, no background process.
   $ squad-station status         ← runs ~10ms, queries DB + prints, exits
 ```
 
-## 8. Agent Naming Convention
+## 8. CLI Reference — All Available Commands
+
+### Core Commands
+
+**`squad-station init`**
+- Initialize project with squad.yml, launch agent tmux sessions, register agents
+- Reads `squad.yml` config from project root
+- Creates `.squad/` directory and `station.db` SQLite database
+- Sets up tmux sessions for each agent
+- Usage: `squad-station init`
+
+**`squad-station send <agent-name> --body "<task>"`**
+- Send task/prompt to an agent's tmux session
+- Writes message to database with status `processing`
+- Injects message into agent session via tmux (safe multiline handling)
+- Usage: `squad-station send implement --body "Fix the bug in src/config.rs"`
+
+**`squad-station signal <agent-name> [message-id]`**
+- Mark agent task as completed (called by hook after agent finishes)
+- Updates message status from `processing` to `completed`
+- Notifies orchestrator (CLI mode) or updates DB only (IDE mode)
+- Usage: `squad-station signal implement <id>`
+
+**`squad-station list [--agent <name>] [--limit N]`**
+- List messages from database with status and timestamps
+- Filter by agent name with `--agent` flag
+- Limit results with `--limit` flag (default: all)
+- Usage: `squad-station list --agent implement --limit 5`
+
+**`squad-station agents`**
+- List all registered agents with current status and reconciliation
+- Shows: name, role, provider, model, current status (idle/busy/dead)
+- Reconciles against live tmux sessions
+- Usage: `squad-station agents`
+
+**`squad-station status`**
+- Show project summary: agents, pending tasks, completed tasks
+- Supports `--json` flag for machine-readable output
+- Usage: `squad-station status` or `squad-station status --json`
+
+**`squad-station register <name> <provider> <role> <tmux-session>`**
+- Register a new agent at runtime (without restarting)
+- Adds agent to database for message routing
+- Usage: `squad-station register new-agent claude-code worker squad-new-agent`
+
+**`squad-station context`**
+- Generate provider-aware orchestrator context file
+- Creates `.claude/commands/squad-orchestrator.md` (or provider-specific path)
+- Updates with squad.yml config, agent list, SDD playbook reference
+- Usage: `squad-station context`
+
+### Cleanup Commands
+
+**`squad-station close`**
+- Kill all agent tmux sessions defined in squad.yml
+- Shows killed/skipped session counts and remaining sessions
+- Useful for stopping agents between tasks
+- Usage: `squad-station close`
+
+**`squad-station reset [--no-relaunch]`**
+- Full cleanup: kill all sessions + delete database + relaunch
+- Default: automatically relaunches sessions after cleanup
+- Use `--no-relaunch` to skip session restart
+- Useful for resetting to clean state
+- Usage: `squad-station reset` or `squad-station reset --no-relaunch`
+
+**`squad-station clean [-y | --yes]`**
+- Delete local `.squad/station.db` database only
+- Prompts for confirmation before deletion
+- Use `-y` or `--yes` flag to skip confirmation
+- Useful for clearing message history without restarting sessions
+- Usage: `squad-station clean` or `squad-station clean -y`
+
+### UI & Monitoring
+
+**`squad-station ui`**
+- Launch interactive TUI dashboard with keybindings
+- View agent status, messages, task history in real-time
+- Supports focus navigation and message filtering
+- Usage: `squad-station ui`
+
+**`squad-station view`**
+- Open tmux tiled window showing all live agent sessions side-by-side
+- Useful for monitoring multiple agents simultaneously
+- Usage: `squad-station view`
+
+**`squad-station peek`**
+- Peek at an agent's next pending task from database
+- Usage: `squad-station peek <agent-name>`
+
+---
+
+## 9. Agent Naming Convention
 
 Agent name = Tmux session name. Format: `<project>-<provider>-<role>`
 
@@ -441,10 +540,10 @@ Agent name = Tmux session name. Format: `<project>-<provider>-<role>`
   → Station looks up tmux session via: agent name
 ```
 
-## 9. Data Model
+## 10. Data Model
 
 ```
-station.db  (1 file per project: ~/.agentic-squad/<project>/)
+station.db  (1 file per project: <project-root>/.squad/)
 
 ┌──────────────────────────────────────────────────┐
 │ messages                                          │
@@ -484,7 +583,7 @@ Relationships:
   Hook only needs signal <agent-name>, does NOT need to know task ID
 ```
 
-## 10. Message Lifecycle
+## 11. Message Lifecycle
 
 ```
                     Station send             Hook signal
@@ -568,3 +667,4 @@ methodology: bmad          # bmad | superpower | speckit | openspec | none
 *Source: Obsidian/1-Projects/Agentic-Coding-Squad/02. Solution Design - Squad Station.md*
 *Updated: Rust confirmed (supersedes Go references in original)*
 *Updated with: 04. Upgrade Design — Antigravity & Hooks Optimization*
+*Updated with: 05. Local DB — `.squad/station.db` in project directory (replaces `~/.agentic-squad/`)*

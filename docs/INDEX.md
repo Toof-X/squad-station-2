@@ -58,4 +58,16 @@ All documents are derived from the original Obsidian design notes:
 | Skip Notify | **In `signal.rs`** — runtime provider check from DB | SOLUTION-DESIGN.md §04 |
 
 ---
-*Last updated: 2026-03-09*
+*Last updated: 2026-03-10*
+
+## Recent Updates (2026-03-10)
+
+**Added CLI Reference section** to SOLUTION-DESIGN.md documenting all available commands:
+- Core commands (init, send, signal, list, agents, status, register, context)
+- Cleanup commands (close, reset, clean) — NEW
+- UI & monitoring commands (ui, view, peek)
+
+**Cleanup Commands** — New feature for resetting squad state:
+- `squad-station close` — Kill tmux sessions
+- `squad-station reset` — Full cleanup + relaunch
+- `squad-station clean` — Delete DB with confirmation

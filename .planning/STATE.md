@@ -70,8 +70,20 @@ None.
 |---|-------------|------|--------|-----------|
 | 1 | Fix squad-station init to show actual CLI commands in Get Started output | 2026-03-10 | 2c9f5e7 | [1-fix-squad-station-init-to-show-actual-cl](./quick/1-fix-squad-station-init-to-show-actual-cl/) |
 
+### Recent Unplanned Features (2026-03-10)
+
+**Cleanup Commands Implementation** — Discovered gap in user workflows for resetting state
+- **Date:** 2026-03-10
+- **Method:** Delegated via `/squad-orchestrator` to implement agent using TDD
+- **Features added:**
+  - `squad-station close` — Kill all agent tmux sessions
+  - `squad-station reset` — Kill sessions + delete DB + relaunch (optional)
+  - `squad-station clean` — Delete database only with confirmation
+- **Tests:** 9 new integration tests added, all 170/170 tests passing
+- **Documentation:** Added CLI Reference section to docs/SOLUTION-DESIGN.md
+
 ## Session Continuity
 
 Last session: 2026-03-10
-Stopped at: Milestone v1.4 complete
+Stopped at: Cleanup commands implemented and documented
 Resume file: None
