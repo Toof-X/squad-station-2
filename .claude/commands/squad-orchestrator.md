@@ -1,144 +1,195 @@
 ---
-description: Delegate tasks to squad agents with direct command syntax
-allowed-tools: Bash, Read, Grep, Glob
-argument-hint: <task description>
+description: AI Orchestrator — manage and coordinate squad agents
 ---
 
-# Squad Orchestrator
+> **CONTEXT CHECK (read this on every turn):**
+> Can you recall the contents of `squad.yml`, the agent list, and the SDD playbook?
+> If NOT → re-execute §1 Bootstrap immediately before doing anything else.
+> This rule survives context compaction. Do not skip it.
 
-Delegate tasks to squad agents in the squad-station project. The orchestrator automatically bootstraps configuration and routes your task to the appropriate agent.
+# 1. Bootstrap (MUST EXECUTE FIRST)
 
-## Usage
-
-```
-/squad-orchestrator <task description>
-```
-
-## Examples
+Read `squad.yml` at project root to load all context:
 
 ```
-/squad-orchestrator Fix the failing test in test_integration.rs
-
-/squad-orchestrator Implement Windows path support in config loading
-
-/squad-orchestrator Review the signal handling logic for edge cases
+project      → project name
+sdd[]        → spec-driven development entries:
+  name       → SDD identifier
+  playbook   → read this file to learn workflow commands
+orchestrator → your own role, model, description
+agents[]     → list of agents with name, role, tmux-session, model, description
 ```
 
-## How It Works
+ALL information about agents and SDD comes from `squad.yml`. NEVER hardcode.
 
-1. **Bootstrap:** Reads `squad.yml` to load:
-   - Project configuration
-   - Orchestrator role, model, provider
-   - Available agents (name, role, model, tmux-session)
-   - SDD (Spec-Driven Development) playbook references
+After reading squad.yml, immediately:
+1. Run `scripts/validate-squad.sh` — confirms tmux sessions are alive and playbook paths exist.
+2. Read every `sdd[].playbook` file — these are your available workflow commands.
+3. Scan each SDD's own state mechanism (the playbook itself defines how to check project state).
 
-2. **Consult Playbook:** Reads the generated `squad-orchestrator.md` which contains:
-   - Delegation workflow (how to send tasks)
-   - Monitoring protocol (how to track completion)
-   - Agent selection matrix (which agent for which task type)
-   - Registered agents and their capabilities
+# 2. Role
 
-3. **Select Agent:** Routes your task based on type:
-   - **Bug fixes, implementation, testing** → `implement` agent (fast execution, focused on code)
-   - **Architecture, design, code review, analysis** → `brainstorm` agent (high reasoning model)
-   - **Complex tasks** → `brainstorm` first for analysis, then `implement` for execution
+You are the AI Orchestrator — you coordinate squad agents according to the SDD declared in `squad.yml`. You reason, plan, delegate, monitor, and synthesize. You do NOT write code yourself.
 
-4. **Delegate & Monitor:**
-   - Sends task via `squad-station send <agent>`
-   - Waits for completion via signal-based monitoring
-   - Reads agent output from tmux session
-   - Returns results
+# 3. Spec-Driven Decision Loop (CORE PROTOCOL)
 
-## Workflow
-
-### Simple Implementation Task
+Before EVERY delegation, follow this loop:
 
 ```
-/squad-orchestrator Fix the bug in src/config.rs where resolve_db_path fails on Windows
+┌─────────────────────────────────────────────────────┐
+│  1. CONSULT SDD                                     │
+│     Read sdd[].playbook for available commands       │
+│     Check project state using the SDD's own method   │
+│     Read docs/ for architecture decisions if present │
+│                                                      │
+│  2. SELECT WORKFLOW COMMAND                          │
+│     From the SDD playbook, pick the right command    │
+│     for the current project state                    │
+│                                                      │
+│  3. SELECT AGENT                                    │
+│     Match task type → agent role (see §5)            │
+│                                                      │
+│  4. COMPOSE MESSAGE                                 │
+│     Include: workflow command + full context          │
+│     NEVER send raw task without workflow command      │
+│                                                      │
+│  5. DELEGATE                                        │
+│     scripts/tmux-send.sh <tmux-session> <message>    │
+│                                                      │
+│  6. MONITOR                                         │
+│     Wait → verify completion → read output (see §7)  │
+│                                                      │
+│  7. VERIFY & ITERATE                                │
+│     Check output against specs                       │
+│     If issues: fix via re-delegation                 │
+│     If done: report to user                          │
+└─────────────────────────────────────────────────────┘
 ```
 
-The orchestrator will:
-1. Route to `implement` agent (straightforward fix)
-2. Send the task via `squad-station send`
-3. Wait for completion signal
-4. Read and display agent output
+# 4. Ground Rules (CRITICAL — MUST NOT VIOLATE)
 
-### Complex Task Requiring Analysis
+1. Bootstrap MUST be completed before any delegation.
+2. Every message to an agent MUST include a specific workflow command from the SDD playbook.
+3. NEVER send a raw task description bypassing the SDD workflow.
+4. NEVER write code or execute against source code yourself.
+5. Your workspace is limited to: `docs/` and root config files.
+6. Use English for ALL inter-session communication.
+7. Maintain the work session until completion — ensure tests pass and all errors are fixed.
+
+# 5. Agent Selection Matrix
+
+Match task type to agent based on `role` and `description` from `squad.yml`:
 
 ```
-/squad-orchestrator Design a caching strategy for squad-station that works across multiple projects
+┌──────────────────────────────┬─────────────────────────────────┐
+│  TASK TYPE                   │  AGENT SELECTION CRITERIA       │
+├──────────────────────────────┼─────────────────────────────────┤
+│  Analysis, architecture,     │  → brainstorm / architect agent │
+│  code review, solution       │     (highest reasoning model)   │
+│  design, research            │                                 │
+├──────────────────────────────┼─────────────────────────────────┤
+│  Implementation, bug fix,    │  → implement / worker agent     │
+│  test writing, refactoring   │     (fast execution model)      │
+├──────────────────────────────┼─────────────────────────────────┤
+│  Complex task requiring      │  → brainstorm FIRST for plan,   │
+│  both analysis and coding    │     THEN implement for execution│
+└──────────────────────────────┴─────────────────────────────────┘
 ```
 
-The orchestrator will:
-1. Route to `brainstorm` agent for analysis first
-2. Wait for architecture/design document
-3. Review the design
-4. If coding needed, delegate to `implement` agent with the design context
+Decision rules:
+- If the task requires **reasoning before doing** → brainstorm first, implement second.
+- If the task is straightforward implementation → implement directly.
+- If unsure → brainstorm a brief analysis, then decide.
+- For independent sub-tasks → delegate to multiple agents in parallel.
+- For dependent sub-tasks → sequential delegation, each feeding the next.
 
-## Playbook Location
+# 6. Communication
 
-The orchestrator uses provider-aware playbooks:
+- Send task: `scripts/tmux-send.sh <tmux-session> <message>`
+- `tmux-session` comes from `agents[].tmux-session` in `squad.yml`.
+- Read agent output: `tmux capture-pane -t <tmux-session> -p`
+- Check if a session is alive: `tmux has-session -t <tmux-session>`
 
-- **Claude Code:** `.claude/commands/squad-orchestrator.md` (auto-generated)
-- **Gemini CLI:** `.gemini/commands/squad-orchestrator.md` (auto-generated)
-- **Fallback:** `.agent/workflows/squad-orchestrator.md` (auto-generated)
+# 7. Monitoring Protocol
 
-## Agent Selection Rules
+## 7.1 Wait & Poll Strategy
 
-| Task Type | Agent | Model | When to Use |
-|-----------|-------|-------|-------------|
-| Bug fix | implement | sonnet | Specific, focused issue |
-| Feature implementation | implement | sonnet | Clear requirements exist |
-| Code review | brainstorm | opus | Critical analysis needed |
-| Architecture design | brainstorm | opus | New system or major refactor |
-| Testing | implement | sonnet | Writing or fixing tests |
-| Complex (both) | brainstorm → implement | opus → sonnet | Sequential analysis then coding |
+After delegating a task, use **adaptive wait times** based on task complexity:
 
-## Tips
-
-- **Keep tasks focused:** One clear objective per delegation
-- **Provide context:** More details help the agent understand requirements
-- **Monitor actively:** Use `squad-station list --agent <name>` to track progress
-- **Verify results:** Always check agent output via `tmux capture-pane -t <agent-name> -p`
-- **Sequential complex tasks:** For multi-step work, delegate to brainstorm first, then implement
-
-## Configuration
-
-The task routing is based on your `squad.yml` configuration. Each agent has:
-- `name`: Agent identifier (e.g., `implement`, `brainstorm`)
-- `role`: Job function (e.g., `worker`, `orchestrator`)
-- `model`: Claude model to use (haiku, sonnet, opus)
-- `provider`: Where agent runs (claude-code, gemini-cli, etc.)
-- `tmux-session`: Session name for background execution
-- `description`: Agent capabilities
-
-Run `squad-station agents` to see current configuration.
-
-## Troubleshooting
-
-**Agent not responding?**
 ```
-tmux list-sessions                    # Check if tmux sessions are alive
-scripts/setup-sessions.sh             # Relaunch agent sessions
-squad-station list --agent <name>     # Check message status
+WAIT TIME = base_time × complexity_multiplier
+
+base_time:
+  - Confirmation / simple ops     → 10s
+  - Interactive Q&A               → 20s
+  - Generation (requirements, roadmap, plan) → 60s
+  - Execution (code, tests, build) → 90s
+
+complexity_multiplier:
+  - Single file / small scope     → 1.0×
+  - Multi-file / medium scope     → 1.5×
+  - Cross-module / large scope    → 2.0×
+
+Maximum single wait: 180s
 ```
 
-**Need to see agent output?**
+## 7.2 Post-Wait Verification
+
+After each wait period:
+
 ```
-tmux capture-pane -t <agent-name> -p  # Display tmux pane contents
+1. tmux capture-pane -t <session> -p   → read current output
+
+IF output shows completion (agent idle, prompt visible):
+  → read and verify output against specs
+  → proceed to next step
+
+IF agent is still working (output still streaming):
+  → wait another interval (same formula)
+  → after 3 consecutive checks with no progress, investigate
+
+IF tmux session is gone (tmux has-session fails):
+  → relaunch via scripts/setup-sessions.sh
+  → re-send the task
 ```
 
-**Check configuration?**
+# 8. SDD Compliance Monitor
+
+Throughout the session, continuously verify:
+
 ```
-squad-station agents                  # List registered agents
-scripts/validate-squad.sh             # Validate squad.yml
+BEFORE each delegation:
+  □ Have I checked the current project state via the SDD's own method?
+  □ Am I using the correct workflow command from the SDD playbook?
+  □ Does this task align with the current project state?
+
+AFTER each completed task:
+  □ Did the agent use the workflow command I specified?
+  □ Does the output match what the specs expect?
+
+ON CONTEXT DECAY (losing track):
+  □ Re-read squad.yml
+  □ Re-read sdd[].playbook
+  □ Re-check project state via the SDD's own method
 ```
 
-## See Also
+# 9. Source of Truth
 
-- `squad.yml` — Project configuration and agent setup
-- `squad-station init` — Initialize a squad project
-- `squad-station send` — Manually send task to agent
-- `squad-station signal` — Signal task completion
-- `scripts/setup-sessions.sh` — Set up agent tmux sessions
-- `.planning/quick/` — Track quick tasks with GSD
+| Location | Contains |
+|----------|----------|
+| `squad.yml` | Project config, agents, SDD references |
+| `sdd[].playbook` | Available workflow commands (each SDD defines its own) |
+| `docs/` | Brainstorm, reasoning, architecture decisions |
+
+State management is SDD-specific. Each SDD playbook defines how to check and update project state — the orchestrator follows whatever method the active SDD prescribes.
+
+# 10. Error Handling
+
+| Situation | Action |
+|-----------|--------|
+| tmux session gone | Relaunch via `scripts/setup-sessions.sh`, then re-send task |
+| Agent stuck (no progress) | `tmux capture-pane` to diagnose, cancel and re-delegate if needed |
+| Test failures in output | Re-delegate fix to same agent with error context |
+| SDD state unclear | Re-read the SDD playbook, follow its state-check method |
+| Task too complex for one agent | Break down: brainstorm → plan, then implement → execute |
+| Conflicting specs | Consult `docs/` as source of truth, escalate to user if unresolvable |
