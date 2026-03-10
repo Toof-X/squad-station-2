@@ -5,7 +5,7 @@ milestone_name: Unified Playbook & Local DB
 status: complete
 stopped_at: Milestone v1.4 complete
 last_updated: "2026-03-10"
-last_activity: 2026-03-10 — v1.4 milestone completed and archived
+last_activity: 2026-03-10 — Completed quick task 1: Fix squad-station init to show actual CLI commands in Get Started output
 progress:
   total_phases: 2
   completed_phases: 2
@@ -63,6 +63,12 @@ None.
 ### Blockers/Concerns
 
 None.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 1 | Fix squad-station init to show actual CLI commands in Get Started output | 2026-03-10 | 2c9f5e7 | [1-fix-squad-station-init-to-show-actual-cl](./quick/1-fix-squad-station-init-to-show-actual-cl/) |
 
 ## Session Continuity
 
