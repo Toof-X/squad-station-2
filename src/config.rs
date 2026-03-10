@@ -104,14 +104,13 @@ pub fn load_config(path: &Path) -> Result<SquadConfig> {
 
 /// Resolve the DB path from config or use the default.
 /// SQUAD_STATION_DB env var overrides the default path (useful for testing).
-pub fn resolve_db_path(config: &SquadConfig) -> Result<PathBuf> {
+pub fn resolve_db_path(_config: &SquadConfig) -> Result<PathBuf> {
     let db_path = if let Ok(env_path) = std::env::var("SQUAD_STATION_DB") {
         PathBuf::from(env_path)
     } else {
-        let home = dirs::home_dir().ok_or_else(|| anyhow!("Cannot determine home directory"))?;
-        home.join(".agentic-squad")
-            .join(&config.project) // config.project is now a String directly
-            .join("station.db")
+        let cwd = std::env::current_dir()
+            .map_err(|e| anyhow!("Cannot determine current directory: {}", e))?;
+        cwd.join(".squad").join("station.db")
     };
 
     // Ensure the parent directory exists

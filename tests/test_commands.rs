@@ -97,11 +97,11 @@ agents: []
 
     let path_str = path.to_str().unwrap();
     assert!(
-        path_str.contains(".agentic-squad/my-project/station.db"),
-        "default path should contain .agentic-squad/<project>/station.db, got: {}",
+        path_str.ends_with(".squad/station.db"),
+        "default path should end with .squad/station.db, got: {}",
         path_str
     );
-    // Should be absolute (starts from home directory)
+    // Should be absolute (starts from current working directory)
     assert!(path.is_absolute(), "resolved DB path must be absolute");
 }
 
