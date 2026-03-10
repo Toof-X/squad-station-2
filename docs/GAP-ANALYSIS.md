@@ -12,7 +12,7 @@
 |----------|-------|---------|-----------|-------------|
 | 🔴 CRITICAL | 3 | 3 | 0 | ~~Config, Messages schema, Agents schema~~ — ALL DONE |
 | 🟡 HIGH | 9 | 9 | 0 | ~~All original + upgrade #04~~ — ALL DONE |
-| 🟢 MEDIUM | 5 | 5 | 0 | ~~All original + upgrade #04~~ — ALL DONE |
+| 🟢 MEDIUM | 6 | 5 | 1 | ~~All original + upgrade #04~~ done; upgrade #05 in progress |
 
 ---
 
@@ -69,7 +69,7 @@
 **Required:**
 - [x] Create `hooks/claude-code-notify.sh` for Notification event ✅
 - [x] Create `hooks/gemini-cli-notify.sh` ✅
-- [ ] Document how to register notification hook (deferred to PLAYBOOK rewrite)
+- [x] Document how to register notification hook ✅ (covered in PLAYBOOK.md §4 "Notification Hooks")
 
 ### GAP-05: CLI `send` — uses positional arg instead of `--body` flag ✅ DONE
 
@@ -148,6 +148,9 @@ Phase 4 (Antigravity & Hooks Optimization — upgrade #04): ✅ ALL DONE
   GAP-13 ✅ init.rs skip tmux for Antigravity — DB-only registration
   GAP-14 ✅ .agent/workflows/ context generation — 3 workflow files
   GAP-17 ✅ Safe tmux multiline injection — load-buffer/paste-buffer
+
+Phase 5 (Unified Playbook — upgrade #05): ⏳ IN PROGRESS
+  GAP-18 ⏳ Unified orchestrator playbook — replace 3 fragmented files with single squad-orchestrator.md
 ```
 
 ---
@@ -188,6 +191,9 @@ Phase 4 (Antigravity & Hooks Optimization — upgrade #04): ✅ ALL DONE
 
 > **Verified 2026-03-09** — `context.rs` generates 3 workflow files in `.agent/workflows/`.
 > Delegation, monitoring, and roster files created. 8 integration tests cover content + idempotency.
+>
+> ⚠️ **NOTE:** GAP-18 will supersede this gap's workflow file approach. The 3 fragmented files
+> will be replaced by a single unified playbook. Current implementation remains active until GAP-18 is completed.
 
 **Required changes:**
 - [x] Add conditional in `context.rs`: detect orchestrator provider ✅
@@ -240,6 +246,8 @@ Phase 4 (Antigravity & Hooks Optimization — upgrade #04): ✅ ALL DONE
 ### GAP-18: Eliminate fragmented context files in favor of a cohesive Playbook
 
 > **Identified 2026-03-10** — Current `squad-station context` generates 3 fragmented technical files (`delegate`, `monitor`, `roster`). This approach fails to provide a cohesive Persona and execution discipline as demonstrated by the `withClaudeCodeTmux.vi.toml` command. The fragmented concept (`squad-delegate.md`, `squad-monitor.md`, `squad-roster.md`) must be entirely eliminated.
+>
+> ⚠️ **NOTE:** Implementation was attempted in commit `0ce6f83` but reverted in commit `7add4ba` which restored the fragmented 3-file approach.
 
 **Required changes:**
 - [ ] Eliminate the generation of `squad-delegate`, `squad-monitor`, and `squad-roster`.
@@ -267,6 +275,6 @@ Phase 4 (Antigravity & Hooks Optimization — upgrade #04): ✅ ALL DONE
 
 ---
 *Generated: 2026-03-08*
-*Updated: 2026-03-09 — ALL 17/17 GAPs RESOLVED. Milestone v1.3 shipped. All 10 decisions resolved.*
-*Implemented via GSD framework: 4 phases (10-13), 8 plans, 158 tests passing, audit score 15/15.*
+*Updated: 2026-03-10 — 17/18 GAPs RESOLVED. GAP-18 (unified playbook) remains. All 10 decisions resolved.*
+*Implemented via GSD framework: 4 phases (10-13), 8 plans, 159 tests passing, audit score 15/15.*
 *Based on: docs/VISION.md, docs/SOLUTION-DESIGN.md, docs/TECH-STACK.md vs codebase*
