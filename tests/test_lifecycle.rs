@@ -31,8 +31,9 @@ fn cmd_with_db(db_path: &std::path::Path) -> std::process::Command {
 }
 
 #[test]
-fn test_context_output_generates_unified_playbook() {
-    // SESS-05 (updated): context command writes a unified playbook file and prints a 1-line summary.
+fn test_context_output_contains_agents() {
+    // SESS-05 (updated): context command writes .agent/workflows/ files and prints a 1-line summary.
+    // The old stdout roster format has been replaced by file generation (AGNT-04, AGNT-05, AGNT-06).
     let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
     let db_file = tmp.path().join("station.db");
     write_squad_yml(tmp.path(), &db_file);
@@ -56,18 +57,46 @@ fn test_context_output_generates_unified_playbook() {
         "context output must contain 1-line summary, got:\n{}",
         stdout
     );
-    
-    let playbook_path = tmp.path().join(".agent/workflows/squad-orchestrator.md");
+    // Roster file must exist
     assert!(
-        playbook_path.exists(),
-        ".agent/workflows/squad-orchestrator.md must be created"
+        tmp.path().join(".agent/workflows/squad-roster.md").exists(),
+        ".agent/workflows/squad-roster.md must be created"
     );
-    
-    let playbook = std::fs::read_to_string(&playbook_path).unwrap();
+}
+
+#[test]
+fn test_context_output_has_usage() {
+    // SESS-05 (updated): context command writes .agent/workflows/ files.
+    // Delegation instructions are now in squad-delegate.md (not stdout).
+    let tmp = tempfile::TempDir::new().expect("failed to create temp dir");
+    let db_file = tmp.path().join("station.db");
+    write_squad_yml(tmp.path(), &db_file);
+
+    let output = cmd_with_db(&db_file)
+        .arg("context")
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to run binary");
+
     assert!(
-        playbook.contains("squad-station send"),
-        "playbook must include 'squad-station send' example, got:\n{}",
-        playbook
+        output.status.success(),
+        "context command should exit 0, got: {:?}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // Delegation/usage is now in squad-delegate.md
+    let delegate_path = tmp.path().join(".agent/workflows/squad-delegate.md");
+    assert!(delegate_path.exists(), ".agent/workflows/squad-delegate.md must be created");
+    let delegate = std::fs::read_to_string(&delegate_path).unwrap();
+    assert!(
+        delegate.contains("squad-station send"),
+        "squad-delegate.md must include 'squad-station send' example, got:\n{}",
+        delegate
+    );
+    assert!(
+        delegate.contains("How to Delegate"),
+        "squad-delegate.md must contain 'How to Delegate' section, got:\n{}",
+        delegate
     );
 }
 

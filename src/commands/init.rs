@@ -146,15 +146,10 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
             println!("Warning: Failed to generate context files: {}", e);
         }
 
-        let playbook_path = match config.orchestrator.provider.as_str() {
-            "gemini-cli" => ".gemini/commands/squad-orchestrator.toml",
-            "antigravity" | _ => ".agent/workflows/squad-orchestrator.md",
-        };
-
         println!("\nGet Started (IDE Orchestrator):");
         println!("  1. Open your AI Assistant (e.g., Antigravity, Cursor, Gemini)");
-        println!("  2. Point it to the generated playbook, for example:");
-        println!("     \"Please read {} and start orchestrating tasks.\"", playbook_path);
+        println!("  2. Point it to the generated workflows, for example:");
+        println!("     \"Please read .agent/workflows/squad-delegate.md and start delegating tasks.\"");
         println!("  3. Your AI will autonomously use squad-station to orchestrate the worker agents.");
     }
 

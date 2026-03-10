@@ -237,20 +237,18 @@ Phase 4 (Antigravity & Hooks Optimization — upgrade #04): ✅ ALL DONE
 
 ## 🟢 MEDIUM — Upgrade #05: Unified Orchestrator Playbook (GAP-18)
 
-### GAP-18: Eliminate fragmented context files in favor of unified Playbook
+### GAP-18: Eliminate fragmented context files in favor of a cohesive Playbook
 
-> **Identified 2026-03-10** — Current `squad-station context` generates 3 fragmented technical files. This fails to properly steer the LLM Orchestrator. The idea of separate `squad-delegate`, `squad-monitor`, and `squad-roster` is flawed and will be completely eliminated.
+> **Identified 2026-03-10** — Current `squad-station context` generates 3 fragmented technical files (`delegate`, `monitor`, `roster`). This approach fails to provide a cohesive Persona and execution discipline as demonstrated by the `withClaudeCodeTmux.vi.toml` command. The fragmented concept (`squad-delegate.md`, `squad-monitor.md`, `squad-roster.md`) must be entirely eliminated.
 
 **Required changes:**
-- [x] Completely eliminate the concept of `squad-delegate`, `squad-monitor`, and `squad-roster`.
-- [x] Replace context generation logic to generate a **single, unified playbook file**.
-- [x] Target correct directories based on orchestrator tool (`.agent/workflows/` for `antigravity`, `.gemini/commands/` for `gemini-cli`, `.claude/commands/` for `claude-code`).
-- [x] Adapt the Orchestrator persona ("AI PM & Tech Lead"), strict Context Handoff rules, and execution discipline from the provided reference command.
-- [x] Dynamically inject the listed agents from `squad.yml` into the unified document.
+- [ ] Eliminate the generation of `squad-delegate`, `squad-monitor`, and `squad-roster`.
+- [ ] Adjust the wording from the `withClaudeCodeTmux.vi.toml` command to serve as a base template.
+- [ ] Read `squad.yml` to dynamically extract the necessary Agents and inject them into this new playbook.
+- [ ] Generate a single, unified playbook file (`squad-orchestrator.md` or `.toml` depending on the orchestrator's provider).
+- [ ] Update `squad-station init` console output ("Get Started") to point to this single unified workflow file instead of the deleted `squad-delegate.md`.
 
 ---
-
-## Owner Decisions Needed
 
 ### All Decisions — Resolved ✅
 

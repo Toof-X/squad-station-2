@@ -1,16 +1,16 @@
 project: squad-station
 orchestrator:
-  tool: claude-code
+  provider: claude-code
   role: orchestrator
-  model: claude-opus-4-5
+  model: opus
   description: "Routes tasks between agents and synthesizes results"
 agents:
   - name: implement
-    tool: claude-code
+    provider: claude-code
     role: worker
-    model: claude-sonnet-4-5
+    model: sonnet
     description: "Implements features and fixes bugs"
   - name: review
-    tool: gemini
+    provider: gemini-cli
     role: worker
     description: "Reviews code and provides feedback"
