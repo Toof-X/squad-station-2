@@ -43,6 +43,14 @@ pub async fn run(config_path: PathBuf, json: bool) -> Result<()> {
         }
     }
 
+    // Also kill the monitor session
+    let monitor_name = format!("{}-monitor", config.project);
+    if tmux::session_exists(&monitor_name) {
+        tmux::kill_session(&monitor_name)?;
+        killed += 1;
+        killed_names.push(monitor_name);
+    }
+
     let remaining = tmux::list_live_session_names();
 
     if json {

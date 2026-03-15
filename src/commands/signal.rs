@@ -76,7 +76,8 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
     };
 
     // Find orchestrator and notify (only on actual state change).
-    let orchestrator_notified = if rows > 0 {
+    // GUARD 5: Skip notification when agent is frozen (user is in control).
+    let orchestrator_notified = if rows > 0 && agent_record.status != "frozen" {
         let orchestrator = db::agents::get_orchestrator(&pool).await?;
         if let Some(orch) = orchestrator {
             let task_id_str = task_id.as_deref().unwrap_or("unknown");

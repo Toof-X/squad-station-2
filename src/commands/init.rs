@@ -38,15 +38,15 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     } else if tmux::session_exists(&orch_name) {
         false
     } else {
-        // GAP-01/05: Orchestrator launches at .squad/orchestrator/ for CLAUDE.md isolation
-        let orch_dir = db_path
+        // Orchestrator launches at project root.
+        // Context loaded via /squad-orchestrator slash command.
+        let project_root = db_path
             .parent()
-            .unwrap_or(std::path::Path::new(".squad"))
-            .join("orchestrator");
-        std::fs::create_dir_all(&orch_dir)?;
-        let orch_dir_str = orch_dir.to_string_lossy().to_string();
+            .and_then(|p| p.parent())
+            .unwrap_or(std::path::Path::new("."));
+        let project_root_str = project_root.to_string_lossy().to_string();
         let cmd = get_launch_command(&config.orchestrator);
-        tmux::launch_agent_in_dir(&orch_name, &cmd, &orch_dir_str)?;
+        tmux::launch_agent_in_dir(&orch_name, &cmd, &project_root_str)?;
         true
     };
     let orch_skipped = !orch_launched && !config.orchestrator.is_db_only();
@@ -97,7 +97,26 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
         }
     }
 
-    // 7. Output results
+    // 7. Create monitor session with interactive panes for all agents
+    let monitor_name = format!("{}-monitor", config.project);
+    let mut monitor_sessions: Vec<String> = vec![];
+    if !config.orchestrator.is_db_only() {
+        monitor_sessions.push(orch_name.clone());
+    }
+    for agent in &config.agents {
+        let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
+        let agent_name = config::sanitize_session_name(&format!("{}-{}", config.project, role_suffix));
+        monitor_sessions.push(agent_name);
+    }
+    // Kill existing monitor session before recreating
+    tmux::kill_session(&monitor_name)?;
+    let monitor_created = if !monitor_sessions.is_empty() {
+        tmux::create_view_session(&monitor_name, &monitor_sessions).is_ok()
+    } else {
+        false
+    };
+
+    // 8. Output results
     let db_path_str = db_path.display().to_string();
 
     if json {
@@ -106,6 +125,7 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
             "skipped": skipped,
             "failed": failed,
             "db_path": db_path_str,
+            "monitor": if monitor_created { Some(&monitor_name) } else { None },
         });
         println!("{}", serde_json::to_string(&output)?);
     } else {
@@ -157,17 +177,31 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
             }
         }
 
-        println!("\nGenerating IDE orchestration context...");
+        println!("\nGenerating orchestrator context...");
         if let Err(e) = crate::commands::context::run().await {
             println!("Warning: Failed to generate context files: {}", e);
         }
 
+        // Send /squad-orchestrator to load context
+        if orch_launched && !config.orchestrator.is_db_only() {
+            std::thread::sleep(std::time::Duration::from_secs(8));
+            if let Err(e) = tmux::send_keys_literal(&orch_name, "/squad-orchestrator") {
+                eprintln!("Warning: Failed to send slash command to orchestrator: {}", e);
+            } else {
+                println!("  Loaded /squad-orchestrator into {}", orch_name);
+            }
+        }
+
         println!("\nGet Started:");
-        println!("  The orchestrator session is running at .squad/orchestrator/");
-        println!("  Context file is auto-loaded — no manual setup needed.");
+        println!("  Context loaded via /squad-orchestrator.");
+        println!("  To reload: type /squad-orchestrator in the orchestrator session.");
         println!("\n  Attach to orchestrator:");
         println!("     tmux attach -t {}", orch_name);
-        println!("\n  Monitor all agents:");
+        if monitor_created {
+            println!("\n  Monitor all agents (interactive panes):");
+            println!("     tmux attach -t {}", monitor_name);
+        }
+        println!("\n  Monitor all agents (read-only view):");
         println!("     squad-station view");
     }
 
@@ -219,15 +253,13 @@ fn install_claude_hooks(settings_file: &str) -> anyhow::Result<bool> {
         "hooks": [{"type": "command", "command": signal_cmd}]
     }]);
 
-    // Notification hooks — agent needs input → notify orchestrator (NOT signal)
-    // GAP-04: notify keeps task status as processing, signal would mark it completed
+    // Notification hook — agent needs permission approval → notify orchestrator
+    // Only permission_prompt triggers notify. idle_prompt must NOT trigger notify
+    // because idle = agent finished and is waiting for next task, which causes a
+    // notification loop: idle → notify orchestrator → orchestrator sends task → idle → notify...
     settings["hooks"]["Notification"] = serde_json::json!([
         {
             "matcher": "permission_prompt",
-            "hooks": [{"type": "command", "command": notify_cmd}]
-        },
-        {
-            "matcher": "idle_prompt",
             "hooks": [{"type": "command", "command": notify_cmd}]
         }
     ]);

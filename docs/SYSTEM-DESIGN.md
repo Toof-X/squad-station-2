@@ -111,7 +111,11 @@ squad-station init
    - claude-code → claude --dangerously-skip-permissions --model <model>
    - gemini-cli  → gemini --model <model>
 7. Generate orchestrator context file → .squad/orchestrator/<PROVIDER_FILE>
-8. Print "Get Started" message with provider-specific CLI invocation
+8. Create monitor session (<project>-monitor):
+   - Tiled panes, one per agent (orchestrator + workers)
+   - Each pane is an interactive nested tmux attach
+   - Attach via: tmux attach -t <project>-monitor
+9. Print "Get Started" message with provider-specific CLI invocation
 ```
 
 ### 3.1 Orchestrator Context — Provider-Specific File
@@ -320,7 +324,8 @@ Orchestrator receives both → synthesizes → next step
 squad-station — Message routing and orchestration for AI agent squads
 
 Setup:
-  init [config]                       Read squad.yml, create DB, tmux sessions, context
+  init [config]                       Read squad.yml, create DB, tmux sessions, context,
+                                      and monitor session with interactive panes
                                       (default: squad.yml, walks up dir tree)
   context                             Generate orchestrator context file per provider
 
@@ -496,6 +501,12 @@ my-app/
 │   ├── tmux-send.sh              ← send text to tmux
 │   └── validate-squad.sh         ← validate squad.yml
 └── (project codebase)
+
+tmux sessions created:
+  my-app-orchestrator              ← orchestrator AI session
+  my-app-implement                 ← worker AI session
+  my-app-brainstorm                ← worker AI session
+  my-app-monitor                   ← interactive monitor (tiled panes for all agents)
 ```
 
 ---

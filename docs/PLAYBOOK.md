@@ -96,6 +96,7 @@ This will:
 3. Launch each agent in its own tmux session
 4. Auto-install completion hooks (or print manual instructions)
 5. Generate orchestrator context file (`.squad/orchestrator/CLAUDE.md` or provider-specific)
+6. Create `<project>-monitor` tmux session with interactive tiled panes for all agents
 
 **Check the result:**
 
@@ -325,7 +326,15 @@ Controls:
 
 The dashboard auto-refreshes every 3 seconds.
 
-### tmux tiled view
+### Interactive monitor (created by init)
+
+```bash
+tmux attach -t my-app-monitor
+```
+
+The monitor session is created automatically during `squad-station init`. It contains interactive tiled panes — one per agent (orchestrator + workers). You can type directly into any pane. Killed and recreated on each `init` or `close`.
+
+### tmux tiled view (read-only)
 
 ```bash
 squad-station view
@@ -382,7 +391,7 @@ Duplicate signals are safe — they silently succeed.
 squad-station close
 ```
 
-Kills all tmux sessions defined in squad.yml. Shows killed/skipped counts.
+Kills all tmux sessions defined in squad.yml, including the monitor session. Shows killed/skipped counts.
 
 ### Full reset (kill + delete DB + relaunch)
 

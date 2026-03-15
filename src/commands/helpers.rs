@@ -9,6 +9,10 @@ pub async fn reconcile_agent_statuses(pool: &SqlitePool) -> anyhow::Result<()> {
     let agents = db::agents::list_agents(pool).await?;
     for agent in &agents {
         let session_alive = tmux::session_exists(&agent.name);
+        // Don't override frozen status — user is in control
+        if agent.status == "frozen" {
+            continue;
+        }
         if !session_alive && agent.status != "dead" {
             db::agents::update_agent_status(pool, &agent.name, "dead").await?;
         } else if session_alive && agent.status == "dead" {
@@ -47,6 +51,7 @@ pub fn colorize_agent_status(status: &str) -> String {
             status.if_supports_color(Stream::Stdout, |s| s.yellow())
         ),
         "dead" => format!("{}", status.if_supports_color(Stream::Stdout, |s| s.red())),
+        "frozen" => format!("{}", status.if_supports_color(Stream::Stdout, |s| s.blue())),
         _ => status.to_string(),
     }
 }

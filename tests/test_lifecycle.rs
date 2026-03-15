@@ -53,14 +53,14 @@ fn test_context_output_contains_agents() {
     );
     // New behavior: 1-line summary to stdout
     assert!(
-        stdout.contains("Generated") && stdout.contains("CLAUDE.md"),
+        stdout.contains("Generated") && stdout.contains("squad-orchestrator.md"),
         "context output must contain 1-line summary, got:\n{}",
         stdout
     );
-    // Orchestrator context at .squad/orchestrator/CLAUDE.md (GAP-02)
+    // Orchestrator context at .claude/commands/squad-orchestrator.md (GAP-02)
     assert!(
-        tmp.path().join(".squad/orchestrator/CLAUDE.md").exists(),
-        ".squad/orchestrator/CLAUDE.md must be created"
+        tmp.path().join(".claude/commands/squad-orchestrator.md").exists(),
+        ".claude/commands/squad-orchestrator.md must be created"
     );
 }
 
@@ -84,9 +84,9 @@ fn test_context_output_has_usage() {
         output.status,
         String::from_utf8_lossy(&output.stderr)
     );
-    // Orchestrator context at .squad/orchestrator/CLAUDE.md (GAP-02)
-    let orchestrator_path = tmp.path().join(".squad/orchestrator/CLAUDE.md");
-    assert!(orchestrator_path.exists(), ".squad/orchestrator/CLAUDE.md must be created");
+    // Orchestrator context at .claude/commands/squad-orchestrator.md (GAP-02)
+    let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
+    assert!(orchestrator_path.exists(), ".claude/commands/squad-orchestrator.md must be created");
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
         content.contains("squad-station send"),
@@ -94,8 +94,8 @@ fn test_context_output_has_usage() {
         content
     );
     assert!(
-        content.contains("How to Delegate"),
-        "squad-orchestrator.md must contain 'How to Delegate' section, got:\n{}",
+        content.contains("Session Routing"),
+        "squad-orchestrator.md must contain 'Session Routing' section, got:\n{}",
         content
     );
 }

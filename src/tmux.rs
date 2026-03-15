@@ -118,6 +118,8 @@ fn paste_buffer_args(target: &str) -> Vec<String> {
 ///
 /// Always uses `-l` flag to prevent special character injection.
 /// Sends Enter as a separate call so it is interpreted as a key, not literal text.
+/// Includes a short delay between text and Enter to ensure the target pane
+/// has received and rendered the text before Enter is processed.
 pub fn send_keys_literal(target: &str, text: &str) -> Result<()> {
     // Step 1: Send text as literal (no key name interpretation)
     let args = send_keys_args(target, text);
@@ -126,7 +128,10 @@ pub fn send_keys_literal(target: &str, text: &str) -> Result<()> {
         bail!("tmux send-keys failed for target: {}", target);
     }
 
-    // Step 2: Send Enter as separate key (NOT -l, so Enter key is recognized)
+    // Step 2: Wait for the pane to receive and render the text
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // Step 3: Send Enter as separate key (NOT -l, so Enter key is recognized)
     let enter = enter_args(target);
     let status = Command::new("tmux").args(&enter).status()?;
     if !status.success() {
@@ -168,7 +173,10 @@ pub fn inject_body(target: &str, body: &str) -> Result<()> {
         bail!("tmux paste-buffer failed for target: {}", target);
     }
 
-    // Step 4: Send Enter (paste-buffer does NOT send Enter automatically)
+    // Step 4: Wait for the pane to receive and render the pasted text
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // Step 5: Send Enter (paste-buffer does NOT send Enter automatically)
     let enter = enter_args(target);
     let status = Command::new("tmux").args(&enter).status()?;
     if !status.success() {
@@ -213,6 +221,7 @@ pub fn kill_window(window_name: &str) -> Result<()> {
 pub fn kill_session(session_name: &str) -> Result<()> {
     let _ = Command::new("tmux")
         .args(kill_session_args(session_name))
+        .stderr(std::process::Stdio::null())
         .status();
     Ok(())
 }

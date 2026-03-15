@@ -2,7 +2,7 @@ project: squad-station
 
 sdd:
   - name: get-shit-done
-    playbook: "/Users/tranthien/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/3-Research/Github/Get Shit Done/2. Playbook.md"
+    playbook: ".squad/sdd/gsd-playbook.md"
 
 orchestrator:
   provider: claude-code

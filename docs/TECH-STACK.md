@@ -70,7 +70,7 @@ squad-station/
 │   ├── lib.rs               ← Re-exports for test access
 │   ├── commands/
 │   │   ├── mod.rs
-│   │   ├── init.rs          ← squad.yml → DB + tmux sessions + context
+│   │   ├── init.rs          ← squad.yml → DB + tmux sessions + context + monitor
 │   │   ├── send.rs          ← Task → agent (DB + tmux inject)
 │   │   ├── signal.rs        ← Hook completion (guard chain + orch skip)
 │   │   ├── notify.rs        ← Mid-task HITL notification (no status change)

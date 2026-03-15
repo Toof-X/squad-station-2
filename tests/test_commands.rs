@@ -307,23 +307,23 @@ async fn test_build_orchestrator_md_contains_all_sections() {
     let agents = db::agents::list_agents(&db).await.unwrap();
     let content = build_orchestrator_md(&agents, "/project/root", &[]);
 
-    assert!(content.contains("# Squad Orchestrator Playbook"), "Missing title");
-    assert!(content.contains("## Delegation Workflow"), "Missing delegation section");
-    assert!(content.contains("## Monitoring Workflow"), "Missing monitoring section");
+    assert!(content.contains("You are the orchestrator"), "Missing role definition");
+    assert!(content.contains("## Completion Notification"), "Missing completion notification section");
+    assert!(content.contains("## Session Routing"), "Missing session routing section");
     assert!(content.contains("## Agent Roster"), "Missing roster section");
     assert!(content.contains("p-claude-implement"), "Worker agent missing from content");
     assert!(content.contains("claude-sonnet"), "Worker model missing");
+    assert!(content.contains("/project/root"), "Content must include project root path");
+    // Orchestrator should NOT appear in sending commands block (only in roster)
+    let sending_start = content.find("## Sending Tasks").unwrap_or(0);
+    let sending_end = content[sending_start..].find("\n## ").map(|i| sending_start + i).unwrap_or(content.len());
+    let sending_section = &content[sending_start..sending_end];
     assert!(
-        content.contains("/project/root"),
-        "Content must include project root path"
+        !sending_section.contains("p-claude-orchestrator"),
+        "Orchestrator must not appear in sending commands"
     );
-    // Orchestrator should NOT appear in the send-command delegation block
-    let delegation_section_end = content.find("## How to Delegate").unwrap_or(content.len());
-    let delegation_section = &content[..delegation_section_end];
-    assert!(
-        !delegation_section.contains("p-claude-orchestrator"),
-        "Orchestrator must not appear in delegation send-command block"
-    );
+    assert!(content.contains("[SQUAD SIGNAL]"), "Missing signal format example");
+    assert!(content.contains("DO NOT need to"), "Missing anti-polling instruction");
 }
 
 // ============================================================
@@ -340,19 +340,24 @@ async fn test_build_orchestrator_md_with_sdd() {
         .unwrap();
 
     let agents = db::agents::list_agents(&db).await.unwrap();
+    // Create a temp playbook file so it can be embedded
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "# Test Playbook\n\nStep 1: /test:init\nStep 2: /test:build\n").unwrap();
+    let playbook_path = tmp.path().to_string_lossy().to_string();
+
     let sdd = vec![SddConfig {
         name: "get-shit-done".to_string(),
-        playbook: "/path/to/Playbook.md".to_string(),
+        playbook: playbook_path,
     }];
     let content = build_orchestrator_md(&agents, "/project/root", &sdd);
 
-    assert!(content.contains("## Workflow (SDD)"), "Missing SDD section");
-    assert!(content.contains("get-shit-done"), "Missing SDD name");
-    assert!(content.contains("/path/to/Playbook.md"), "Missing playbook path");
-    assert!(content.contains("cat \"/path/to/Playbook.md\""), "Should use cat without head truncation");
-    assert!(!content.contains("head -200"), "Must not truncate playbook with head");
-    // Single SDD should not show selection rule
-    assert!(!content.contains("Selection rule"), "Single SDD should not show selection rule");
+    assert!(content.contains("## SDD Orchestration"), "Missing SDD orchestration section");
+    assert!(content.contains("## PRE-FLIGHT"), "Missing PRE-FLIGHT section");
+    // PRE-FLIGHT must reference the playbook path
+    assert!(content.contains(&*tmp.path().to_string_lossy()), "PRE-FLIGHT must reference playbook path");
+    // Must tell orchestrator agents have the tools, not it
+    assert!(content.contains("You do NOT"), "Must tell orchestrator it doesn't have SDD tools");
+    assert!(content.contains("Do NOT run slash commands"), "Must forbid running commands directly");
 }
 
 #[tokio::test]
@@ -367,5 +372,5 @@ async fn test_build_orchestrator_md_without_sdd() {
     let agents = db::agents::list_agents(&db).await.unwrap();
     let content = build_orchestrator_md(&agents, "/project/root", &[]);
 
-    assert!(!content.contains("## Workflow (SDD)"), "SDD section should not appear when no SDDs configured");
+    assert!(!content.contains("## SDD Orchestration"), "SDD section should not appear when no SDDs configured");
 }

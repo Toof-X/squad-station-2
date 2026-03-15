@@ -35,6 +35,14 @@ pub async fn run(
         bail!("Cannot send tasks to orchestrator agent: {}", agent);
     }
 
+    // 3c. Prevent sending tasks to frozen agents
+    if agent_record.status == "frozen" {
+        bail!(
+            "Agent '{}' is frozen. Run 'squad-station unfreeze' to allow sending tasks.",
+            agent
+        );
+    }
+
     // 4. Check tmux session alive
     if !tmux::session_exists(&agent) {
         bail!(

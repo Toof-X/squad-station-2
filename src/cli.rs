@@ -102,6 +102,10 @@ pub enum Commands {
         #[arg(long)]
         no_relaunch: bool,
     },
+    /// Freeze all agents — block orchestrator from sending tasks (user takes control)
+    Freeze,
+    /// Unfreeze all agents — allow orchestrator to send tasks again
+    Unfreeze,
     /// Delete the local database file only
     Clean {
         /// Path to squad config file

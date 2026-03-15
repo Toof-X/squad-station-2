@@ -1062,8 +1062,8 @@ async fn test_context_lists_registered_agents() {
     );
 
     // Updated for unified single-file output (GAP-18 / PLAY-01)
-    let orchestrator_path = tmp.path().join(".squad/orchestrator/CLAUDE.md");
-    assert!(orchestrator_path.exists(), ".squad/orchestrator/CLAUDE.md must exist");
+    let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
+    assert!(orchestrator_path.exists(), "orchestrator slash command must exist");
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
         content.contains("ctx-worker"),
@@ -1098,8 +1098,8 @@ async fn test_context_generates_delegate_file() {
     );
 
     // Updated: single unified file contains delegation content (PLAY-01)
-    let orchestrator_path = tmp.path().join(".squad/orchestrator/CLAUDE.md");
-    assert!(orchestrator_path.exists(), ".squad/orchestrator/CLAUDE.md must exist");
+    let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
+    assert!(orchestrator_path.exists(), "orchestrator slash command must exist");
 
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
@@ -1134,11 +1134,11 @@ async fn test_context_delegate_content() {
         .unwrap();
 
     // Updated: delegation content is in unified squad-orchestrator.md (PLAY-01)
-    let orchestrator_path = tmp.path().join(".squad/orchestrator/CLAUDE.md");
+    let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
-        content.contains("BEHAVIORAL RULE"),
-        "squad-orchestrator.md must contain BEHAVIORAL RULE header, got:\n{}",
+        content.contains("PRE-FLIGHT"),
+        "squad-orchestrator.md must contain PRE-FLIGHT section, got:\n{}",
         content
     );
 }
@@ -1169,8 +1169,8 @@ async fn test_context_generates_monitor_file() {
     );
 
     // Updated: monitoring content is in unified squad-orchestrator.md (PLAY-01)
-    let orchestrator_path = tmp.path().join(".squad/orchestrator/CLAUDE.md");
-    assert!(orchestrator_path.exists(), ".squad/orchestrator/CLAUDE.md must exist");
+    let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
+    assert!(orchestrator_path.exists(), "orchestrator slash command must exist");
 
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
@@ -1205,15 +1205,15 @@ async fn test_context_monitor_content() {
         .unwrap();
 
     // Updated: monitoring content is in unified squad-orchestrator.md (PLAY-01)
-    let orchestrator_path = tmp.path().join(".squad/orchestrator/CLAUDE.md");
+    let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
-        content.contains("Anti-Context-Decay"),
-        "squad-orchestrator.md must contain Anti-Context-Decay section, got:\n{}",
+        content.contains("Completion Notification"),
+        "squad-orchestrator.md must contain Completion Notification section, got:\n{}",
         content
     );
     assert!(
-        content.contains("auto-loaded"),
+        content.contains("DO NOT need to"),
         "CLAUDE.md must state context is auto-loaded, got:\n{}",
         content
     );
@@ -1259,8 +1259,8 @@ async fn test_context_generates_roster_file() {
     );
 
     // Updated: roster content is in unified squad-orchestrator.md (PLAY-01, PLAY-03)
-    let orchestrator_path = tmp.path().join(".squad/orchestrator/CLAUDE.md");
-    assert!(orchestrator_path.exists(), ".squad/orchestrator/CLAUDE.md must exist");
+    let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
+    assert!(orchestrator_path.exists(), "orchestrator slash command must exist");
 
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
@@ -1300,7 +1300,7 @@ async fn test_context_roster_content() {
         .unwrap();
 
     // Updated: roster table is in unified squad-orchestrator.md (PLAY-01, PLAY-03)
-    let orchestrator_path = tmp.path().join(".squad/orchestrator/CLAUDE.md");
+    let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
         content.contains("| Agent |"),
@@ -1347,7 +1347,7 @@ async fn test_context_idempotent() {
     );
 
     // Updated: single unified file must exist (PLAY-01)
-    assert!(tmp.path().join(".squad/orchestrator/CLAUDE.md").exists());
+    assert!(tmp.path().join(".claude/commands/squad-orchestrator.md").exists());
 }
 
 // ============================================================
