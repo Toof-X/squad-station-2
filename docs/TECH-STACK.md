@@ -64,31 +64,45 @@
 squad-station/
 ├── src/
 │   ├── main.rs              ← Entry point + SIGPIPE handler
-│   ├── cli.rs               ← clap Parser
-│   ├── config.rs            ← squad.yml parsing
-│   ├── tmux.rs              ← Tmux adapter (send_keys, session_exists, etc.)
+│   ├── cli.rs               ← clap Parser (16 subcommands)
+│   ├── config.rs            ← squad.yml parsing, validation, DB path resolution
+│   ├── tmux.rs              ← Tmux adapter (send_keys, inject_body, session mgmt)
+│   ├── lib.rs               ← Re-exports for test access
 │   ├── commands/
 │   │   ├── mod.rs
-│   │   ├── init.rs          ← squad.yml → DB + tmux sessions
-│   │   ├── register.rs      ← Dynamic agent registration
+│   │   ├── init.rs          ← squad.yml → DB + tmux sessions + context
 │   │   ├── send.rs          ← Task → agent (DB + tmux inject)
-│   │   ├── signal.rs        ← Hook completion (+ orch skip guard)
-│   │   ├── status.rs        ← Squad overview
-│   │   ├── agents.rs        ← Agent list
+│   │   ├── signal.rs        ← Hook completion (guard chain + orch skip)
+│   │   ├── notify.rs        ← Mid-task HITL notification (no status change)
+│   │   ├── peek.rs          ← Pending task check (priority-ordered)
 │   │   ├── list.rs          ← Message list + filters
-│   │   ├── peek.rs          ← Pending task check
-│   │   ├── context.rs       ← Generate orchestrator context
+│   │   ├── register.rs      ← Dynamic agent registration
+│   │   ├── agents.rs        ← Agent list (with tmux reconciliation)
+│   │   ├── context.rs       ← Generate orchestrator context (provider-specific)
+│   │   ├── status.rs        ← Squad overview
+│   │   ├── ui.rs            ← TUI dashboard (ratatui)
 │   │   ├── view.rs          ← Split tmux layout
-│   │   └── ui.rs            ← TUI dashboard
-│   ├── db/
-│   │   ├── mod.rs           ← connect() + migrations
-│   │   ├── agents.rs        ← Agent CRUD
-│   │   ├── messages.rs      ← Message CRUD
-│   │   └── migrations/
-│   └── lib.rs
+│   │   ├── close.rs         ← Kill all squad tmux sessions
+│   │   ├── reset.rs         ← Kill + delete DB + optionally relaunch
+│   │   ├── clean.rs         ← Delete DB file only
+│   │   └── helpers.rs       ← Shared: colorize, format_status, reconcile
+│   └── db/
+│       ├── mod.rs           ← connect() + migrations
+│       ├── agents.rs        ← Agent CRUD
+│       ├── messages.rs      ← Message CRUD
+│       └── migrations/      ← 4 migration files (0001–0004)
 ├── hooks/
-│   ├── claude-code.sh       ← DEPRECATED: replaced by centralized `squad-station signal $TMUX_PANE`
-│   └── gemini-cli.sh        ← DEPRECATED: kept as reference only
+│   ├── claude-code.sh       ← Completion hook for Claude Code agents
+│   ├── gemini-cli.sh        ← Completion hook for Gemini CLI agents
+│   ├── claude-code-notify.sh ← Notification hook (permission prompts)
+│   ├── gemini-cli-notify.sh  ← Notification hook (Gemini)
+│   └── test-notify-hooks.sh  ← Hook testing utility
+├── scripts/
+│   ├── _common.sh           ← Shared helpers (provider/model validation)
+│   ├── setup-sessions.sh    ← Create tmux sessions from squad.yml
+│   ├── teardown-sessions.sh ← Tear down sessions
+│   ├── tmux-send.sh         ← Send text to tmux session
+│   └── validate-squad.sh    ← Validate squad.yml
 ├── Cargo.toml
 ├── squad.yml                ← User config
 └── tests/
@@ -160,7 +174,7 @@ ANTIGRAVITY & HOOKS OPT
 | Rust over Go | Smaller binary, performance, user preference | ✓ Confirmed |
 | sqlx over rusqlite | Async-native, compile-time SQL checks | ✓ Confirmed |
 | Stateless CLI, no daemon | Simple, debuggable, event-driven | ✓ Confirmed |
-| SQLite embedded per project | Isolation, no external DB needed | ✓ Confirmed |
+| SQLite embedded per project (`.squad/station.db` in project dir) | Isolation, no external DB needed, data lives with project | ✓ Confirmed |
 | Agent name = tmux session name | Simple, hook auto-detects | ✓ Confirmed |
 | Provider-agnostic design | No lock-in | ✓ Confirmed |
 | Hook-driven completion | Agent passive, clean separation | ✓ Confirmed |
@@ -174,3 +188,4 @@ ANTIGRAVITY & HOOKS OPT
 *Source: Obsidian/1-Projects/Agentic-Coding-Squad/03. Tech Stack Decision - Squad Station.md*
 *Supersedes Go references in 02. Solution Design (sections 13, 15)*
 *Updated with: 04. Upgrade Design — Antigravity & Hooks Optimization*
+*Updated with: 05. Local DB — `.squad/station.db` in project directory*

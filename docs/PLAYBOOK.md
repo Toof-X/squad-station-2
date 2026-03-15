@@ -7,7 +7,7 @@ A step-by-step guide to orchestrating AI agent squads with squad-station.
 ## Prerequisites
 
 - **tmux** installed and available in PATH
-- **squad-station** installed (`npm install -g squad-station` or via curl install script)
+- **squad-station** binary built and available in PATH (`cargo build --release`, symlinked at `~/.cargo/bin/squad-station`)
 - At least one AI coding tool: Claude Code (`claude`) or Gemini CLI (`gemini`)
 
 ---
@@ -21,22 +21,26 @@ Create a `squad.yml` in your project root.
 ```yaml
 project: my-app
 
+sdd:
+  - name: get-shit-done
+    playbook: "/path/to/GSD/Playbook.md"
+
 orchestrator:
-  tool: claude-code
+  provider: claude-code
   role: orchestrator
-  model: claude-opus-4-5
+  model: opus
   description: "Lead orchestrator. Delegates tasks, synthesizes results."
 
 agents:
   - name: frontend
-    tool: claude-code
+    provider: claude-code
     role: worker
-    model: claude-sonnet-4-5
+    model: sonnet
     description: "Frontend specialist"
   - name: backend
-    tool: claude-code
+    provider: claude-code
     role: worker
-    model: claude-sonnet-4-5
+    model: sonnet
     description: "Backend specialist"
 ```
 
@@ -46,7 +50,7 @@ agents:
 project: my-app
 
 orchestrator:
-  tool: antigravity
+  provider: antigravity
   role: orchestrator
   description: >
     Orchestrator running inside Antigravity IDE.
@@ -54,28 +58,29 @@ orchestrator:
 
 agents:
   - name: implement
-    tool: claude-code
+    provider: claude-code
     role: worker
-    model: claude-sonnet-4-5
+    model: sonnet
     description: "Implements features and fixes bugs"
 ```
 
-**Agent naming convention:** The `name` field acts as a role suffix. The full registered agent name is automatically prefixed as `<project>-<tool>-<role_suffix>`. For example: project `my-app`, tool `claude-code`, name `frontend` → registered as `my-app-claude-code-frontend`.
+**Agent naming convention:** The `name` field acts as a role suffix. The full registered agent name is `<project>-<name>`. For example: project `my-app`, name `frontend` → registered as `my-app-frontend`.
 
 **Fields:**
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `project` | Yes | Project identifier (plain string). Used in DB path and as prefix in agent names. |
+| `project` | Yes | Project identifier. Used as prefix in agent names. |
+| `sdd` | No | Array of SDD workflow configs (name + playbook path). Injected into orchestrator context. |
 | `orchestrator` | Yes | Exactly one orchestrator per squad |
-| `agents` | Yes | Array of worker agents (can be empty) |
-| `*.name` | Yes | Acts as role suffix; full agent name is auto-prefixed as `<project>-<tool>-<role_suffix>` (e.g., `my-app-claude-code-frontend`) |
-| `*.tool` | Yes | Label: `claude-code`, `gemini`, `antigravity`, or any string |
+| `agents` | Yes | Array of worker agents |
+| `*.name` | Yes | Role suffix; full agent name is `<project>-<name>` (e.g., `my-app-frontend`) |
+| `*.provider` | Yes | Known: `claude-code`, `gemini-cli`, `antigravity`. Unknown providers warn but proceed. |
 | `*.role` | Yes | `orchestrator` or `worker` |
-| `*.model` | No | Model identifier (e.g., `claude-sonnet-4-5`) — shown in context output |
+| `*.model` | No | Model identifier (e.g., `sonnet`, `opus`) — shown in context output |
 | `*.description` | No | Human-readable description — shown in context output |
 
-> **Note:** The DB path is controlled by the `SQUAD_STATION_DB` environment variable only — it is not set in `squad.yml`.
+> **Note:** The DB is stored locally at `.squad/station.db` inside the project directory. Override with `SQUAD_STATION_DB` env var.
 
 ---
 
@@ -86,9 +91,11 @@ squad-station init
 ```
 
 This will:
-1. Create the SQLite database
-2. Register all agents (names auto-prefixed as `<project>-<tool>-<role_suffix>`)
+1. Create the SQLite database at `.squad/station.db`
+2. Register all agents (names auto-prefixed as `<project>-<name>`)
 3. Launch each agent in its own tmux session
+4. Auto-install completion hooks (or print manual instructions)
+5. Generate orchestrator context file (`.squad/orchestrator/CLAUDE.md` or provider-specific)
 
 **Check the result:**
 
@@ -98,24 +105,24 @@ squad-station init --json
 #   "launched": 3,
 #   "skipped": 0,
 #   "failed": [],
-#   "db_path": "/Users/you/.agentic-squad/my-app/station.db"
+#   "db_path": ".squad/station.db"
 # }
 ```
 
 Re-running `init` is safe — already-running agents are skipped.
 
-**Antigravity note:** When orchestrator tool is `antigravity`, `init` registers the orchestrator in the DB only (no tmux session is created for it) and prints a message confirming DB-only registration. Worker agents still get tmux sessions normally.
+**Antigravity note:** When orchestrator provider is `antigravity`, `init` registers the orchestrator in the DB only (no tmux session is created for it). Worker agents still get tmux sessions normally.
 
 ---
 
-## 3. Set Up Completion Hooks
+## 3. Completion Hooks
 
 Hooks let squad-station know when an agent finishes its work. Without hooks, you must signal manually.
 
 ### Automatic Setup
 
 `squad-station init` automatically sets up hooks:
-- If a `settings.json` already exists, init merges the hook entry and creates a `.bak` backup before modifying
+- If a `settings.json` already exists, init merges the hook entry and creates a `.bak` backup
 - If no `settings.json` exists, init prints the hook configuration to stdout for manual setup
 
 ### Manual Setup — Claude Code
@@ -127,8 +134,13 @@ Add to `.claude/settings.json` (project-level) or `~/.claude/settings.json` (glo
   "hooks": {
     "Stop": [
       {
-        "type": "command",
-        "command": "squad-station signal $TMUX_PANE"
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "squad-station signal $(tmux display-message -p '#S')"
+          }
+        ]
       }
     ]
   }
@@ -144,8 +156,13 @@ Add to `.gemini/settings.json`:
   "hooks": {
     "AfterAgent": [
       {
-        "type": "command",
-        "command": "squad-station signal $TMUX_PANE"
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "squad-station signal $(tmux display-message -p '#S')"
+          }
+        ]
       }
     ]
   }
@@ -153,17 +170,17 @@ Add to `.gemini/settings.json`:
 ```
 
 **Notes:**
-- `signal` reads `$TMUX_PANE` to identify the agent automatically — no arguments needed beyond the env var
+- The hook command auto-detects the agent from the tmux session name
 - The command always exits 0 and never blocks the AI tool, even on errors
-- `hooks/claude-code.sh` and `hooks/gemini-cli.sh` are deprecated since v1.3 and kept for reference only. Use the inline command above.
+- `signal` has a 4-layer guard: not in tmux → exit, not registered → exit, is orchestrator → exit, no pending task → exit
 
 ---
 
 ## 4. Notification Hooks (Optional)
 
-When Claude Code encounters a permission prompt, it fires a `Notification` event. Hook this to alert yourself.
+When Claude Code encounters a permission prompt, it fires a `Notification` event. Hook this to alert the orchestrator.
 
-### Claude Code — permission prompt notifications
+### Claude Code
 
 ```json
 {
@@ -183,7 +200,7 @@ When Claude Code encounters a permission prompt, it fires a `Notification` event
 }
 ```
 
-### Gemini CLI — notifications
+### Gemini CLI
 
 ```json
 {
@@ -198,63 +215,78 @@ When Claude Code encounters a permission prompt, it fires a `Notification` event
 }
 ```
 
-Both notify scripts are included in the `hooks/` directory of the squad-station repo. Make them executable: `chmod +x hooks/claude-code-notify.sh hooks/gemini-cli-notify.sh`. Both scripts always exit 0.
+Both notify scripts are included in the `hooks/` directory. Make them executable: `chmod +x hooks/claude-code-notify.sh hooks/gemini-cli-notify.sh`.
 
 ---
 
 ## 5. Send Tasks to Agents
 
-Task body is a required named flag (`--body`), not a positional argument.
-
 ```bash
 # Basic task
-squad-station send my-app-claude-code-frontend --body "Build the login page with email/password fields"
+squad-station send my-app-frontend --body "Build the login page with email/password fields"
 
 # With priority
-squad-station send my-app-gemini-backend --body "Fix the auth endpoint" --priority urgent
+squad-station send my-app-backend --body "Fix the auth endpoint" --priority urgent
+
+# With thread grouping (links related messages)
+squad-station send my-app-frontend --body "Now add form validation" --thread <thread-id>
 
 # JSON output (for scripting)
-squad-station send my-app-claude-code-frontend --body "Add form validation" --priority high --json
-# {
-#   "sent": true,
-#   "message_id": "8c2e9e2f-...",
-#   "agent": "my-app-claude-code-frontend",
-#   "priority": "high"
-# }
+squad-station send my-app-frontend --body "Add form validation" --priority high --json
 ```
 
 **Priority levels:** `normal` (default), `high`, `urgent`
 
 What happens behind the scenes:
-1. Task is stored in the database (status: pending)
+1. Task is stored in the database (status: processing)
 2. Agent is marked as "busy"
-3. Task text is injected into the agent's tmux session
+3. Task text is injected into the agent's tmux session via safe `load-buffer`/`paste-buffer`
 
 ---
 
-## 6. Monitor Your Squad
+## 6. Mid-Task Notifications
+
+When an agent needs input from the orchestrator without completing its task:
+
+```bash
+# Auto-detect agent from tmux session
+squad-station notify --body "Need confirmation: use JWT or sessions?"
+
+# Explicit agent name
+squad-station notify --body "Need design review" --agent my-app-frontend
+```
+
+The orchestrator receives: `[SQUAD INPUT NEEDED] Agent 'my-app-frontend': Need confirmation: use JWT or sessions?`
+
+**Key difference from `signal`:**
+- `notify` — task in progress, agent needs input, no status change
+- `signal` — task done, marks completed, resets agent to idle
+
+---
+
+## 7. Monitor Your Squad
 
 ### Quick status overview
 
 ```bash
 squad-station status
 # Project: my-app
-# DB: /Users/you/.agentic-squad/my-app/station.db
+# DB: .squad/station.db
 # Agents: 3 -- 2 idle, 1 busy, 0 dead
 #
-#   my-app-claude-code-orchestrator: idle 5m   |  0 pending
-#   my-app-claude-code-frontend: busy 2m       |  1 pending
-#   my-app-gemini-backend: idle 10m            |  0 pending
+#   my-app-orchestrator: idle 5m   |  0 pending
+#   my-app-frontend: busy 2m      |  1 pending
+#   my-app-backend: idle 10m      |  0 pending
 ```
 
 ### Agent list with live tmux reconciliation
 
 ```bash
 squad-station agents
-# NAME                              ROLE          STATUS            TOOL
-# my-app-claude-code-orchestrator   orchestrator  idle 5m           claude-code
-# my-app-claude-code-frontend       worker        busy 2m           claude-code
-# my-app-gemini-backend             worker        idle 10m          gemini
+# NAME              ROLE          STATUS            TOOL
+# my-app-orch       orchestrator  idle 5m           claude-code
+# my-app-frontend   worker        busy 2m           claude-code
+# my-app-backend    worker        idle 10m          claude-code
 ```
 
 The `agents` command checks tmux to detect crashed sessions:
@@ -268,16 +300,16 @@ The `agents` command checks tmux to detect crashed sessions:
 squad-station list
 
 # Filter by agent
-squad-station list --agent my-app-claude-code-frontend
+squad-station list --agent my-app-frontend
 
 # Filter by status
-squad-station list --status pending
+squad-station list --status processing
 
 # Limit results
 squad-station list --limit 5
 
 # JSON output
-squad-station list --agent my-app-gemini-backend --status completed --json
+squad-station list --agent my-app-backend --status completed --json
 ```
 
 ### Interactive TUI dashboard
@@ -303,116 +335,130 @@ Opens a tiled tmux layout showing all live agent sessions side by side.
 
 ---
 
-## 7. Check Pending Work
+## 8. Check Pending Work
 
 ```bash
 # What's the next task for an agent?
-squad-station peek my-app-claude-code-frontend
-# [pending] (priority=high) Add form validation
+squad-station peek my-app-frontend
+# [processing] (priority=high) Add form validation
 # id: a1b2c3d4-...
 
-# JSON mode
-squad-station peek my-app-claude-code-frontend --json
-# {
-#   "id": "a1b2c3d4-...",
-#   "task": "Add form validation",
-#   "priority": "high",
-#   "status": "pending"
-# }
-
 # No pending work
-squad-station peek my-app-gemini-backend
-# No pending tasks for my-app-gemini-backend
+squad-station peek my-app-backend
+# No pending tasks for my-app-backend
 ```
 
 Peek returns the highest-priority task first (urgent > high > normal), with oldest-first tie-breaking.
 
 ---
 
-## 8. Signal Completion
+## 9. Signal Completion
 
 If hooks are set up, this happens automatically. For manual signaling:
 
 ```bash
-squad-station signal my-app-claude-code-frontend
-# ✓ Signaled completion for my-app-claude-code-frontend (task_id=a1b2c3d4-...)
+squad-station signal my-app-frontend
+# ✓ Signaled completion for my-app-frontend (task_id=a1b2c3d4-...)
 ```
 
 What happens:
-1. Most recent pending message is marked "completed"
-2. Orchestrator receives a notification in its tmux session:
-   `my-app-claude-code-frontend completed a1b2c3d4-...`
-3. Agent status resets to "idle"
-
-**Signal format:** The notification injected into the orchestrator's tmux session is a plain string:
+1. Most recent processing message is marked "completed"
+2. Agent status resets to "idle"
+3. Orchestrator receives a structured notification:
 
 ```
-<agent> completed <msg-id>
+[SQUAD SIGNAL] Agent 'my-app-frontend' completed task a1b2c3d4-.... Read output: tmux capture-pane -t my-app-frontend -p | Next: squad-station status
 ```
-
-Example: `my-app-claude-code-frontend completed 8c2e9e2f-1234-...`
 
 Duplicate signals are safe — they silently succeed.
 
 ---
 
-## 9. Antigravity IDE Orchestrator Mode
+## 10. Cleanup Commands
+
+### Kill tmux sessions
+
+```bash
+squad-station close
+```
+
+Kills all tmux sessions defined in squad.yml. Shows killed/skipped counts.
+
+### Full reset (kill + delete DB + relaunch)
+
+```bash
+# Kill sessions, delete DB, then relaunch
+squad-station reset
+
+# Kill sessions, delete DB, don't relaunch
+squad-station reset --no-relaunch
+```
+
+### Delete database only
+
+```bash
+# With confirmation prompt
+squad-station clean
+
+# Skip confirmation
+squad-station clean -y
+```
+
+---
+
+## 11. Antigravity IDE Orchestrator Mode
 
 ### When to use
 
-Use `tool: antigravity` when you want to run the orchestrator inside an IDE (Antigravity, Cursor, VS Code agent, etc.) rather than as a CLI tmux session.
+Use `provider: antigravity` when you want to run the orchestrator inside an IDE (Antigravity, Cursor, VS Code agent, etc.) rather than as a CLI tmux session.
 
 ### What changes with Antigravity
 
 - `init` registers the orchestrator in the DB only — no tmux session is created for it
-- `signal` updates the message status in the DB but does NOT inject a notification into a tmux session (there is none)
+- `signal` updates the message status in the DB but does NOT inject a tmux notification
 - The IDE polls completion by calling `squad-station status` or `squad-station list --status completed`
 - Worker agents still run as tmux sessions and receive tasks via the normal send path
-
-### squad.yml (full example)
-
-```yaml
-project: my-app
-
-orchestrator:
-  tool: antigravity
-  role: orchestrator
-  description: >
-    Orchestrator running inside Antigravity IDE.
-    Uses Manager View to poll and monitor tmux worker agents.
-
-agents:
-  - name: implement
-    tool: claude-code
-    role: worker
-    model: claude-sonnet-4-5
-    description: "Implements features and fixes bugs"
-```
 
 ### IDE workflow
 
 1. Run `squad-station init` — registers orchestrator in DB, launches worker tmux sessions
-2. Run `squad-station context` — generates `.agent/workflows/` files for the IDE orchestrator
-3. IDE orchestrator reads `.agent/workflows/squad-delegate.md` and `.agent/workflows/squad-roster.md`
+2. Run `squad-station context` — generates `.squad/orchestrator/CLAUDE.md` (or provider-specific file)
+3. IDE orchestrator reads the generated playbook
 4. IDE orchestrator calls `squad-station send <agent> --body "..."` to dispatch tasks
-5. IDE orchestrator polls `squad-station status` or `squad-station list --status completed` to detect task completion
-
-### Context files generated by `squad-station context`
-
-- `.agent/workflows/squad-delegate.md` — delegation instructions and exact CLI commands
-- `.agent/workflows/squad-monitor.md` — polling/monitoring guidance with behavioral rules
-- `.agent/workflows/squad-roster.md` — agent roster with names, models, descriptions
+5. IDE orchestrator polls `squad-station status` to detect task completion
 
 ---
 
-## 10. Register Agents at Runtime
+## 12. Generate Orchestrator Context
+
+```bash
+squad-station context
+```
+
+Generates the orchestrator playbook in `.squad/orchestrator/` with a provider-specific filename:
+
+| Provider | Generated path |
+|----------|----------------|
+| `claude-code` | `.squad/orchestrator/CLAUDE.md` |
+| `gemini-cli` | `.squad/orchestrator/GEMINI.md` |
+| Other | `.squad/orchestrator/CLAUDE.md` (fallback) |
+
+The generated file includes:
+- Behavioral rules (delegate, don't implement)
+- Registered agents with send/capture commands
+- Delegation and monitoring workflows
+- SDD playbook references (if configured in squad.yml)
+- Agent roster table
+- Anti-context-decay rules
+
+---
+
+## 13. Register Agents at Runtime
 
 Add agents without restarting the squad:
 
 ```bash
-squad-station register reviewer \
-  --role reviewer \
-  --tool claude-code
+squad-station register reviewer --role worker --tool claude-code
 ```
 
 This registers the agent in the database but does **not** launch a tmux session. Use this for agents managed externally.
@@ -425,63 +471,18 @@ SQUAD_STATION_DB=/path/to/station.db squad-station register my-agent --tool clau
 
 ---
 
-## 11. Generate Orchestrator Context
-
-```bash
-squad-station context
-```
-
-For CLI orchestrators: outputs a Markdown document to stdout with the agent roster and usage examples. Feed this to your orchestrator so it knows which agents are available and how to dispatch tasks.
-
-For IDE orchestrators (Antigravity): also writes three files to `.agent/workflows/`:
-- `squad-delegate.md` — delegation instructions and exact CLI commands
-- `squad-monitor.md` — monitoring/polling guidance
-- `squad-roster.md` — agent roster listing names, models, and descriptions
-
-```
-# Squad Station -- Agent Roster
-
-## Available Agents
-
-## my-app-claude-code-frontend (claude-sonnet-4-5)
-
-Frontend specialist
-
-Role: worker | Status: idle
-
-→ squad-station send my-app-claude-code-frontend --body "..."
-
----
-
-## my-app-gemini-backend
-
-Role: worker | Status: busy
-
-→ squad-station send my-app-gemini-backend --body "..."
-
----
-
-## Usage
-
-Send a task to an agent:
-```
-squad-station send <agent> --body "<task description>"
-```
-```
-
----
-
 ## Workflow Summary
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        Orchestrator                          │
 │                                                             │
-│  1. Reads context (squad-station context)                   │
+│  1. Reads context (squad-orchestrator.md)                   │
 │  2. Sends tasks (squad-station send agent --body "task")    │
-│  3. Receives signals via tmux notification                  │
-│     <agent> completed <msg-id>                              │
-│  4. Sends next task or coordinates results                  │
+│  3. Receives signals:                                       │
+│     [SQUAD SIGNAL] Agent 'X' completed task <id>...         │
+│  4. Reads output (tmux capture-pane -t agent -p)            │
+│  5. Sends next task or reports to user                      │
 └──────────┬──────────────────────────┬───────────────────────┘
            │                          │
      ┌─────▼─────┐            ┌──────▼──────┐
@@ -506,8 +507,9 @@ squad-station send <agent> --body "<task description>"
 | Command | Purpose | Key Flags |
 |---------|---------|-----------|
 | `init [config]` | Launch squad from config | `--json` |
-| `send <agent> --body <task>` | Send task to agent | `--body`, `--priority`, `--json` |
-| `signal <agent>` | Signal task completion | `--json` |
+| `send <agent> --body <task>` | Send task to agent | `--body`, `--priority`, `--thread`, `--json` |
+| `signal [agent]` | Signal task completion | `--json` |
+| `notify --body <msg>` | Mid-task notification to orchestrator | `--body`, `--agent`, `--json` |
 | `peek <agent>` | View next pending task | `--json` |
 | `list` | List messages | `--agent`, `--status`, `--limit`, `--json` |
 | `register <name>` | Register agent at runtime | `--role`, `--tool`, `--json` |
@@ -516,6 +518,9 @@ squad-station send <agent> --body "<task description>"
 | `context` | Generate orchestrator context | — |
 | `ui` | Interactive TUI dashboard | — |
 | `view` | tmux tiled view | `--json` |
+| `close [config]` | Kill all squad tmux sessions | `--json` |
+| `reset [config]` | Kill sessions + delete DB + relaunch | `--no-relaunch`, `--json` |
+| `clean [config]` | Delete database only | `-y`/`--yes`, `--json` |
 
 All commands support `--json` for machine-readable output and `--help` for usage details.
 
@@ -527,19 +532,19 @@ All commands support `--json` for machine-readable output and `--help` for usage
 The tmux session crashed or was closed. Re-run `squad-station init` to relaunch, or manually start a new tmux session with the agent's name.
 
 **"Agent not found" when sending**
-The agent name doesn't match any registered agent. Check `squad-station agents` for the exact names. Remember: full agent names are prefixed as `<project>-<tool>-<role_suffix>`.
+The agent name doesn't match any registered agent. Check `squad-station agents` for the exact names. Remember: full agent names are `<project>-<name>`.
 
 **"tmux session not running" when sending**
 The agent is registered but its tmux session is down. Re-run `squad-station init` or launch the session manually.
 
-**Hook not firing (shell script)**
-Verify the hook path is absolute and the script is executable (`chmod +x hooks/claude-code-notify.sh`). Check that the agent is running inside a tmux session (hooks check `TMUX_PANE`).
+**Hook not firing**
+Verify `squad-station` is in PATH: `which squad-station`. Verify the agent is running inside a tmux session: `echo $TMUX_PANE` inside the session. Check that `settings.json` has the correct hook configuration.
 
 **Database locked errors**
-Squad-station uses single-writer SQLite. If you see lock errors, ensure only one write operation runs at a time. The 5-second busy timeout handles most concurrent cases.
-
-**Hook not firing (inline command)**
-Verify `$TMUX_PANE` is set in the agent session: run `echo $TMUX_PANE` inside the agent tmux session. Also verify `squad-station` is in PATH: `which squad-station`. The inline hook requires no script path — only the binary being accessible.
+Squad-station uses single-writer SQLite with WAL mode. If you see lock errors, ensure only one write operation runs at a time. The 5-second busy timeout handles most concurrent cases.
 
 **Antigravity: orchestrator not receiving completion signals**
-This is expected behavior. With `tool: antigravity`, the orchestrator has no tmux session, so `signal` does not inject a tmux notification. Use `squad-station status` or `squad-station list --status completed` to poll for task completion instead.
+This is expected behavior. With `provider: antigravity`, the orchestrator has no tmux session, so `signal` does not inject a notification. Use `squad-station status` or `squad-station list --status completed` to poll for task completion instead.
+
+**Full reset when things go wrong**
+Run `squad-station reset` to kill all sessions, delete the database, and start fresh.
