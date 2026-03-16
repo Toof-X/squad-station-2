@@ -1,7 +1,7 @@
 mod helpers;
 
-use squad_station::commands;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+use squad_station::commands;
 use squad_station::db;
 
 // ---------------------------------------------------------------------------
@@ -1063,7 +1063,10 @@ async fn test_context_lists_registered_agents() {
 
     // Updated for unified single-file output (GAP-18 / PLAY-01)
     let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
-    assert!(orchestrator_path.exists(), "orchestrator slash command must exist");
+    assert!(
+        orchestrator_path.exists(),
+        "orchestrator slash command must exist"
+    );
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
         content.contains("ctx-worker"),
@@ -1099,7 +1102,10 @@ async fn test_context_generates_delegate_file() {
 
     // Updated: single unified file contains delegation content (PLAY-01)
     let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
-    assert!(orchestrator_path.exists(), "orchestrator slash command must exist");
+    assert!(
+        orchestrator_path.exists(),
+        "orchestrator slash command must exist"
+    );
 
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
@@ -1170,7 +1176,10 @@ async fn test_context_generates_monitor_file() {
 
     // Updated: monitoring content is in unified squad-orchestrator.md (PLAY-01)
     let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
-    assert!(orchestrator_path.exists(), "orchestrator slash command must exist");
+    assert!(
+        orchestrator_path.exists(),
+        "orchestrator slash command must exist"
+    );
 
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
@@ -1225,16 +1234,9 @@ async fn test_context_generates_roster_file() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(
-        &pool,
-        "ctx-worker",
-        "claude-code",
-        "worker",
-        None,
-        None,
-    )
-    .await
-    .unwrap();
+    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None)
+        .await
+        .unwrap();
     // Update model and description via SQL since insert_agent may not take those
     sqlx::query(
         "UPDATE agents SET model = 'claude-sonnet', description = 'Test agent' WHERE name = 'ctx-worker'"
@@ -1260,7 +1262,10 @@ async fn test_context_generates_roster_file() {
 
     // Updated: roster content is in unified squad-orchestrator.md (PLAY-01, PLAY-03)
     let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
-    assert!(orchestrator_path.exists(), "orchestrator slash command must exist");
+    assert!(
+        orchestrator_path.exists(),
+        "orchestrator slash command must exist"
+    );
 
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
@@ -1347,7 +1352,10 @@ async fn test_context_idempotent() {
     );
 
     // Updated: single unified file must exist (PLAY-01)
-    assert!(tmp.path().join(".claude/commands/squad-orchestrator.md").exists());
+    assert!(tmp
+        .path()
+        .join(".claude/commands/squad-orchestrator.md")
+        .exists());
 }
 
 // ============================================================
@@ -1448,10 +1456,38 @@ async fn test_signal_antigravity_orchestrator_db_only() {
     write_antigravity_squad_yml(tmp.path(), &db_file);
     // Register orchestrator and a worker agent in DB directly
     let pool = setup_file_db(&db_file).await;
-    db::agents::insert_agent(&pool, "test-squad-antigravity-test-orch", "antigravity", "orchestrator", None, None).await.unwrap();
-    db::agents::insert_agent(&pool, "test-squad-claude-code-worker", "claude-code", "worker", None, None).await.unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "test-squad-antigravity-test-orch",
+        "antigravity",
+        "orchestrator",
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "test-squad-claude-code-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     // Send a task to the worker
-    db::messages::insert_message(&pool, "orchestrator", "test-squad-claude-code-worker", "task_request", "test task", "normal", None).await.unwrap();
+    db::messages::insert_message(
+        &pool,
+        "orchestrator",
+        "test-squad-claude-code-worker",
+        "task_request",
+        "test task",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
     pool.close().await;
     // Signal the worker
     let output = cmd_with_db(&db_file)
@@ -1463,7 +1499,10 @@ async fn test_signal_antigravity_orchestrator_db_only() {
     assert!(output.status.success(), "signal must exit 0: {:?}", output);
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["signaled"], true);
-    assert_eq!(json["orchestrator_notified"], false, "antigravity orch must NOT be notified via tmux");
+    assert_eq!(
+        json["orchestrator_notified"], false,
+        "antigravity orch must NOT be notified via tmux"
+    );
 }
 
 #[tokio::test]
@@ -1472,9 +1511,37 @@ async fn test_signal_antigravity_message_completed() {
     let db_file = tmp.path().join("station.db");
     write_antigravity_squad_yml(tmp.path(), &db_file);
     let pool = setup_file_db(&db_file).await;
-    db::agents::insert_agent(&pool, "test-squad-antigravity-test-orch", "antigravity", "orchestrator", None, None).await.unwrap();
-    db::agents::insert_agent(&pool, "test-squad-claude-code-worker", "claude-code", "worker", None, None).await.unwrap();
-    db::messages::insert_message(&pool, "orchestrator", "test-squad-claude-code-worker", "task_request", "do work", "normal", None).await.unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "test-squad-antigravity-test-orch",
+        "antigravity",
+        "orchestrator",
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "test-squad-claude-code-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    db::messages::insert_message(
+        &pool,
+        "orchestrator",
+        "test-squad-claude-code-worker",
+        "task_request",
+        "do work",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
     pool.close().await;
     let output = cmd_with_db(&db_file)
         .args(["signal", "test-squad-claude-code-worker"])
@@ -1485,13 +1552,19 @@ async fn test_signal_antigravity_message_completed() {
     assert!(output.status.success());
     // Verify DB state: message completed, agent idle
     let pool2 = setup_file_db(&db_file).await;
-    let msg: (String,) = sqlx::query_as("SELECT status FROM messages WHERE agent_name = ? ORDER BY created_at DESC LIMIT 1")
-        .bind("test-squad-claude-code-worker")
-        .fetch_one(&pool2).await.unwrap();
+    let msg: (String,) = sqlx::query_as(
+        "SELECT status FROM messages WHERE agent_name = ? ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind("test-squad-claude-code-worker")
+    .fetch_one(&pool2)
+    .await
+    .unwrap();
     assert_eq!(msg.0, "completed");
     let agent: (String,) = sqlx::query_as("SELECT status FROM agents WHERE name = ?")
         .bind("test-squad-claude-code-worker")
-        .fetch_one(&pool2).await.unwrap();
+        .fetch_one(&pool2)
+        .await
+        .unwrap();
     assert_eq!(agent.0, "idle");
 }
 
@@ -1509,10 +1582,18 @@ async fn test_init_antigravity_orchestrator_skips_tmux() {
         .current_dir(tmp.path())
         .output()
         .unwrap();
-    assert!(output.status.success(), "init must exit 0: {:?}\nstderr: {}", output, String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "init must exit 0: {:?}\nstderr: {}",
+        output,
+        String::from_utf8_lossy(&output.stderr)
+    );
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     // Orchestrator is db-only: launched count for total init must be 0 (no tmux sessions)
-    assert_eq!(json["launched"], 0, "no tmux sessions launched for antigravity-only squad");
+    assert_eq!(
+        json["launched"], 0,
+        "no tmux sessions launched for antigravity-only squad"
+    );
     assert_eq!(json["failed"], serde_json::json!([]), "no failures");
 }
 
@@ -1526,13 +1607,19 @@ async fn test_init_antigravity_registers_in_db() {
         .current_dir(tmp.path())
         .output()
         .unwrap();
-    assert!(output.status.success(), "init must exit 0: {:?}\nstderr: {}", output, String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "init must exit 0: {:?}\nstderr: {}",
+        output,
+        String::from_utf8_lossy(&output.stderr)
+    );
     // Orchestrator must be in DB even though no tmux session created
     let pool = setup_file_db(&db_file).await;
-    let rec: Option<(String, String)> = sqlx::query_as(
-        "SELECT tool, role FROM agents WHERE name = 'test-squad-test-orch'",
-    )
-    .fetch_optional(&pool).await.unwrap();
+    let rec: Option<(String, String)> =
+        sqlx::query_as("SELECT tool, role FROM agents WHERE name = 'test-squad-test-orch'")
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
     assert!(rec.is_some(), "orchestrator must be registered in DB");
     let (tool, role) = rec.unwrap();
     assert_eq!(tool, "antigravity");
@@ -1549,7 +1636,12 @@ async fn test_init_antigravity_log_message() {
         .current_dir(tmp.path())
         .output()
         .unwrap();
-    assert!(output.status.success(), "init must exit 0: {:?}\nstderr: {}", output, String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "init must exit 0: {:?}\nstderr: {}",
+        output,
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("db-only"),

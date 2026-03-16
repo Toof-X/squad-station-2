@@ -1,8 +1,12 @@
-use crate::{config, db};
 use crate::config::SddConfig;
 use crate::db::agents::Agent;
+use crate::{config, db};
 
-pub fn build_orchestrator_md(agents: &[Agent], project_root: &str, sdd_configs: &[SddConfig]) -> String {
+pub fn build_orchestrator_md(
+    agents: &[Agent],
+    project_root: &str,
+    sdd_configs: &[SddConfig],
+) -> String {
     let mut out = String::new();
 
     // Collect worker agents
@@ -28,7 +32,9 @@ pub fn build_orchestrator_md(agents: &[Agent], project_root: &str, sdd_configs: 
     // ── Completion Notification ──────────────────────────────────────────
     out.push_str("## Completion Notification (Automatic)\n\n");
     out.push_str("Agents have a stop hook configured. When an agent completes a task, the hook\n");
-    out.push_str("**automatically sends a signal** back to your session. You **DO NOT need to**:\n");
+    out.push_str(
+        "**automatically sends a signal** back to your session. You **DO NOT need to**:\n",
+    );
     out.push_str("- Continuously poll `tmux capture-pane` to track progress.\n");
     out.push_str("- Run `sleep`, `squad-station list`, or `squad-station agents` in a loop.\n");
     out.push_str("- Use the `Agent` tool to spawn subagents.\n\n");
@@ -62,7 +68,10 @@ pub fn build_orchestrator_md(agents: &[Agent], project_root: &str, sdd_configs: 
         out.push_str("3. Send the slash command as the task body:\n");
         out.push_str("   ```\n");
         if let Some(first_worker) = workers.first() {
-            out.push_str(&format!("   squad-station send {} --body \"/command-name\"\n", first_worker.name));
+            out.push_str(&format!(
+                "   squad-station send {} --body \"/command-name\"\n",
+                first_worker.name
+            ));
         }
         out.push_str("   ```\n");
         out.push_str("4. STOP. Wait for `[SQUAD SIGNAL]`.\n");
@@ -70,14 +79,19 @@ pub fn build_orchestrator_md(agents: &[Agent], project_root: &str, sdd_configs: 
         out.push_str("**CRITICAL:**\n");
         out.push_str("- Do NOT send raw task descriptions like \"build the login page\".\n");
         out.push_str("- Do NOT run slash commands, workflows, or Agent subagents yourself.\n");
-        out.push_str("- Send the playbook's exact commands. The agent knows how to execute them.\n\n");
+        out.push_str(
+            "- Send the playbook's exact commands. The agent knows how to execute them.\n\n",
+        );
     }
 
     // ── Sending Tasks ────────────────────────────────────────────────────
     out.push_str("## Sending Tasks\n\n");
     out.push_str("```bash\n");
     for agent in &workers {
-        out.push_str(&format!("squad-station send {} --body \"<command or task>\"\n", agent.name));
+        out.push_str(&format!(
+            "squad-station send {} --body \"<command or task>\"\n",
+            agent.name
+        ));
     }
     out.push_str("```\n\n");
 
@@ -98,10 +112,14 @@ pub fn build_orchestrator_md(agents: &[Agent], project_root: &str, sdd_configs: 
     out.push_str("## QA Gate\n\n");
     out.push_str("After receiving `[SQUAD SIGNAL]`:\n");
     out.push_str("1. `tmux capture-pane -t <agent> -p -S -` — read full output\n");
-    out.push_str("2. If agent reported errors or asked technical questions → answer via follow-up task\n");
+    out.push_str(
+        "2. If agent reported errors or asked technical questions → answer via follow-up task\n",
+    );
     out.push_str("3. If agent asked business/requirements questions → forward to user (HITL)\n");
     out.push_str("4. `squad-station list --agent <agent>` — confirm status is `completed`\n");
-    out.push_str("5. Proceed to next playbook step, or report to user if workflow is complete.\n\n");
+    out.push_str(
+        "5. Proceed to next playbook step, or report to user if workflow is complete.\n\n",
+    );
 
     // ── Agent Roster ─────────────────────────────────────────────────────
     out.push_str("## Agent Roster\n\n");
@@ -110,7 +128,10 @@ pub fn build_orchestrator_md(agents: &[Agent], project_root: &str, sdd_configs: 
     for agent in agents {
         let model = agent.model.as_deref().unwrap_or("\u{2014}");
         let desc = agent.description.as_deref().unwrap_or("\u{2014}");
-        out.push_str(&format!("| {} | {} | {} | {} |\n", agent.name, model, agent.role, desc));
+        out.push_str(&format!(
+            "| {} | {} | {} | {} |\n",
+            agent.name, model, agent.role, desc
+        ));
     }
 
     out

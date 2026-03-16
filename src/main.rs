@@ -44,7 +44,10 @@ async fn run(cli: cli::Cli) -> Result<()> {
         Ui => commands::ui::run().await,
         View => commands::view::run(cli.json).await,
         Close { config } => commands::close::run(config, cli.json).await,
-        Reset { config, no_relaunch } => commands::reset::run(config, no_relaunch, cli.json).await,
+        Reset {
+            config,
+            no_relaunch,
+        } => commands::reset::run(config, no_relaunch, cli.json).await,
         Freeze => commands::freeze::run_freeze(cli.json).await,
         Unfreeze => commands::freeze::run_unfreeze(cli.json).await,
         Clean { config, yes } => commands::clean::run(config, yes, cli.json).await,

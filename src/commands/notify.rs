@@ -36,7 +36,10 @@ pub async fn run(body: String, agent: Option<String>, json: bool) -> anyhow::Res
     // Skip if orchestrator (prevent self-notification loop)
     if agent_record.role == "orchestrator" {
         if json {
-            println!("{}", serde_json::json!({"notified": false, "reason": "orchestrator_skip"}));
+            println!(
+                "{}",
+                serde_json::json!({"notified": false, "reason": "orchestrator_skip"})
+            );
         }
         return Ok(());
     }
@@ -47,10 +50,7 @@ pub async fn run(body: String, agent: Option<String>, json: bool) -> anyhow::Res
         if orch.tool == "antigravity" {
             false // DB-only orchestrator
         } else if tmux::session_exists(&orch.name) {
-            let notification = format!(
-                "[SQUAD INPUT NEEDED] Agent '{}': {}",
-                agent, body
-            );
+            let notification = format!("[SQUAD INPUT NEEDED] Agent '{}': {}", agent, body);
             tmux::send_keys_literal(&orch.name, &notification)?;
             true
         } else {

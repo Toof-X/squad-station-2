@@ -24,7 +24,7 @@ pub struct SddConfig {
 /// Top-level squad configuration
 #[derive(Deserialize, Debug)]
 pub struct SquadConfig {
-    pub project: String, // CONF-01: plain string (not a nested struct)
+    pub project: String,             // CONF-01: plain string (not a nested struct)
     pub sdd: Option<Vec<SddConfig>>, // optional SDD workflow configs
     pub orchestrator: AgentConfig,
     pub agents: Vec<AgentConfig>,
@@ -34,11 +34,7 @@ impl SquadConfig {
     /// Validate all agent configs (orchestrator + workers).
     /// Returns a descriptive error on the first invalid provider or model found.
     pub fn validate(&self) -> Result<()> {
-        let label = self
-            .orchestrator
-            .name
-            .as_deref()
-            .unwrap_or("orchestrator");
+        let label = self.orchestrator.name.as_deref().unwrap_or("orchestrator");
         validate_agent_config(label, &self.orchestrator)?;
         for agent in &self.agents {
             let label = agent.name.as_deref().unwrap_or(&agent.role);
@@ -56,9 +52,9 @@ pub struct AgentConfig {
     pub provider: String,     // CONF-04: provider name (e.g. claude-code, gemini-cli, antigravity)
     #[serde(default = "default_role")]
     pub role: String,
-    pub model: Option<String>,       // CONF-02: optional model override
+    pub model: Option<String>, // CONF-02: optional model override
     pub description: Option<String>, // CONF-02: optional description
-                                     // command field is REMOVED (CONF-03: provider infers launch command)
+                               // command field is REMOVED (CONF-03: provider infers launch command)
 }
 
 /// Sanitize a string for use as a tmux session name.
@@ -208,22 +204,32 @@ mod tests {
     #[test]
     fn valid_model_accepted() {
         assert!(validate_agent_config("a", &make_agent("claude-code", Some("sonnet"))).is_ok());
-        assert!(validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-3-flash-preview"))).is_ok());
+        assert!(validate_agent_config(
+            "a",
+            &make_agent("gemini-cli", Some("gemini-3-flash-preview"))
+        )
+        .is_ok());
     }
 
     #[test]
     fn invalid_model_rejected() {
-        let err = validate_agent_config("a", &make_agent("claude-code", Some("claude-code-2"))).unwrap_err();
+        let err = validate_agent_config("a", &make_agent("claude-code", Some("claude-code-2")))
+            .unwrap_err();
         assert!(err.to_string().contains("opus, sonnet, haiku"));
 
-        let err = validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-pro"))).unwrap_err();
-        assert!(err.to_string().contains("gemini-3.1-pro-preview, gemini-3-flash-preview"));
+        let err =
+            validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-pro"))).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("gemini-3.1-pro-preview, gemini-3-flash-preview"));
     }
 
     #[test]
     fn antigravity_model_not_validated() {
         // antigravity has no known model list — any model value (or none) is accepted
-        assert!(validate_agent_config("orch", &make_agent("antigravity", Some("anything"))).is_ok());
+        assert!(
+            validate_agent_config("orch", &make_agent("antigravity", Some("anything"))).is_ok()
+        );
     }
 
     #[test]
@@ -238,12 +244,18 @@ mod tests {
 
     #[test]
     fn sanitize_session_name_replaces_quotes() {
-        assert_eq!(sanitize_session_name(r#"proj"name-agent"#), "proj-name-agent");
+        assert_eq!(
+            sanitize_session_name(r#"proj"name-agent"#),
+            "proj-name-agent"
+        );
     }
 
     #[test]
     fn sanitize_session_name_clean_passthrough() {
-        assert_eq!(sanitize_session_name("squad-station-implement"), "squad-station-implement");
+        assert_eq!(
+            sanitize_session_name("squad-station-implement"),
+            "squad-station-implement"
+        );
     }
 
     #[test]
@@ -261,6 +273,9 @@ agents:
     tmux-session: custom-name
 "#;
         let result: Result<SquadConfig, _> = serde_saphyr::from_str(yaml);
-        assert!(result.is_err(), "unknown field 'tmux-session' should be rejected");
+        assert!(
+            result.is_err(),
+            "unknown field 'tmux-session' should be rejected"
+        );
     }
 }

@@ -1,6 +1,8 @@
 use crate::{config, db};
 
-use super::helpers::{colorize_agent_status, format_status_with_duration, pad_colored, reconcile_agent_statuses};
+use super::helpers::{
+    colorize_agent_status, format_status_with_duration, pad_colored, reconcile_agent_statuses,
+};
 
 pub async fn run(json: bool) -> anyhow::Result<()> {
     // 1. Connect to DB

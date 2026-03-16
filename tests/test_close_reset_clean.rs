@@ -93,7 +93,10 @@ fn clean_delete_db_file_returns_false_when_file_missing() {
     let db_path = dir.path().join("nonexistent-squad-station.db");
     // file does not exist
     let result = clean::delete_db_file(&db_path);
-    assert!(result.is_ok(), "delete_db_file must not error on missing file");
+    assert!(
+        result.is_ok(),
+        "delete_db_file must not error on missing file"
+    );
     assert!(
         !result.unwrap(),
         "should return false when file does not exist"
@@ -108,9 +111,15 @@ fn clean_delete_db_file_deletes_file_and_returns_true() {
     assert!(db_path.exists(), "setup: file must exist before deletion");
 
     let result = clean::delete_db_file(&db_path);
-    assert!(result.is_ok(), "delete_db_file must not error on existing file");
+    assert!(
+        result.is_ok(),
+        "delete_db_file must not error on existing file"
+    );
     assert!(result.unwrap(), "should return true when file was deleted");
-    assert!(!db_path.exists(), "file must no longer exist after deletion");
+    assert!(
+        !db_path.exists(),
+        "file must no longer exist after deletion"
+    );
 }
 
 // ============================================================

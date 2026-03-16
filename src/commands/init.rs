@@ -66,7 +66,8 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
 
     for agent in &config.agents {
         let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
-        let agent_name = config::sanitize_session_name(&format!("{}-{}", config.project, role_suffix));
+        let agent_name =
+            config::sanitize_session_name(&format!("{}-{}", config.project, role_suffix));
         if let Err(e) = db::agents::insert_agent(
             &pool,
             &agent_name,
@@ -108,7 +109,8 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     }
     for agent in &config.agents {
         let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
-        let agent_name = config::sanitize_session_name(&format!("{}-{}", config.project, role_suffix));
+        let agent_name =
+            config::sanitize_session_name(&format!("{}-{}", config.project, role_suffix));
         monitor_sessions.push(agent_name);
     }
     // Kill existing monitor session before recreating
@@ -141,7 +143,10 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
             println!("  - {}: already running (skipped)", name);
         }
         for name in &db_only_names {
-            println!("  {}: db-only (antigravity orchestrator — no tmux session)", name);
+            println!(
+                "  {}: db-only (antigravity orchestrator — no tmux session)",
+                name
+            );
         }
         for (name, error) in &failed {
             println!("  x {}: {}", name, error);
@@ -151,7 +156,12 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
 
     // 8. Exit code: return Err only if ALL agents failed (including orchestrator)
     // DB-only orchestrator is excluded from total: it is never launched and never fails.
-    let total = config.agents.len() + if config.orchestrator.is_db_only() { 0 } else { 1 };
+    let total = config.agents.len()
+        + if config.orchestrator.is_db_only() {
+            0
+        } else {
+            1
+        };
     if !failed.is_empty() && failed.len() == total {
         anyhow::bail!("All {} agent(s) failed to launch", total);
     }
@@ -159,10 +169,22 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     // 9. Hook setup: auto-install or print instructions
     // In JSON mode, skip stdout instructions (to preserve machine-parseable output).
     if !json {
-        let green = |s: &str| s.if_supports_color(Stream::Stdout, |s| s.green()).to_string();
-        let cyan = |s: &str| s.if_supports_color(Stream::Stdout, |s| s.cyan()).to_string();
-        let yellow = |s: &str| s.if_supports_color(Stream::Stdout, |s| s.yellow()).to_string();
-        let bold = |s: &str| s.if_supports_color(Stream::Stdout, |s| s.bold()).to_string();
+        let green = |s: &str| {
+            s.if_supports_color(Stream::Stdout, |s| s.green())
+                .to_string()
+        };
+        let cyan = |s: &str| {
+            s.if_supports_color(Stream::Stdout, |s| s.cyan())
+                .to_string()
+        };
+        let yellow = |s: &str| {
+            s.if_supports_color(Stream::Stdout, |s| s.yellow())
+                .to_string()
+        };
+        let bold = |s: &str| {
+            s.if_supports_color(Stream::Stdout, |s| s.bold())
+                .to_string()
+        };
 
         println!("\n{}", green("══════════════════════════════════"));
         println!("  {}", bold("Squad Setup Complete"));
@@ -234,7 +256,10 @@ fn read_or_create_settings(settings_file: &str) -> anyhow::Result<serde_json::Va
             match serde_json::from_str(&content) {
                 Ok(v) => Ok(v),
                 Err(e) => {
-                    eprintln!("Warning: Failed to parse {}: {}. Starting fresh.", settings_file, e);
+                    eprintln!(
+                        "Warning: Failed to parse {}: {}. Starting fresh.",
+                        settings_file, e
+                    );
                     Ok(serde_json::json!({}))
                 }
             }
@@ -248,7 +273,8 @@ fn read_or_create_settings(settings_file: &str) -> anyhow::Result<serde_json::Va
 fn install_claude_hooks(settings_file: &str) -> anyhow::Result<bool> {
     let mut settings = read_or_create_settings(settings_file)?;
     let signal_cmd = "squad-station signal $(tmux display-message -p '#S')";
-    let notify_cmd = "squad-station notify --body 'Agent needs input' --agent $(tmux display-message -p '#S')";
+    let notify_cmd =
+        "squad-station notify --body 'Agent needs input' --agent $(tmux display-message -p '#S')";
 
     // Stop hook — agent finished task → signal completion
     settings["hooks"]["Stop"] = serde_json::json!([{
@@ -275,7 +301,8 @@ fn install_claude_hooks(settings_file: &str) -> anyhow::Result<bool> {
 fn install_gemini_hooks(settings_file: &str) -> anyhow::Result<bool> {
     let mut settings = read_or_create_settings(settings_file)?;
     let signal_cmd = "squad-station signal $(tmux display-message -p '#S')";
-    let notify_cmd = "squad-station notify --body 'Agent needs input' --agent $(tmux display-message -p '#S')";
+    let notify_cmd =
+        "squad-station notify --body 'Agent needs input' --agent $(tmux display-message -p '#S')";
 
     settings["hooks"]["AfterAgent"] = serde_json::json!([{
         "matcher": "",
@@ -314,7 +341,6 @@ fn get_launch_command(agent: &config::AgentConfig) -> String {
         _ => "zsh".to_string(), // Unknown provider: open shell, user launches manually
     }
 }
-
 
 fn print_hook_instructions(settings_path: &str, event: &str, matcher: &str) {
     println!(

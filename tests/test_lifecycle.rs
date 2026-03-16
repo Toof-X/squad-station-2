@@ -59,7 +59,9 @@ fn test_context_output_contains_agents() {
     );
     // Orchestrator context at .claude/commands/squad-orchestrator.md (GAP-02)
     assert!(
-        tmp.path().join(".claude/commands/squad-orchestrator.md").exists(),
+        tmp.path()
+            .join(".claude/commands/squad-orchestrator.md")
+            .exists(),
         ".claude/commands/squad-orchestrator.md must be created"
     );
 }
@@ -86,7 +88,10 @@ fn test_context_output_has_usage() {
     );
     // Orchestrator context at .claude/commands/squad-orchestrator.md (GAP-02)
     let orchestrator_path = tmp.path().join(".claude/commands/squad-orchestrator.md");
-    assert!(orchestrator_path.exists(), ".claude/commands/squad-orchestrator.md must be created");
+    assert!(
+        orchestrator_path.exists(),
+        ".claude/commands/squad-orchestrator.md must be created"
+    );
     let content = std::fs::read_to_string(&orchestrator_path).unwrap();
     assert!(
         content.contains("squad-station send"),

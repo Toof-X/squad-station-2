@@ -39,11 +39,11 @@ async fn test_insert_agent_idempotent() {
 
     // The second insertion's data must take effect
     let agent = agents::get_agent(&pool, "backend").await.unwrap().unwrap();
+    assert_eq!(agent.tool, "gemini", "upsert must update tool to new value");
     assert_eq!(
-        agent.tool, "gemini",
-        "upsert must update tool to new value"
+        agent.role, "orchestrator",
+        "upsert must update role to new value"
     );
-    assert_eq!(agent.role, "orchestrator", "upsert must update role to new value");
 }
 
 #[tokio::test]

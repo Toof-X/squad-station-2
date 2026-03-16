@@ -98,10 +98,7 @@ fn select_layout_args(target: &str, layout: &str) -> Vec<String> {
 }
 
 fn load_buffer_args(path: &str) -> Vec<String> {
-    vec![
-        "load-buffer".to_string(),
-        path.to_string(),
-    ]
+    vec!["load-buffer".to_string(), path.to_string()]
 }
 
 fn paste_buffer_args(target: &str) -> Vec<String> {
@@ -151,8 +148,8 @@ pub fn send_keys_literal(target: &str, text: &str) -> Result<()> {
 
 /// Inject a single piece of content into a tmux target using load-buffer/paste-buffer.
 fn inject_single(target: &str, text: &str) -> Result<()> {
-    let temp_path = std::env::temp_dir()
-        .join(format!("squad-station-msg-{}", uuid::Uuid::new_v4()));
+    let temp_path =
+        std::env::temp_dir().join(format!("squad-station-msg-{}", uuid::Uuid::new_v4()));
     std::fs::write(&temp_path, text)?;
 
     let path_str = temp_path
@@ -192,7 +189,11 @@ fn inject_single(target: &str, text: &str) -> Result<()> {
 /// like `/clear && /gsd:plan-phase 1` that Claude Code's TUI cannot parse as one input.
 pub fn inject_body(target: &str, body: &str) -> Result<()> {
     // Check if body contains && separators (compound commands)
-    let parts: Vec<&str> = body.split("&&").map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let parts: Vec<&str> = body
+        .split("&&")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
 
     if parts.len() > 1 {
         // Multiple commands: send each separately with delay between
@@ -295,23 +296,21 @@ pub fn create_view_session(session_name: &str, agent_sessions: &[String]) -> Res
     }
 
     // First pane (left): orchestrator — always agent_sessions[0]
-    let orch_cmd = format!(
-        "sh -c 'TMUX= tmux attach-session -t {}'",
-        agent_sessions[0]
-    );
+    let orch_cmd = format!("sh -c 'TMUX= tmux attach-session -t {}'", agent_sessions[0]);
     let status = Command::new("tmux")
         .args(launch_args(session_name, &orch_cmd))
         .status()?;
     if !status.success() {
-        bail!("tmux new-session failed for monitor session: {}", session_name);
+        bail!(
+            "tmux new-session failed for monitor session: {}",
+            session_name
+        );
     }
 
     if agent_sessions.len() > 1 {
         // Split horizontally: left = orchestrator, right = first worker
-        let first_worker_cmd = format!(
-            "sh -c 'TMUX= tmux attach-session -t {}'",
-            agent_sessions[1]
-        );
+        let first_worker_cmd =
+            format!("sh -c 'TMUX= tmux attach-session -t {}'", agent_sessions[1]);
         Command::new("tmux")
             .args(&["split-window", "-t", session_name, "-h", &first_worker_cmd])
             .status()?;
@@ -473,7 +472,10 @@ mod tests {
         assert_eq!(args[1], "-t");
         assert_eq!(args[2], "%3");
         assert_eq!(args[3], "-F");
-        assert_eq!(args[4], "#S", "#S must not be escaped — plain tmux format string");
+        assert_eq!(
+            args[4], "#S",
+            "#S must not be escaped — plain tmux format string"
+        );
     }
 
     #[test]
@@ -500,13 +502,20 @@ mod tests {
         let args = load_buffer_args("/tmp/squad-station-msg-abc");
         assert_eq!(args[0], "load-buffer");
         assert_eq!(args[1], "/tmp/squad-station-msg-abc");
-        assert_eq!(args.len(), 2, "load-buffer takes only the path, no extra flags");
+        assert_eq!(
+            args.len(),
+            2,
+            "load-buffer takes only the path, no extra flags"
+        );
     }
 
     #[test]
     fn test_load_buffer_args_with_spaces_in_path() {
         let args = load_buffer_args("/tmp/my path/file");
-        assert_eq!(args[1], "/tmp/my path/file", "path with spaces must be preserved as single arg element");
+        assert_eq!(
+            args[1], "/tmp/my path/file",
+            "path with spaces must be preserved as single arg element"
+        );
     }
 
     #[test]
@@ -526,5 +535,4 @@ mod tests {
             "paste-buffer must use -t not -p; -p pastes to current pane ignoring -t target"
         );
     }
-
 }
