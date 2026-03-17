@@ -22,7 +22,15 @@ async fn main() {
 async fn run(cli: cli::Cli) -> Result<()> {
     match cli.command {
         None => {
-            commands::welcome::print_welcome();
+            use std::io::IsTerminal;
+            if std::io::stdout().is_terminal() {
+                let has_config = std::path::Path::new("squad.yml").exists();
+                let action = commands::welcome::run_welcome_tui(has_config).await?;
+                // Routing will be implemented in Plan 20-02
+                let _ = action;
+            } else {
+                commands::welcome::print_welcome();
+            }
             Ok(())
         }
         Some(cmd) => {
