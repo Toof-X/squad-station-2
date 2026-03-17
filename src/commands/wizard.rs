@@ -195,9 +195,9 @@ impl ModelSelector {
     pub fn options_for(provider: Provider) -> &'static [&'static str] {
         match provider {
             Provider::ClaudeCode => &[
-                "claude-sonnet-4-6",
-                "claude-opus-4-6",
-                "claude-haiku-4-5",
+                "sonnet",
+                "opus",
+                "haiku",
                 "other",
             ],
             Provider::GeminiCli => &[
@@ -1356,16 +1356,16 @@ mod tests {
     #[test]
     fn test_model_selector_claude() {
         let mut m = ModelSelector::new();
-        assert_eq!(m.current(Provider::ClaudeCode), Some("claude-sonnet-4-6"));
+        assert_eq!(m.current(Provider::ClaudeCode), Some("sonnet"));
         m.cycle_next(Provider::ClaudeCode);
-        assert_eq!(m.current(Provider::ClaudeCode), Some("claude-opus-4-6"));
+        assert_eq!(m.current(Provider::ClaudeCode), Some("opus"));
         m.cycle_next(Provider::ClaudeCode);
-        assert_eq!(m.current(Provider::ClaudeCode), Some("claude-haiku-4-5"));
+        assert_eq!(m.current(Provider::ClaudeCode), Some("haiku"));
         m.cycle_next(Provider::ClaudeCode);
         assert_eq!(m.current(Provider::ClaudeCode), Some("other"));
         // wraps around
         m.cycle_next(Provider::ClaudeCode);
-        assert_eq!(m.current(Provider::ClaudeCode), Some("claude-sonnet-4-6"));
+        assert_eq!(m.current(Provider::ClaudeCode), Some("sonnet"));
     }
 
     #[test]

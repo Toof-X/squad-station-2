@@ -622,9 +622,9 @@ mod tests {
     #[test]
     fn test_append_workers_to_yaml_includes_model_when_present() {
         let existing = "agents:\n";
-        let workers = vec![make_worker_with_model("claude-code", "", "claude-sonnet-4-6")];
+        let workers = vec![make_worker_with_model("claude-code", "", "sonnet")];
         let result = append_workers_to_yaml(existing, &workers);
-        assert!(result.contains("model: claude-sonnet-4-6"), "Model must appear in output");
+        assert!(result.contains("model: sonnet"), "Model must appear in output");
     }
 
     fn make_wizard_result() -> WizardResult {
@@ -635,7 +635,7 @@ mod tests {
                 name: "orch".to_string(),
                 role: "orchestrator".to_string(),
                 provider: "claude-code".to_string(),
-                model: Some("claude-sonnet-4-6".to_string()),
+                model: Some("sonnet".to_string()),
                 description: Some("main orchestrator".to_string()),
             },
             agents: vec![AgentInput {
@@ -676,7 +676,7 @@ mod tests {
         assert!(yaml.contains("role: orchestrator"), "orchestrator must have role: orchestrator");
         assert!(yaml.contains("provider: claude-code"), "orchestrator provider must be set");
         assert!(
-            yaml.contains("model: claude-sonnet-4-6"),
+            yaml.contains("model: sonnet"),
             "orchestrator model must be set"
         );
     }
