@@ -15,4 +15,5 @@ pub mod signal;
 pub mod status;
 pub mod ui;
 pub mod view;
+pub mod welcome;
 pub mod wizard;
