@@ -1,541 +1,526 @@
 # Pitfalls Research
 
-**Project:** Squad Station (Rust CLI + embedded SQLite + tmux automation + npm distribution)
-**Researched:** 2026-03-06
-**Overall Confidence:** HIGH (all claims verified against official docs, issue trackers, or primary sources)
+**Domain:** First-Run Onboarding TUI + Post-Install Auto-Launch for Rust CLI (v1.7 milestone)
+**Researched:** 2026-03-17
+**Confidence:** HIGH — verified against crossterm/ratatui docs, npm lifecycle docs, Rust stdlib docs, and codebase inspection
 
 ---
 
-## SQLite Pitfalls
+## Scope of This Document
 
-### CRITICAL — Pitfall 1: SQLITE_BUSY on Concurrent Hook Invocations
+This file covers pitfalls **specific to v1.7**: adding a ratatui first-run TUI welcome screen and
+post-install auto-launch to an existing, stable Rust CLI. The existing codebase already ships:
 
-**What goes wrong:** Multiple agent hooks fire nearly simultaneously (e.g., two agents complete tasks within milliseconds of each other). Each hook spawns a new `squad-station signal` process. Both processes attempt to open a write transaction on the same `.db` file. The second process gets `SQLITE_BUSY` immediately — or after a very short default timeout — and exits with an error, silently dropping the signal.
+- `wizard.rs` — ratatui TUI wizard with `setup_terminal()` / `restore_terminal()` + panic hook
+- `init.rs` — TTY guard via `std::io::stdin().is_terminal()` (prevents wizard launch in CI)
+- `welcome.rs` — plain-text welcome screen, content extracted to testable `welcome_content()` fn
+- `npm-package/bin/run.js` — Node.js wrapper that proxies all non-`install` subcommands to binary
+- 211 passing tests (no ratatui render in test suite — all TUI code is untested at unit level)
 
-**Why it happens:** SQLite allows only one writer at a time even in WAL mode. A stateless CLI binary opens a brand-new connection per invocation. Without an explicit `PRAGMA busy_timeout`, the default rusqlite timeout is 5000ms — but this value is not guaranteed to persist and may change between rusqlite versions. More dangerously, if you omit the pragma entirely in early prototypes, the default may be 0ms.
+The key constraint: the new TUI welcome screen must run when `squad-station` is invoked bare
+(no subcommand), AND post-install scripts in both npm and curl contexts must either auto-launch
+it or explicitly skip it. Both paths cross a TTY boundary that can silently break.
 
-**Consequences:** Dropped signals. Orchestrator never learns an agent finished. Deadlock in multi-agent workflow. Extremely hard to reproduce since it is timing-dependent.
+---
+
+## Critical Pitfalls
+
+### Pitfall 1: wizard.rs TTY Guard Pattern Not Applied to Welcome TUI
+
+**What goes wrong:**
+The existing `wizard.rs::run()` and `run_worker_only()` functions call `setup_terminal()` directly
+without checking `std::io::stdout().is_terminal()` first. The callers in `init.rs` provide the
+guard (`std::io::stdin().is_terminal()` at line 103), but `welcome.rs::print_welcome()` (the
+bare-invocation path in `main.rs`) currently prints plain text and does NOT call any TUI code.
+
+When v1.7 upgrades `print_welcome()` to launch a ratatui TUI, if the developer forgets to add
+the same TTY guard, `enable_raw_mode()` will be called with stdout connected to a pipe (during
+`npx squad-station` or `squad-station | cat`). Crossterm returns an `ENOTTY` `io::Error` from
+`enable_raw_mode()` in non-TTY contexts — but only if the error is propagated. If `setup_terminal()`
+is called via `?` inside an `async fn run()` that returns `anyhow::Result<()>`, the error will
+propagate to `main.rs` and print "Error: Inappropriate ioctl for device" — a confusing message
+that gives the user no actionable guidance.
+
+**Why it happens:**
+The wizard is always called from `init.rs` which already holds the TTY guard. The new welcome
+TUI has no such parent guard. Developers porting the TUI launch pattern from `wizard.rs` copy
+the terminal setup code without copying the guard that belongs one level up.
+
+**How to avoid:**
+Check TTY before any `enable_raw_mode()` call in the welcome path:
+
+```rust
+// In welcome.rs or main.rs bare-invocation arm:
+if std::io::stdout().is_terminal() {
+    run_welcome_tui().await?;
+} else {
+    print_welcome();  // fall back to existing plain-text output
+}
+```
+
+The non-TTY fallback must be the existing `print_welcome()` so that `squad-station | grep init`
+and similar pipelines continue to work correctly.
 
 **Warning signs:**
-- Intermittent "database is locked" messages in hook stderr
-- Agent status stuck as "busy" after the agent visibly went idle
-- Bugs only appear when 3+ agents finish simultaneously in tests
+- Running `squad-station | head` prints `Error: Inappropriate ioctl for device` instead of help text
+- `npx squad-station` (before binary is installed) triggers the error in the npm postinstall context
+- CI jobs that call `squad-station` for scripted setup fail with the ENOTTY error
 
-**Prevention:**
-1. Enable WAL mode once at DB creation time: `PRAGMA journal_mode=WAL;` — this setting is sticky across connections, so it only needs to be set once per `.db` file.
-2. Set `PRAGMA busy_timeout=5000;` (5 seconds) on every connection open — do NOT rely on rusqlite's default.
-3. Use `BEGIN IMMEDIATE` for all write transactions. Do not start a `BEGIN DEFERRED` and then upgrade to a write — this upgrade fails immediately with `SQLITE_BUSY` if any other writer is active.
-4. Keep write transactions minimal: one logical operation per transaction, no reads followed by writes in the same transaction.
-
-**Phase:** Must be addressed in the SQLite foundation phase (Phase 1 / core infrastructure). Non-negotiable before any hook integration.
-
-**Sources:** [SQLite WAL Docs](https://sqlite.org/wal.html) | [SQLITE_BUSY deep dive](https://tenthousandmeters.com/blog/sqlite-concurrent-writes-and-database-is-locked-errors/) | [rusqlite Connection docs](https://docs.rs/rusqlite/latest/rusqlite/struct.Connection.html)
+**Phase to address:** Phase 1 of v1.7 — the TTY guard must exist before the TUI is wired into
+the bare-invocation arm. The guard is the prerequisite, not the TUI itself.
 
 ---
 
-### CRITICAL — Pitfall 2: PRAGMA journal_mode=WAL Cannot Live Inside a Migration Transaction
+### Pitfall 2: npm postinstall Auto-Launch Hangs in Non-Interactive Contexts
 
-**What goes wrong:** You use `rusqlite_migration` and put `PRAGMA journal_mode=WAL;` inside a migration. The library wraps all migrations in a single transaction. SQLite silently ignores (or errors) PRAGMAs with side effects run inside a transaction — `journal_mode=WAL` is one of them.
+**What goes wrong:**
+The v1.7 goal is "post-install auto-launch" of the welcome TUI. If the npm `postinstall` script
+(or `bin/run.js`'s install command) calls `squad-station` bare (no subcommand) expecting the user
+to see the welcome TUI, it will **block** in CI environments. npm postinstall runs with stdin
+connected to `/dev/null` (or a closed pipe) and stdout/stderr connected to the npm install log
+stream — not a TTY. If the binary enters an `event::poll()` loop waiting for keyboard input, the
+process never receives any input events and hangs indefinitely.
 
-**Why it happens:** `rusqlite_migration` issue #4 explicitly documents this: PRAGMA statements with side effects cannot be run inside a transaction block, but the library runs all migrations inside one big transaction by default.
+The current `run.js` install command does NOT call `squad-station` at the end. If v1.7 adds a
+postinstall call, the hang risk is introduced.
 
-**Consequences:** WAL mode silently never gets enabled. You don't notice until production when concurrent writes start failing under load.
+**Why it happens:**
+npm spawns lifecycle scripts in a non-interactive subprocess. `process.stdout.isTTY` is `undefined`
+in postinstall. The npm docs explicitly state: "postinstall scripts run with stdio configured as
+`pipe`." Any attempt to interact with the terminal from a postinstall script will hang or error.
+
+**How to avoid:**
+Do NOT auto-launch `squad-station` from `postinstall`. The correct pattern is:
+
+1. `postinstall` installs the binary (already done in `run.js`)
+2. `postinstall` prints: "Run `squad-station` to get started"
+3. User runs `squad-station` manually — the TTY check in Pitfall 1 then determines whether to
+   show the TUI or plain text
+
+If auto-launch from install is required, gate it on `process.stdout.isTTY` in `run.js`:
+
+```javascript
+// In run.js install() — only launch TUI if stdout is a TTY
+if (process.stdout.isTTY) {
+    spawnSync(binaryPath, [], { stdio: 'inherit' });
+}
+// Otherwise: just print the next-steps hint
+```
 
 **Warning signs:**
-- `PRAGMA journal_mode;` returns `delete` instead of `wal` after migrations run
-- No error during startup, failure only appears under concurrent load
+- `npm install squad-station` hangs indefinitely in CI
+- GitHub Actions or other CI systems time out on the install step
+- Users report `npm install` taking minutes instead of seconds
 
-**Prevention:**
-- Run `PRAGMA journal_mode=WAL;` as a one-time setup step *before* running migrations, directly after opening the connection for the first time on a new database.
-- Do not include WAL or `synchronous` in any migration SQL.
-
-**Phase:** Phase 1 — DB initialization bootstrap sequence.
-
-**Sources:** [rusqlite_migration issue #4](https://github.com/cljoly/rusqlite_migration/issues/4) | [WAL mode persistence](https://sqlite.org/wal.html)
+**Phase to address:** Phase 1 of v1.7 — before any postinstall modification. The rule is explicit:
+postinstall must never block. Enforce this with a CI test that runs `npm install` with stdin closed.
 
 ---
 
-### MODERATE — Pitfall 3: Schema Migration Without Version Guard Causes Rewrite Pain
+### Pitfall 3: curl | sh Auto-Launch Breaks When stdin Is the Pipe
 
-**What goes wrong:** Early prototype hardcodes `CREATE TABLE IF NOT EXISTS` on every startup without tracking schema version. When schema needs to change (e.g., adding `last_heartbeat_at` column), you have no migration path. Every existing user's `.db` file is on old schema.
+**What goes wrong:**
+When a user runs `curl -fsSL https://... | sh`, bash's stdin is connected to the output of curl —
+not to the terminal. Any command in the install script that reads from stdin (including spawning
+a process that calls `crossterm::event::read()` to wait for keypresses) will immediately receive
+EOF, hang waiting for pipe data that never arrives, or error with "read: Input/output error."
 
-**Why it happens:** Rushing to prove the concept without wiring up schema versioning.
+`install.sh` currently ends with `echo "Run: squad-station --version"` and exits cleanly. If
+v1.7 adds `squad-station` at the end of `install.sh` to auto-launch the welcome TUI, the same
+hang risk from Pitfall 2 applies. Additionally, bash scripts running via curl pipe cannot use
+`/dev/tty` reliably on all systems because the terminal may not have a controlling TTY in some
+orchestrated install environments (Docker build, devcontainer setup).
 
-**Consequences:** Breaking change on binary upgrade. Users must manually delete their `~/.agentic-squad/<project>/station.db` or encounter panics / "no such column" errors.
+**Why it happens:**
+`curl | sh` is a pipe — bash's stdin is the curl output stream, not the terminal. The install
+script runs to completion reading from curl's output. Any child process that tries to read
+keyboard input blocks forever or gets EOF immediately. The `[ -t 0 ]` test (stdin is TTY) returns
+false in this context.
+
+**How to avoid:**
+Do NOT call `squad-station` from `install.sh`. The install script's job is installation only.
+End `install.sh` with a print message, not with a binary launch. The TTY guard in the binary
+itself (`is_terminal()`) provides defense-in-depth, but the correct fix is at the install script
+level: never launch interactive programs from a piped shell script.
 
 **Warning signs:**
-- Schema change needed but no `PRAGMA user_version` is set in the existing code
-- `ALTER TABLE` added without migration guard
+- `curl -fsSL https://... | sh` hangs at the last step
+- The install step in a devcontainer or Dockerfile never completes
+- Users running install in a tmux pane that lacks a controlling terminal report hangs
 
-**Prevention:**
-- Use `rusqlite_migration` from day one. Wire it up in Phase 1 even if there is only one migration.
-- Treat every schema change as a versioned migration. Never use bare `CREATE TABLE IF NOT EXISTS` as your upgrade mechanism.
-- Set `PRAGMA user_version` after each migration via rusqlite_migration's built-in mechanism.
-
-**Phase:** Phase 1 (must be in foundation). Retrofitting migrations later causes compatibility breaks.
-
-**Sources:** [rusqlite_migration crate](https://github.com/cljoly/rusqlite_migration) | [user_version strategy](https://levlaz.org/sqlite-db-migrations-with-pragma-user_version/)
+**Phase to address:** Phase 1 of v1.7 — specifically the "post-install auto-launch" design
+decision. The decision must be: "auto-launch is only user-initiated, not script-initiated."
 
 ---
 
-### MODERATE — Pitfall 4: WAL File Growing Unbounded (Checkpoint Starvation)
+### Pitfall 4: Terminal Not Restored After Early Return / Error in Welcome TUI
 
-**What goes wrong:** A long-running read transaction (e.g., `squad-station ui` TUI that holds a read handle open while displaying a dashboard) prevents SQLite from completing a WAL checkpoint. The WAL file grows indefinitely. Read performance degrades.
+**What goes wrong:**
+The welcome TUI enters alternate screen mode and raw mode. If an error occurs mid-render
+(e.g., terminal resize event triggers a panicking unwrap, or a `?` in the event loop returns
+early), `restore_terminal()` is never called. The user's terminal is left in raw mode with the
+alternate screen visible. They see a blank screen. `Ctrl+C` does not work normally. They must
+type `reset` blindly to recover.
 
-**Why it happens:** SQLite's checkpointer cannot reclaim WAL file space if any reader holds a snapshot from before the checkpoint point. A TUI holding an open connection for its refresh loop is exactly this pattern.
+The existing `wizard.rs::run()` installs a panic hook that calls `disable_raw_mode()` and
+`execute!(LeaveAlternateScreen)`. The welcome TUI needs the same pattern. If it is written as
+a new function without copying the panic hook, the panic recovery is missing.
 
-**Consequences:** Disk usage grows slowly. On developer machines this is tolerable, but it signals a deeper connection management flaw.
+Additionally: `ui.rs::run()` installs a panic hook via `std::panic::take_hook()` and
+`std::panic::set_hook()`, but restores `let _ = std::panic::take_hook()` at the end (which drops
+the hook). If the welcome TUI is added as another TUI entry point without coordination, two
+take_hook/set_hook pairs can interfere: one TUI's cleanup hook is accidentally dropped when a
+different TUI sets a new hook.
+
+**Why it happens:**
+Multiple TUI modules each manage their own panic hook lifecycle independently. When multiple TUI
+entrypoints exist in the same binary (welcome TUI, wizard TUI, ui.rs dashboard), the
+take_hook/set_hook pattern becomes fragile. Each module saves and restores the hook, but if
+they are ever called in sequence in the same process (unlikely now, possible in tests or future
+features), the hook chain gets corrupted.
+
+**How to avoid:**
+- Extract `setup_terminal()` / `restore_terminal()` / panic-hook installation into a shared
+  module (`src/tui.rs` or `src/commands/tui_guard.rs`) used by wizard.rs, ui.rs, and the new
+  welcome TUI. This guarantees consistent behavior.
+- Alternatively, adopt `ratatui::init()` / `ratatui::restore()` introduced in ratatui 0.28.1,
+  which handles panic hook setup automatically. The current codebase uses ratatui 0.26 (per
+  PROJECT.md), so this requires a version bump — evaluate the breaking-change surface before
+  adopting.
+- At minimum: every new TUI entrypoint must install the panic hook and call `restore_terminal()`
+  on every code path that exits the loop (normal exit, Ctrl+C, error propagation via `?`).
 
 **Warning signs:**
-- `~/.agentic-squad/<project>/station.db-wal` file growing beyond a few MB
-- TUI refresh loop holding connections open across refresh cycles
+- After dismissing the welcome TUI with Ctrl+C, subsequent terminal output appears garbled
+- Running `squad-station` twice in sequence leaves the terminal in raw mode after the second run
+- Tests that call TUI functions leave the test runner in raw mode, breaking subsequent test output
 
-**Prevention:**
-- TUI should open a short-lived connection per refresh, not hold one open persistently.
-- Alternatively, use `PRAGMA wal_autocheckpoint=100;` (default) and ensure all read transactions are properly closed.
-- Do not use connection pools or long-lived connection objects across the UI refresh loop.
-
-**Phase:** Phase N (TUI / dashboard). Early phases unaffected since they are truly stateless.
-
-**Sources:** [SQLite WAL checkpoint starvation](https://sqlite.org/wal.html) | [Fly.io WAL internals](https://fly.io/blog/sqlite-internals-wal/)
+**Phase to address:** Phase 1 of v1.7 — terminal cleanup contract must be established before
+any TUI code is added to the welcome path.
 
 ---
 
-## tmux Automation Pitfalls
+### Pitfall 5: Cargo Test Suite Breaks When TUI Code Touches Real Terminal
 
-### CRITICAL — Pitfall 5: Shell Initialization Race Condition on Session Creation
+**What goes wrong:**
+`cargo test` runs tests in parallel. Tests share the same process's stdout/stderr. If any test
+calls a function that calls `enable_raw_mode()` or `EnterAlternateScreen` on real stdout, it
+corrupts the terminal state for all other tests running concurrently. The effect is:
+- Test output becomes garbled
+- Some tests produce no output at all (alternate screen hides it)
+- The terminal is left in raw mode after the test suite exits
 
-**What goes wrong:** `squad-station send` creates a new tmux session and immediately calls `tmux send-keys` to inject the agent prompt. The shell (zsh/bash with plugins like `oh-my-zsh`, `starship`, `nvm`) has not finished initializing. The injected keystrokes either get lost, appear as literal text before the prompt, or execute before the shell is ready. The agent never actually starts.
+The current test suite avoids this by the `welcome_content()` pattern: the testable pure-string
+function is separate from `print_welcome()` which touches the terminal. The wizard tests only
+test pure-logic functions (`generate_squad_yml`, `append_workers_to_yaml`, etc.) — they never
+call `wizard::run()` which enters the TUI.
 
-**Why it happens:** `tmux new-session` returns as soon as the pane is created, not when the shell is ready. This is a documented race condition in Claude Code's own agent system (issue #23513).
+If v1.7 adds a `welcome_tui::run()` function and tests inadvertently call it (e.g., an
+integration test that calls `commands::welcome::run_tui()` without a TTY guard), the entire
+test suite output becomes unreadable.
 
-**Consequences:** Agent session is created in the registry but the agent process never actually started. Orchestrator sends tasks to a dead agent. No error is surfaced.
+**Why it happens:**
+Developers write an integration test that exercises the full code path through `main.rs` with
+`None` command. The test passes because the TTY check returns false (test runner has no TTY),
+but if the check is missing or the test somehow provides a TTY (e.g., via `pty` or when run
+interactively), the TUI launches and corrupts output.
+
+Additionally: `cargo test` on macOS in iTerm2 or Terminal.app runs with stdout connected to a
+TTY. If a developer runs `cargo test` interactively and any test calls `enable_raw_mode()`, the
+terminal enters raw mode and the test runner output is invisible.
+
+**How to avoid:**
+- Never call `enable_raw_mode()` or terminal-manipulating functions from test code
+- Design TUI entry points to accept a TTY availability parameter or check it internally:
+  `fn run_tui_if_interactive() -> bool` that returns false and does nothing when not a TTY
+- The pattern already in `welcome_content()` is correct: extract pure content, test content,
+  never test render
+- Add a `#[cfg(not(test))]` guard or `is_terminal()` check inside `run_welcome_tui()` so it
+  is a no-op during `cargo test`
+- Document in `CLAUDE.md`: "Never call TUI run() functions from unit or integration tests"
 
 **Warning signs:**
-- Agent session exists in tmux (`tmux list-sessions`) but no process is running inside
-- `capture-pane` shows partial shell initialization output instead of a prompt
-- Bug is machine-specific: affects users with heavy shell configs (oh-my-zsh, nvm, rbenv)
+- `cargo test` leaves terminal in raw mode after completion
+- Test output shows garbled characters or blank lines where test names should be
+- Tests pass individually but fail or produce no output when run in parallel
 
-**Prevention:**
-- Use `tmux new-session -d` to create detached, then poll for shell readiness before sending keys.
-- Readiness detection: use `tmux display-message -p -t <session> '#{pane_current_command}'` in a loop until it returns the expected shell name (e.g., `zsh`), with a short sleep and timeout.
-- Alternatively, use `tmux new-session -d 'command-to-run'` to pass the agent command directly as the initial process — avoids shell init entirely, but requires knowing the full invocation upfront.
-- Add a configurable `send_delay_ms` option in `squad.yml` as a fallback escape hatch for users with slow shell init.
-
-**Phase:** Phase 1 / core `send` command. This is a foundational correctness issue.
-
-**Sources:** [Claude Code tmux race condition issue #23513](https://github.com/anthropics/claude-code/issues/23513) | [tmux send-keys async issue #1517](https://github.com/tmux/tmux/issues/1517)
+**Phase to address:** Phase 1 of v1.7 — test isolation contract must be established as the
+first thing, before any TUI code is merged. Every TUI PR should be reviewed for test isolation.
 
 ---
 
-### CRITICAL — Pitfall 6: Special Character Injection Breaking Agent Prompts
+### Pitfall 6: Welcome TUI Blocks When Terminal Is Too Small to Render
 
-**What goes wrong:** The Orchestrator's task message injected via `tmux send-keys` contains characters that tmux interprets as commands: semicolons (`;`), escape sequences, backticks, single quotes. Tmux parses a trailing semicolon as a command separator — the rest of the string becomes a new tmux command, not part of the message. The injected text is corrupted or truncated.
+**What goes wrong:**
+ratatui renders into the actual terminal dimensions. If the terminal is very small (e.g., 20x5
+characters — common in CI terminals, embedded terminals, or split tmux panes), the layout
+constraints may produce zero-height widgets, causing ratatui to panic in debug builds or silently
+render nothing in release builds. The welcome TUI then appears blank or crashes.
 
-**Why it happens:** `tmux send-keys` performs its own parsing pass on the string before sending it to the terminal. Semicolons, in particular, are parsed as command terminators at the tmux level even when shell-quoted.
+Additionally: `frame.size()` returns the terminal dimensions at render time. If the terminal is
+resized to zero dimensions (possible in some CI virtual terminals), `Layout::split()` with
+`Constraint::Length(3)` on a 0-height area produces a Rect with height 0, and subsequent widget
+rendering into that Rect may overflow.
 
-**Consequences:** Garbled task messages. Potential for unintended tmux commands to execute. Agent receives incomplete instructions.
+The existing wizard uses `Constraint::Length(3)` for the header area. A terminal with fewer than
+3 rows will cause the layout to saturate and produce overlapping zero-size areas.
+
+**Why it happens:**
+Developers test the TUI in their normal development terminal (80x24 or larger). They never test
+in a small terminal or a non-human-interactive context where the terminal is reported as having
+minimal dimensions (e.g., 0x0 or 1x1 in some pty-less contexts).
+
+**How to avoid:**
+- Add a minimum terminal size check before entering the TUI event loop:
+  ```rust
+  let size = terminal.size()?;
+  if size.height < 10 || size.width < 40 {
+      restore_terminal(&mut terminal)?;
+      print_welcome();  // fall back to plain text
+      return Ok(());
+  }
+  ```
+- This minimum size check should match the actual layout requirements of the welcome TUI design
+- The existing `welcome_content()` plain-text fallback is the correct target for the small-terminal path
 
 **Warning signs:**
-- Messages with semicolons get split in the target pane
-- Quoted strings lose their spaces (multiple words passed without quotes drop the delimiter)
-- `\;` in messages causes surprising behavior
+- Welcome TUI appears blank in tmux split panes
+- `squad-station` crashes with a layout panic when terminal window is tiny
+- Users in tmux with many splits (small pane width) cannot use the welcome TUI
 
-**Prevention:**
-- Always use `tmux send-keys -l` (literal mode) when sending arbitrary text. The `-l` flag disables tmux key lookup and treats the string as raw characters, bypassing tmux's special character parsing.
-- For the Enter key, send it as a separate `tmux send-keys -t <target> '' Enter` call after sending the literal message content.
-- Escape the message content at the Rust level before constructing the `Command` call: replace or quote characters that tmux's argument parser may misinterpret.
-- Integration test: send a message containing `; ls /tmp;`, single quotes, backticks, and newlines. Verify agent receives them verbatim.
-
-**Phase:** Phase 1 / core `send` command. Must be caught before any agent workflow testing.
-
-**Sources:** [tmux semicolon parsing issue #1849](https://github.com/tmux/tmux/issues/1849) | [tmux send-keys spaces issue #1425](https://github.com/tmux/tmux/issues/1425) | [tmux issue #4350](https://github.com/tmux/tmux/issues/4350)
+**Phase to address:** Phase 1 of v1.7 — minimum size guard should be part of the initial TUI
+implementation, not added later as a fix.
 
 ---
 
-### MODERATE — Pitfall 7: capture-pane Output Is Brittle for Structured Parsing
+## Moderate Pitfalls
 
-**What goes wrong:** `squad-station view` or the Orchestrator using `tmux capture-pane` to read agent output encounters ANSI escape codes, terminal control sequences, wrapped lines, and trailing spaces. If you try to parse agent output by grepping for specific strings (e.g., "Task complete"), escape codes embedded in the output break the match.
+### Pitfall 7: "Press Enter to Continue" Pattern Blocks Orchestrators and Scripts
 
-**Why it happens:** By default, `tmux capture-pane` strips ANSI codes. With `-e`, it preserves them but they appear as raw escape sequences. AI coding tools (Claude Code, Gemini CLI) use rich terminal output with colors, progress spinners, and cursor manipulation.
+**What goes wrong:**
+The v1.7 design includes: "no squad.yml → Press Enter to set up → wizard." If the welcome TUI
+enters a blocking wait for keypress (`event::read()` with no timeout) on the welcome screen,
+any script or orchestrator that calls `squad-station` expecting it to exit immediately will block.
 
-**Consequences:** Completion detection via output pattern matching is unreliable. Hook-based completion (which does not depend on output parsing) avoids this problem — but if anyone adds output-parsing as a fallback, it breaks.
+This is especially problematic for:
+- The Gemini CLI `@squad-station` or MCP-style invocations that call the binary in a subprocess
+- The npm `bin/run.js` proxy that calls the binary with `spawnSync` — this blocks the Node process
+- CI scripts that call `squad-station` to check version or status before setup
+
+The existing plain-text `print_welcome()` exits immediately. The TUI version must not hang
+indefinitely.
+
+**How to avoid:**
+- Use `event::poll(timeout)` with a defined timeout (e.g., 30 seconds) rather than blocking `event::read()`
+- Or: display the welcome TUI with a visible countdown: "Press any key or wait 10 seconds..."
+- Or: add an `--no-wait` flag that skips the interactive welcome and falls through to plain text
+- The best approach for orchestrator safety: the welcome TUI exits automatically after a short
+  timeout and falls back to printing the plain-text welcome to stdout
 
 **Warning signs:**
-- Pattern matches against captured output fail intermittently
-- Output looks correct when viewed in terminal but grep fails against the captured text
-- Long lines appear duplicated or wrapped when captured
+- `spawnSync('squad-station', [], { timeout: 5000 })` times out in `run.js`
+- Orchestrator AI tools that call `squad-station` as a tool call appear to hang
+- Shell scripts with `squad-station && next-command` never reach `next-command`
 
-**Prevention:**
-- Do NOT use `capture-pane` output parsing as the primary mechanism for detecting agent completion. Rely exclusively on the hook-driven signal system.
-- If `capture-pane` is used for display purposes (TUI dashboard), use `capture-pane -p` (print to stdout) without `-e`, accepting that colors are stripped for display.
-- For the `split view` feature, use `tmux join-pane` or `tmux link-window` to display the actual live pane rather than a captured copy.
-
-**Phase:** Phase N (TUI/view features). Primary `signal` mechanism is immune. Note this risk in TUI phase planning.
-
-**Sources:** [tmux ANSI issue #3401](https://github.com/tmux/tmux/issues/3401) | [tmux ANSI filtered issue #2254](https://github.com/tmux/tmux/issues/2254)
+**Phase to address:** Phase 1 of v1.7 — the event loop design must include auto-exit timeout.
 
 ---
 
-### MODERATE — Pitfall 8: Agent Lifecycle Detection False Negatives
+### Pitfall 8: Alternate Screen Swallows Welcome Output in Scripts
 
-**What goes wrong:** `squad-station` marks an agent as "idle" or "dead" based on tmux session/pane state, but the detection is wrong:
-- `tmux has-session` returns 0 (success) even if the session exists but the agent process inside has exited — the shell is still running.
-- `#{pane_dead}` only returns true when the pane's *shell itself* exits, not when the agent subprocess inside the shell exits.
+**What goes wrong:**
+`EnterAlternateScreen` switches to a secondary buffer. When the TUI exits and calls
+`LeaveAlternateScreen`, everything rendered in the TUI disappears. The user's terminal shows
+their previous content with no trace of the welcome TUI.
 
-**Why it happens:** tmux tracks pane liveness at the shell level, not the subprocess level. An agent that crashes but leaves a shell prompt open is "alive" to tmux.
+For an informational welcome screen, this is the WRONG UX: the user sees a flash of content
+and it vanishes. They cannot scroll back to see the version number or command hints.
 
-**Consequences:** Dead agents appear as idle in the registry. Orchestrator assigns tasks to agents that cannot process them.
+The existing `print_welcome()` writes to the main screen buffer (stdout), where it persists in
+the scrollback. The new TUI should evaluate whether alternate screen is appropriate for a
+one-time welcome message that the user needs to remember.
+
+**How to avoid:**
+- For the welcome screen specifically: consider NOT using alternate screen. Render in the main
+  buffer with raw mode only for keypress detection, then restore normal mode after the keypress.
+  The content remains visible in scrollback.
+- If alternate screen IS used, print a brief "Run `squad-station init` to set up" message to
+  regular stdout AFTER `LeaveAlternateScreen`, so there is persistent text in the scrollback.
+- The wizard uses alternate screen correctly (full-screen form), but the welcome screen is more
+  like a splash screen — different UX requirements.
 
 **Warning signs:**
-- Agent shows as idle but no response to sent tasks
-- `tmux display-message -p '#{pane_current_command}'` returns `zsh` or `bash` instead of the agent tool name when agent is supposedly running
+- User dismisses welcome screen and the terminal is blank with no memory of what was shown
+- Users ask "how do I see the version again?" — the answer should not be "run it again"
 
-**Prevention:**
-- Use `tmux display-message -p -t <session> '#{pane_current_command}'` to check the *current running command* in the pane. If it returns `zsh`/`bash` (the shell), the agent process has exited.
-- Define "agent alive" as: session exists AND `pane_current_command` equals the expected agent binary name.
-- Implement a heartbeat timeout in the DB: if `last_signal_at` has not updated in N minutes and the pane shows the shell, mark the agent as dead.
-- The hook system provides the authoritative liveness signal — if a hook fires, the agent was alive at that moment.
-
-**Phase:** Phase 2 / agent lifecycle management. Build this before status reporting is used by Orchestrators.
-
-**Sources:** [tmux pane_dead detection](https://tmuxai.dev/tmux-respawn-pane/) | [tmux has-session](https://davidltran.com/blog/check-tmux-session-exists-script/)
+**Phase to address:** Phase 2 of v1.7 (UX polish), but the architectural decision (alt screen vs
+main buffer) should be made in Phase 1 to avoid a rendering rewrite.
 
 ---
 
-## Hook System Pitfalls
+### Pitfall 9: Stale Binary After npm install with Version Mismatch
 
-### CRITICAL — Pitfall 9: Orchestrator Hook Triggers Infinite Signal Loop
+**What goes wrong:**
+`run.js` checks if the installed binary matches the npm package version:
 
-**What goes wrong:** The hook is installed globally (in `~/.claude/settings.json` or equivalent). When the Orchestrator itself finishes a task, its Stop/PostToolUse hook fires. The hook calls `squad-station signal`. This could trigger the Orchestrator to re-evaluate and start a new task, which finishes, fires the hook again — infinite loop.
+```javascript
+var result = spawnSync(destPath, ['--version'], { encoding: 'utf8' });
+if (result.stdout && result.stdout.includes(VERSION)) {
+    console.log('  ✓ squad-station v' + VERSION + ' already installed');
+    return;
+}
+```
 
-**Why it happens:** The hook system is provider-level (it fires for ALL sessions of that provider, including the Orchestrator session). Squad Station's hook does not distinguish between Orchestrator and agent by default. This is documented as a known problem in Claude Code's own hook system (issue #3573, bug in claude-flow project issue #427).
+If the binary at `destPath` is from a different install path (e.g., installed via curl to
+`~/.local/bin` but npm checks `/usr/local/bin`), and the old binary is on PATH before the new
+location, `squad-station` resolves to the old binary. The version check passes on the wrong file.
 
-**Consequences:** Orchestrator fork-bombs itself. Rapidly fills SQLite with spurious signal records. CPU runaway. User loses control of their terminal.
+For v1.7: if the old binary does not have the welcome TUI (v1.6 binary) but the npm package is
+v1.7, the user runs `squad-station` and gets the old plain-text welcome. They see no indication
+that their install is stale.
+
+**How to avoid:**
+This is pre-existing behavior, but v1.7 should not make it worse. Ensure the version string
+reported by `--version` matches `CARGO_PKG_VERSION` and is unique per release. The version check
+in `run.js` is sufficient for npm-installed paths; document that mixing install methods can lead
+to stale binaries.
 
 **Warning signs:**
-- Orchestrator session starts rapidly looping after hook is installed
-- `station.db` grows rapidly with thousands of signal records
-- CPU spikes in the `claude` or `gemini` process after hook installation
+- User upgrades npm package but `squad-station` behavior looks unchanged
+- `squad-station --version` reports a different version than `npm list squad-station`
 
-**Prevention:**
-- The `squad-station signal` command must check the invoking session name against the Orchestrator's session name from the registry. If the session is the Orchestrator, exit 0 silently.
-- `tmux display-message -p '#S'` from within the hook gives the current session name. The binary must check this against the `orchestrator` record in SQLite.
-- For Claude Code specifically, check `stop_hook_active` field in hook JSON input — if true, exit 0 immediately (this is the official guard pattern).
-- Document this clearly: `squad-station init` must register the Orchestrator session name at setup time so the skip logic has something to check against.
-
-**Phase:** Phase 1 — the skip guard must exist BEFORE the hook is documented or distributed. Shipping hooks without this guard is dangerous.
-
-**Sources:** [Claude Code infinite loop issue #10205](https://github.com/anthropics/claude-code/issues/10205) | [claude-flow infinite recursion issue #427](https://github.com/ruvnet/claude-flow/issues/427) | [Claude Code hooks guide](https://code.claude.com/docs/en/hooks-guide) | [Steve Kinney hook control flow](https://stevekinney.com/courses/ai-development/claude-code-hook-control-flow)
+**Phase to address:** Not introduced by v1.7, but review during integration testing.
 
 ---
 
-### MODERATE — Pitfall 10: Provider-Specific Hook Event Names Diverge
+### Pitfall 10: ratatui 0.26 API Differences From Current Docs
 
-**What goes wrong:** Claude Code uses `Stop` event. Gemini CLI uses `AfterAgent` event (or similar). Codex/Aider may use different hooks entirely or none at all. A hook script written for Claude Code's JSON input schema fails silently when run under Gemini CLI because the JSON keys differ.
+**What goes wrong:**
+The project uses ratatui 0.26 (per PROJECT.md Cargo context). The current ratatui documentation
+at ratatui.rs and docs.rs describes ratatui 0.29+ (latest stable). Key differences:
 
-**Why it happens:** The project is explicitly provider-agnostic, but hook systems are per-provider and non-standardized. Each provider defines its own event names, JSON payload schema, and trigger conditions.
+- `ratatui::init()` / `ratatui::restore()` were introduced in 0.28.1. They are NOT available in 0.26.
+- `frame.size()` was deprecated in favor of `frame.area()` in newer versions. Code written against
+  new docs will not compile against 0.26.
+- The `Constraint` API, `Layout::default()` pattern, and widget constructors are stable across
+  0.26-0.29, but subtle deprecations cause compiler warnings that can be mistaken for bugs.
 
-**Consequences:** Hook works for Claude Code users, silently fails for Gemini CLI users. Agent signals are never received for Gemini agents. Hard to debug because hook "runs" (exits 0) but sends wrong data.
+If a developer follows current ratatui tutorials or docs.rs snippets to build the welcome TUI,
+they may write code that does not compile against the pinned 0.26 version.
+
+**How to avoid:**
+- Check `Cargo.toml` for the pinned ratatui version before writing any TUI code
+- Use `docs.rs/ratatui/0.26.x/ratatui/` (with version pin in URL) for API reference
+- Or: bump ratatui to latest (0.29+) as part of v1.7 and update the single API usage change
+  (`frame.size()` → `frame.area()` if applicable)
+- Review BREAKING-CHANGES.md in the ratatui repository before bumping
 
 **Warning signs:**
-- Gemini CLI agents never transition to idle in the registry
-- Hook is installed and runs (no error), but `station.db` shows no records for Gemini sessions
+- `cargo build` fails with "method `init` not found in type `ratatui`"
+- Clippy warns about deprecated `frame.size()` usage
+- Documentation examples don't match actual compiler behavior
 
-**Prevention:**
-- Design `squad-station signal` to be invoked with explicit arguments: `squad-station signal --agent <name> --event completed`. The hook script itself handles the provider-specific JSON parsing and calls the binary with normalized arguments.
-- Keep provider-specific glue in thin hook scripts (bash), not in the Rust binary. The binary is provider-agnostic.
-- Ship example hook scripts for each supported provider (Claude Code, Gemini CLI) in documentation or as installable templates via `squad-station install-hooks`.
-- Explicitly test each provider's hook invocation in the integration test suite.
-
-**Phase:** Phase 2 / hook integration. Architect for this in Phase 1 by keeping the CLI interface provider-agnostic.
-
-**Sources:** PROJECT.md context | [Claude Code hooks guide](https://code.claude.com/docs/en/hooks-guide)
+**Phase to address:** Phase 1 of v1.7 — check version compatibility before writing TUI code.
 
 ---
 
-### MODERATE — Pitfall 11: Hook Output Errors Go to Wrong Stream
+## Technical Debt Patterns
 
-**What goes wrong:** The hook script writes error messages (e.g., "station.db not found") to stdout. The AI provider's hook runner captures stdout for structured data or ignores it. The user never sees the error. The hook silently fails.
-
-**Why it happens:** Many CLI tools default to stderr for errors, but hook runners vary in how they surface each stream. Some providers use stdout exit codes; others parse stdout JSON.
-
-**Consequences:** Hook errors are invisible. Users cannot debug why agents aren't being signaled.
-
-**Prevention:**
-- `squad-station signal` must write all diagnostic/error output to stderr.
-- Exit with non-zero exit code on any error so the hook runner surfaces a failure.
-- Design hook scripts to forward stderr from `squad-station` to the provider's error channel.
-- In `--verbose` mode, emit structured logs to stderr for debugging.
-
-**Phase:** Phase 1 — error handling contract must be established from the start.
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Copy-paste `setup_terminal()` into welcome.rs | Quick to implement | Three copies of the same pattern; inconsistent panic hook handling | Never — extract to shared module |
+| Skip alternate-screen decision, default to EnterAlternateScreen | Matches wizard pattern | Welcome content disappears from scrollback; confusing UX | Never for a one-time welcome message |
+| Inline TTY check in welcome.rs only | Minimal change | TTY check not enforced in future TUI entry points | Acceptable MVP if documented as pattern |
+| No minimum terminal size check | Simpler code | Crashes or blank screen in small terminals | Never — add minimum check |
+| Auto-exit timeout omitted (block on keypress forever) | Simpler event loop | Hangs any script or orchestrator that calls bare `squad-station` | Never — always include timeout |
+| Skip non-TTY fallback (just return Ok if not terminal) | Simpler code | Breaks `squad-station --help` in piped contexts (no help text) | Never — fallback to print_welcome() |
 
 ---
 
-## npm Distribution Pitfalls
+## Integration Gotchas
 
-### CRITICAL — Pitfall 12: Platform Package Publication Order Matters
-
-**What goes wrong:** You publish the base `squad-station` npm package (which lists platform-specific packages as `optionalDependencies`) before publishing the platform packages themselves. npm resolves optional dependencies at install time — if `squad-station-darwin-arm64` does not exist in the registry yet, installation fails with a cryptic 404 error for every user who installs during that window.
-
-**Why it happens:** CI pipelines often build and publish in a single job. If the base package publishes first (alphabetically, or because the platform build step is separate), users hit a broken state. This is documented as a specific failure mode by Orhun's packaging guide.
-
-**Consequences:** New release is broken for all users for however long it takes to notice and republish.
-
-**Prevention:**
-- CI pipeline must publish ALL platform-specific packages first, wait for them to be resolvable (add a brief verification step), then publish the base wrapper.
-- Use a single GitHub Actions workflow with explicit dependency between jobs: `publish-platform-packages` → `publish-base-package`.
-- Test the full install flow in a clean environment as a post-release smoke test.
-
-**Phase:** Phase N / npm distribution. But design the CI structure with this ordering constraint from the first release.
-
-**Sources:** [Orhun's npm packaging guide](https://blog.orhun.dev/packaging-rust-for-npm/) | [Sentry binary publishing guide](https://sentry.engineering/blog/publishing-binaries-on-npm)
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| npm postinstall | Add `spawnSync(binaryPath, [])` at end of `install()` in `run.js` | Never call the binary from postinstall; print next-steps hint only |
+| curl \| sh install.sh | Append `$INSTALL_DIR/squad-station` at end of script | Never call the binary from install.sh; `stdin` is the curl pipe |
+| npm proxy in `run.js` | `proxyToBinary()` calls binary with `stdio: 'inherit'` — TUI works when user runs `npx squad-station` | This is correct; `npx squad-station` in a real terminal has TTY — TTY check passes |
+| cargo test parallel | Call `run_welcome_tui()` in integration tests | Only test `welcome_content()` (pure string); never call TUI render functions from tests |
+| GitHub Actions CI job that calls `squad-station` | Binary auto-launches TUI, CI hangs | TTY guard must be the first thing in the bare-invocation path; CI has no TTY |
+| tmux-based usage (existing squad users) | Welcome TUI renders inside a tmux pane — this works fine | tmux panes ARE TTYs; `is_terminal()` returns true; TUI renders correctly |
 
 ---
 
-### CRITICAL — Pitfall 13: Executable Permissions Lost in CI Upload/Download
+## Performance Traps
 
-**What goes wrong:** GitHub Actions artifacts or npm tarballs strip executable bits from binary files. The published binary is not executable on the user's machine. Installation appears to succeed, but running `squad-station` produces "permission denied."
-
-**Why it happens:** GitHub's `upload-artifact` / `download-artifact` actions do not preserve Unix file permissions. This is a well-documented issue. npm tarballs can also strip execute bits depending on how they are created.
-
-**Consequences:** Binary installs but cannot run. Error is confusing ("permission denied" is not obviously a packaging bug).
-
-**Warning signs:**
-- `ls -la $(which squad-station)` shows mode `644` instead of `755`
-- Users report "permission denied" after successful `npm install`
-
-**Prevention:**
-- In the postinstall script or npm wrapper's JS entrypoint: call `fs.chmodSync(binaryPath, 0o755)` after locating the binary.
-- In CI, explicitly `chmod +x` the binary before creating the npm tarball.
-- Add a smoke test in CI that installs the package and verifies the binary is executable before publishing.
-
-**Phase:** Phase N / npm distribution. Catch this in the first packaging spike.
-
-**Sources:** [Orhun's packaging guide — executable bits note](https://blog.orhun.dev/packaging-rust-for-npm/) | [Sentry guide](https://sentry.engineering/blog/publishing-binaries-on-npm)
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| Polling too aggressively in welcome TUI event loop | High CPU on idle welcome screen | Use `event::poll(250ms)` timeout, same as wizard.rs and ui.rs | Immediately on launch |
+| Loading DB or config in welcome TUI before squad.yml exists | "squad.yml not found" error on bare invocation | Welcome TUI must not read DB or config; it is pre-setup | First time user runs `squad-station` |
+| Spawning external processes from welcome TUI (e.g., checking for updates) | Slow TUI startup | Welcome TUI is display-only; no network calls, no subprocess spawns | Every invocation |
 
 ---
 
-### MODERATE — Pitfall 14: postinstall Script Disabled by Security-Conscious Environments
+## "Looks Done But Isn't" Checklist
 
-**What goes wrong:** Corporate environments, security-hardened CI systems, and some package managers disable `postinstall` scripts by default (`npm install --ignore-scripts`, `yarn --ignore-optional`). If your distribution strategy relies on a postinstall script to download the binary, those users get an empty install.
-
-**Why it happens:** The npm ecosystem increasingly discourages postinstall scripts due to supply chain attack vectors. Organizations actively block them.
-
-**Consequences:** Silent install failure. Binary is missing. Users get "command not found" with no clear explanation.
-
-**Prevention:**
-- Use the `optionalDependencies` strategy (napi-rs pattern) as the primary distribution mechanism — platform-specific packages are installed by npm's own resolver, no postinstall required.
-- The postinstall script acts as a fallback only, with a clear error message explaining how to manually install if scripts are disabled.
-- Document the `--ignore-scripts` limitation explicitly in the README.
-- Consider the `napi-postinstall` helper package which handles legacy npm version quirks.
-
-**Phase:** Phase N / npm distribution. Decide on primary mechanism (optionalDependencies vs postinstall) in Phase 1 design.
-
-**Sources:** [napi-postinstall](https://www.npmjs.com/package/napi-postinstall) | [Tailwind optionalDependencies fallback PR #17929](https://github.com/tailwindlabs/tailwindcss/pull/17929) | [napi-rs/napi-rs issue #2569](https://github.com/napi-rs/napi-rs/issues/2569)
+- [ ] **TTY guard on welcome TUI:** Verify `squad-station | cat` still prints plain-text welcome, not an error
+- [ ] **npm postinstall safety:** Verify `npm install` completes in under 30 seconds with stdin closed: `npm install squad-station < /dev/null`
+- [ ] **curl install safety:** Verify `curl -fsSL <url> | sh` completes without hanging
+- [ ] **Terminal restored on Ctrl+C:** After pressing Ctrl+C to dismiss welcome TUI, run `echo test` — it should appear normally
+- [ ] **Terminal restored on error:** Trigger an error inside the TUI event loop (resize to 0x0), verify terminal is restored
+- [ ] **Existing 211 tests still pass:** Run `cargo test` after adding TUI welcome — no test should enter raw mode
+- [ ] **Minimum size fallback:** Resize terminal to 20 columns wide, run `squad-station` — should show plain text, not crash
+- [ ] **Auto-exit timeout:** Run `squad-station` and do not press any key — verify it exits after the configured timeout
+- [ ] **Non-interactive CI:** Run `squad-station` in a GitHub Actions step — must exit 0 without hanging
 
 ---
 
-### MODERATE — Pitfall 15: macOS Cross-Compilation from Linux is Extremely Difficult
+## Recovery Strategies
 
-**What goes wrong:** CI runs on Linux (GitHub Actions default). Cross-compiling the `aarch64-apple-darwin` and `x86_64-apple-darwin` targets from Linux requires the macOS SDK, which Apple does not freely license for use in Linux containers. The `cross` tool cannot provide Apple target images due to licensing. Ad-hoc solutions using `osxcross` are fragile and maintenance-intensive.
-
-**Why it happens:** Apple explicitly restricts redistribution of their toolchain. Cross-compilation to Darwin targets requires licensing workarounds or native macOS runners.
-
-**Consequences:** macOS builds break in CI as SDK versions age. Complex Dockerfile maintenance. Potential licensing violation if using redistributed SDKs.
-
-**Prevention:**
-- Use GitHub Actions `macos-latest` runners for Darwin target builds. They are free for public repos and provide the native SDK.
-- Use `ubuntu-latest` runners for Linux target builds.
-- Structure CI with a matrix strategy: one job per target platform using the native runner OS.
-- Do not attempt Darwin cross-compilation from Linux.
-
-**Phase:** Phase N / npm distribution and CI. Architecture decision made in CI design.
-
-**Sources:** [Rust cross-compilation journey](https://blog.crafteo.io/2024/02/29/my-rust-cross-compilation-journey/) | [Cross-compilation post 2025](https://fpira.com/blog/2025/01/cross-compilation-in-rust)
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| Terminal stuck in raw mode after bad TUI exit | LOW | User types `reset` blindly; terminal recovers immediately |
+| npm install hangs in CI due to auto-launch | MEDIUM | Kill the job, remove the auto-launch call, republish npm package |
+| curl install.sh hangs | MEDIUM | User Ctrl+C out of it; no data loss; remove auto-launch, re-release |
+| Test suite corrupted by raw mode | LOW | `cargo test -- --test-threads=1` to serialize; find which test enters TUI; add TTY guard |
+| Welcome TUI crashes on small terminal | LOW | Add minimum size check in next patch; fall back to print_welcome() |
+| Stale binary after npm upgrade | LOW | User runs `npx squad-station install --force` to re-download |
 
 ---
 
-### MINOR — Pitfall 16: npm Package Name Spam Filter Blocks Numeric Suffixes
+## Pitfall-to-Phase Mapping
 
-**What goes wrong:** npm's spam detection system blocks package names containing numbers in certain patterns. Attempting to publish `squad-station-win32-x64` may be blocked, requiring renaming to `squad-station-windows-x64`.
-
-**Why it happens:** npm applies heuristics to detect spam packages. Numeric patterns in scoped or unscoped package names trigger these filters.
-
-**Prevention:**
-- Use `windows` instead of `win32` in package names.
-- Test package name availability before building CI pipelines around specific names.
-- Have a contingency name (e.g., `squad-station-windows-amd64`) ready.
-
-**Phase:** Phase N / npm distribution. Quick to discover, quick to fix. Just do not design CI around assumed names without testing.
-
-**Sources:** [Orhun's npm packaging guide — naming constraints](https://blog.orhun.dev/packaging-rust-for-npm/)
-
----
-
-## Multi-Process / Concurrency Pitfalls
-
-### CRITICAL — Pitfall 17: Stale Agent Status After Crash / Restart
-
-**What goes wrong:** An agent session crashes (or the user kills it with `tmux kill-session`). The agent's `status` column in SQLite remains `busy`. The hook never fired (agent died mid-task, no clean exit). On next startup, the Orchestrator queries `squad-station list` and sees a busy agent that is actually dead. Tasks sent to this agent are silently discarded by the tmux pane that no longer exists.
-
-**Why it happens:** The hook-driven model is fundamentally optimistic — it only fires on clean completion. Crashes, kills, and `Ctrl-C` produce no hook event. The DB has no mechanism to detect this divergence.
-
-**Consequences:** Workflow stalls. Orchestrator's agent pool appears full but no work is being processed.
-
-**Warning signs:**
-- tmux session does not exist (`tmux has-session` fails) but `squad-station list` shows the agent as busy
-- No signals received from an agent that was marked busy for more than N minutes
-
-**Prevention:**
-- Implement a reconciliation step: every `squad-station list` (or on any invocation) cross-checks the DB status against the actual tmux session state. If the session is dead, auto-mark the agent as dead in the DB.
-- Add a `last_seen_at` timestamp updated by every `signal` call. A busy agent with `last_seen_at` older than a configurable threshold (default: 10 minutes) is presumed dead.
-- `squad-station gc` or `squad-station status --repair` command for manual reconciliation.
-
-**Phase:** Phase 2 / agent lifecycle. Build reconciliation before the system is used in real workflows.
-
-**Sources:** [Multi-agent stale state patterns](https://dev.to/uenyioha/porting-claude-codes-agent-teams-to-opencode-4hol) | PROJECT.md — "Agent lifecycle detection (idle/busy/dead)"
-
----
-
-### MODERATE — Pitfall 18: Rust SIGPIPE Panic on Piped Output
-
-**What goes wrong:** User runs `squad-station list | head -5`. When `head` closes its stdin after 5 lines, the pipe breaks. Rust's default behavior is to panic with "broken pipe" on the next `println!` call rather than exit cleanly. The user sees a panic backtrace instead of normal termination.
-
-**Why it happens:** Rust ignores SIGPIPE at the OS level (since 2014) and instead returns a `BrokenPipe` error from IO operations. `println!` and related macros unwrap this error, causing a panic. This is a well-known, long-standing Rust issue (rust-lang/rust#46016, open since 2017).
-
-**Consequences:** Confusing panic output in normal shell usage. Looks like a bug even though the behavior is "correct" functionally.
-
-**Prevention:**
-- Add a SIGPIPE handler at the top of `main()` that resets SIGPIPE to default behavior using `libc::signal(libc::SIGPIPE, libc::SIG_DFL)` (requires the `libc` crate).
-- Or use the `nightly` `-Zon-broken-pipe=default` compiler flag once stabilized.
-- Alternatively, replace all `println!` with `writeln!` to `stdout()` and explicitly handle `BrokenPipe` errors by exiting with code 0.
-- Use the `pipecheck` or `calm_io` crates for a clean cross-platform solution.
-
-**Phase:** Phase 1 / core CLI setup. One-time fix, add it before shipping any commands.
-
-**Sources:** [Rust SIGPIPE issue #46016](https://github.com/rust-lang/rust/issues/46016) | [Rust unstable on_broken_pipe](https://doc.rust-lang.org/nightly/unstable-book/compiler-flags/on-broken-pipe.html) | [pipecheck crate](https://docs.rs/pipecheck/latest/pipecheck/)
-
----
-
-### MODERATE — Pitfall 19: Race Condition Between `register` and First `send`
-
-**What goes wrong:** Orchestrator calls `squad-station register` to add a new agent, then immediately calls `squad-station send` in the next shell command. On a heavily loaded machine, the `register` process may not have flushed its write to SQLite before `send` opens the DB. `send` looks up the agent, finds nothing, and errors out.
-
-**Why it happens:** Stateless CLI means each command is a separate process. The OS makes no guarantee about when a previous process's writes become visible to the next process, especially if the write transaction was not explicitly committed with `SYNCHRONOUS` mode.
-
-**Consequences:** Intermittent "agent not found" errors immediately after registration. Only appears under load or on slow storage.
-
-**Prevention:**
-- SQLite with WAL and `PRAGMA synchronous=NORMAL` provides sufficient durability — the transaction is visible to all subsequent connections after commit.
-- Ensure `register` explicitly commits its transaction and does not rely on implicit commit on `Connection` drop (rusqlite `Connection::close()` drops without commit if auto-commit is not active).
-- Add error message guidance: "if this error occurred immediately after `register`, wait 100ms and retry."
-
-**Phase:** Phase 1. Simple to address with explicit transaction handling.
-
----
-
-### MINOR — Pitfall 20: Multi-Project DB Path Collision on Non-Standard Home Directories
-
-**What goes wrong:** DB path is hardcoded as `~/.agentic-squad/<project>/station.db`. On systems where `$HOME` is non-standard, symlinked, or mounted on a network filesystem, the path expands incorrectly or WAL mode fails (WAL requires shared memory, which does not work over NFS).
-
-**Why it happens:** WAL mode requires `mmap` and shared memory between processes. Network-mounted filesystems (NFS, AFP, SMB) do not support this reliably.
-
-**Consequences:** `SQLITE_IOERR_SHMOPEN` or similar errors on network home directories. Common in corporate/research environments with NFS home directories.
-
-**Prevention:**
-- Use `dirs::home_dir()` (from the `dirs` crate) for cross-platform home directory resolution rather than `~` expansion via shell.
-- Allow `SQUAD_STATION_DATA_DIR` environment variable override for non-standard environments.
-- In the error handler for WAL setup failure, provide a clear message: "WAL mode requires a local filesystem. Set SQUAD_STATION_DATA_DIR to a local path."
-
-**Phase:** Phase 1 / DB initialization. Add env var override from the start.
-
----
-
-## Prevention Summary
-
-| Pitfall | Severity | Phase | Key Prevention |
-|---------|----------|-------|----------------|
-| SQLITE_BUSY concurrent hooks | CRITICAL | Phase 1 | WAL mode + `busy_timeout=5000` + `BEGIN IMMEDIATE` |
-| PRAGMA WAL inside migration | CRITICAL | Phase 1 | Run WAL pragma before migrations, not inside them |
-| Schema migration skipped | MODERATE | Phase 1 | Use `rusqlite_migration` from day one |
-| WAL checkpoint starvation | MODERATE | TUI phase | Short-lived read connections in refresh loop |
-| Shell init race on session create | CRITICAL | Phase 1 | Poll for shell readiness before `send-keys` |
-| Special char injection via send-keys | CRITICAL | Phase 1 | Use `tmux send-keys -l` (literal mode) |
-| capture-pane ANSI brittleness | MODERATE | TUI phase | Never parse capture-pane for completion detection |
-| Agent lifecycle false negatives | MODERATE | Phase 2 | Check `pane_current_command`, not just session existence |
-| Orchestrator infinite hook loop | CRITICAL | Phase 1 | Session name skip guard before any hook is shipped |
-| Provider-specific hook divergence | MODERATE | Phase 2 | Provider-agnostic binary CLI, thin provider hook scripts |
-| Hook errors to wrong stream | MODERATE | Phase 1 | All errors to stderr, non-zero exit on failure |
-| npm publication order failure | CRITICAL | Dist phase | Publish platform packages first, base package last |
-| Executable permission loss | CRITICAL | Dist phase | `chmod 0o755` in postinstall + CI pre-tarball |
-| postinstall script disabled | MODERATE | Dist phase | optionalDependencies as primary, postinstall as fallback |
-| macOS cross-compile from Linux | MODERATE | Dist phase | Use native macOS runners, not cross-compilation |
-| npm name numeric suffix block | MINOR | Dist phase | Use `windows` not `win32` in package names |
-| Stale agent status after crash | CRITICAL | Phase 2 | Reconcile DB status against live tmux state on every list |
-| Rust SIGPIPE panic | MODERATE | Phase 1 | Reset SIGPIPE to SIG_DFL at top of main() |
-| register/send race condition | MODERATE | Phase 1 | Explicit transaction commit, clear error messages |
-| NFS WAL failure | MINOR | Phase 1 | env var override + clear error message |
-
-### Phase-Gated Action Items
-
-**Phase 1 — Must resolve before any integration testing:**
-- WAL + busy_timeout setup on DB open
-- `BEGIN IMMEDIATE` for all writes
-- `rusqlite_migration` wired up
-- Shell init readiness poll before `send-keys`
-- `tmux send-keys -l` for all agent message injection
-- Orchestrator skip guard in `signal` command
-- SIGPIPE handler in `main()`
-- All errors to stderr
-
-**Phase 2 — Must resolve before multi-agent workflows:**
-- Agent liveness reconciliation (DB vs tmux)
-- Heartbeat timeout for dead agent detection
-- Provider-agnostic hook script templates
-- Stale status cleanup on `list` command
-
-**Distribution Phase — Must resolve before any public release:**
-- CI publishes platform packages before base package
-- postinstall or optionalDependencies permission fix
-- Native macOS runners for Darwin builds
-- End-to-end install smoke test in clean environment
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| No TTY guard on welcome TUI | Phase 1: Implement TTY guard before wiring TUI to bare invocation | `squad-station \| cat` outputs plain text; `cargo test` passes |
+| npm postinstall auto-launch | Phase 1: Design decision — never auto-launch from postinstall | `npm install < /dev/null` completes in <30 seconds |
+| curl install.sh auto-launch | Phase 1: Design decision — install.sh ends with echo, not binary call | `curl url \| sh` completes without hang |
+| Terminal not restored on error/panic | Phase 1: Extract shared TUI guard module, add panic hook to welcome TUI | Ctrl+C recovery works; error path restores terminal |
+| Test suite broken by TUI in tests | Phase 1: `is_terminal()` check inside `run_welcome_tui()` as no-op in tests | `cargo test` all 211+ tests pass without terminal corruption |
+| Welcome TUI blocks scripts with no timeout | Phase 1: Implement event loop with auto-exit timeout | `spawnSync('squad-station', [], {timeout: 5000})` completes |
+| Alternate screen swallows welcome content | Phase 1 (design) / Phase 2 (polish): Choose main buffer over alt screen | After TUI exits, scrollback shows version and hints |
+| Terminal too small to render | Phase 1: Add minimum size check with print_welcome() fallback | 20x5 terminal shows plain text, not crash |
+| ratatui 0.26 API mismatch | Phase 1: Check Cargo.toml version before writing TUI code | `cargo build` succeeds without version-related errors |
 
 ---
 
 ## Sources
 
-- [SQLite WAL Documentation](https://sqlite.org/wal.html)
-- [SQLite SQLITE_BUSY deep dive](https://tenthousandmeters.com/blog/sqlite-concurrent-writes-and-database-is-locked-errors/)
-- [SQLite concurrent writes — SkyPilot Blog](https://blog.skypilot.co/abusing-sqlite-to-handle-concurrency/)
-- [rusqlite Connection docs](https://docs.rs/rusqlite/latest/rusqlite/struct.Connection.html)
-- [rusqlite_migration crate](https://github.com/cljoly/rusqlite_migration)
-- [rusqlite_migration PRAGMA issue #4](https://github.com/cljoly/rusqlite_migration/issues/4)
-- [SQLite user_version strategy](https://levlaz.org/sqlite-db-migrations-with-pragma-user_version/)
-- [WAL mode persistence — Simon Willison](https://til.simonwillison.net/sqlite/enabling-wal-mode)
-- [tmux send-keys race condition — Claude Code issue #23513](https://github.com/anthropics/claude-code/issues/23513)
-- [tmux send-keys async issue #1517](https://github.com/tmux/tmux/issues/1517)
-- [tmux semicolon parsing issue #1849](https://github.com/tmux/tmux/issues/1849)
-- [tmux spaces stripping issue #1425](https://github.com/tmux/tmux/issues/1425)
-- [tmux send-keys semicolon issue #4350](https://github.com/tmux/tmux/issues/4350)
-- [tmux ANSI escape in capture-pane issue #3401](https://github.com/tmux/tmux/issues/3401)
-- [tmux ANSI filtered issue #2254](https://github.com/tmux/tmux/issues/2254)
-- [tmux has-session session detection](https://davidltran.com/blog/check-tmux-session-exists-script/)
-- [Claude Code hooks infinite loop issue #10205](https://github.com/anthropics/claude-code/issues/10205)
-- [Claude Code Stop hook GitHub Actions loop issue #3573](https://github.com/anthropics/claude-code/issues/3573)
-- [claude-flow infinite recursion issue #427](https://github.com/ruvnet/claude-flow/issues/427)
-- [Claude Code hooks guide](https://code.claude.com/docs/en/hooks-guide)
-- [Hook control flow — Steve Kinney](https://stevekinney.com/courses/ai-development/claude-code-hook-control-flow)
-- [Orhun's npm Rust packaging guide](https://blog.orhun.dev/packaging-rust-for-npm/)
-- [Sentry binary publishing guide](https://sentry.engineering/blog/publishing-binaries-on-npm)
-- [binary-install helper](https://github.com/EverlastingBugstopper/binary-install)
-- [napi-postinstall](https://www.npmjs.com/package/napi-postinstall)
-- [Tailwind optionalDependencies fallback PR](https://github.com/tailwindlabs/tailwindcss/pull/17929)
-- [napi-rs postinstall discussion](https://github.com/napi-rs/napi-rs/issues/2569)
-- [Rust cross-compilation journey](https://blog.crafteo.io/2024/02/29/my-rust-cross-compilation-journey/)
-- [Rust cross-compilation 2025](https://fpira.com/blog/2025/01/cross-compilation-in-rust)
-- [Rust SIGPIPE issue #46016](https://github.com/rust-lang/rust/issues/46016)
-- [Rust unstable on_broken_pipe](https://doc.rust-lang.org/nightly/unstable-book/compiler-flags/on-broken-pipe.html)
-- [pipecheck crate](https://docs.rs/pipecheck/latest/pipecheck/)
-- [Multi-agent coordination — OpenCode](https://dev.to/uenyioha/porting-claude-codes-agent-teams-to-opencode-4hol)
-- [devenv fork-bomb via hook re-evaluation](https://github.com/cachix/devenv/issues/2497)
+- [crossterm enable_raw_mode docs — ENOTTY error](https://docs.rs/crossterm/latest/crossterm/terminal/fn.enable_raw_mode.html)
+- [crossterm issue #912 — enable_raw_mode error in WSL](https://github.com/crossterm-rs/crossterm/issues/912)
+- [ratatui panic hooks recipe](https://ratatui.rs/recipes/apps/panic-hooks/)
+- [ratatui alternate screen concept](https://ratatui.rs/concepts/backends/alternate-screen/)
+- [ratatui terminal and event handler recipe](https://ratatui.rs/recipes/apps/terminal-and-event-handler/)
+- [ratatui BREAKING-CHANGES.md](https://github.com/ratatui/ratatui/blob/main/BREAKING-CHANGES.md)
+- [ratatui v0.30 highlights](https://ratatui.rs/highlights/v030/)
+- [npm postinstall non-TTY issue #16608](https://github.com/npm/npm/issues/16608)
+- [npm scripts at scale — CI reliability](https://www.mindfulchase.com/explore/troubleshooting-tips/build-bundling/advanced-troubleshooting-npm-scripts-at-scale—-deterministic-builds,-workspaces,-and-ci-reliability.html)
+- [curl | sh stdin behavior — linuxvox.com](https://linuxvox.com/blog/execute-bash-script-remotely-via-curl/)
+- [curl | sh pitfalls overview](https://www.arp242.net/curl-to-sh.html)
+- [Integration testing TUI in Rust — quantonganh.com](https://quantonganh.com/2024/01/21/integration-testing-tui-app-in-rust.md)
+- [ratatui_testlib crate](https://docs.rs/ratatui-testlib/latest/ratatui_testlib/)
+- [Rust stdin/stdout testing patterns](https://jeffkreeftmeijer.com/rust-stdin-stdout-testing/)
+- Squad Station codebase: `src/commands/wizard.rs`, `src/commands/init.rs`, `src/commands/welcome.rs`, `npm-package/bin/run.js`, `install.sh`
+
+---
+*Pitfalls research for: Squad Station v1.7 First-Run Onboarding TUI + Post-Install Auto-Launch*
+*Researched: 2026-03-17*

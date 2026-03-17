@@ -1,242 +1,346 @@
-# Architecture Reference
+# Architecture Research
 
-**Project:** Squad Station
-**Domain:** Stateless Rust CLI — tmux message router with embedded SQLite
-**Last updated:** 2026-03-08 (post-v1.1 rewrite — reflects actual implemented codebase)
-
----
-
-## Overview
-
-Squad Station is a **stateless Rust CLI binary** that routes messages between an AI orchestrator and N agents running in tmux sessions. Every invocation starts fresh, reads from SQLite, executes one action, and exits. There is no daemon, no shared memory, no long-running process.
-
-- Provider-agnostic: works with Claude Code, Gemini CLI, or any AI tool that runs in a tmux session
-- Uses **sqlx** (async) for SQLite access in WAL mode
-- Each project gets its own DB at `~/.agentic-squad/<project-name>/station.db`
-- Flat module files: src/tmux.rs is a single file (no src/tui/, src/orchestrator/, or src/tmux/ subdirectories)
+**Domain:** Rust CLI — ratatui welcome TUI + post-install auto-launch (v1.7)
+**Researched:** 2026-03-17
+**Confidence:** HIGH — all findings derived from direct source inspection of the live codebase.
 
 ---
 
-## Module Layout
+## Standard Architecture
+
+### System Overview
 
 ```
-src/
-├── main.rs           -- Entry point: SIGPIPE handler, tokio runtime, command dispatch
-├── cli.rs            -- clap Commands enum: all subcommands with args
-├── config.rs         -- SquadConfig / AgentConfig structs, load_config(), resolve_db_path()
-├── tmux.rs           -- Direct tmux shell-out: session_exists(), launch_agent(), send_keys_literal()
-├── lib.rs            -- Re-exports for integration tests
-├── commands/
-│   ├── mod.rs        -- mod declarations
-│   ├── init.rs       -- Register agents + launch tmux sessions from squad.yml
-│   ├── send.rs       -- Insert message, mark agent busy, inject into tmux
-│   ├── signal.rs     -- Mark message completed, notify orchestrator, reset agent idle
-│   ├── agents.rs     -- List agents with tmux reconciliation
-│   ├── context.rs    -- Generate orchestrator Markdown context from live agent list
-│   ├── list.rs       -- Query messages with filters
-│   ├── peek.rs       -- Fetch highest-priority pending message for an agent
-│   ├── register.rs   -- Runtime agent registration
-│   ├── status.rs     -- Project + agent summary
-│   ├── ui.rs         -- ratatui TUI event loop (read-only dashboard)
-│   └── view.rs       -- tmux tiled view builder
-└── db/
-    ├── mod.rs         -- connect(): SqlitePool with WAL mode, single writer, sqlx::migrate!()
-    ├── agents.rs      -- Agent struct (sqlx::FromRow), insert_agent(), get_agent(), list_agents(), get_orchestrator(), update_agent_status()
-    ├── messages.rs    -- Message struct, insert_message(), update_status(), peek_message()
-    └── migrations/
-        ├── 0001_initial.sql    -- agents + messages base tables
-        ├── 0002_agent_status.sql -- status_updated_at column
-        └── 0003_v11.sql        -- v1.1 schema: tool rename, model/description/current_task, from_agent/to_agent/type/completed_at
+┌──────────────────────────────────────────────────────────────────┐
+│                       Entry Points                               │
+│  ┌──────────────────┐  ┌──────────────────┐                      │
+│  │  npm postinstall  │  │   install.sh      │                     │
+│  │  (run.js install) │  │ (curl | sh)       │                     │
+│  └────────┬─────────┘  └────────┬──────────┘                     │
+│           │  downloads binary    │  installs binary               │
+│           └──────────┬───────────┘                               │
+│                      │  exec squad-station (no args)             │
+└──────────────────────┼───────────────────────────────────────────┘
+                       ↓
+┌──────────────────────────────────────────────────────────────────┐
+│                   main.rs / run()                                │
+│                                                                  │
+│   cli::Cli::parse()                                              │
+│       ↓ cli.command                                              │
+│   None ──────────────────────────────────────────────────────►  │
+│                               commands::welcome::print_welcome() │
+│                               [TARGET: replace with ratatui TUI] │
+│   Some(Init) ──────────────────────────────────────────────────► │
+│                    commands::init::run()                         │
+│                      └─ no squad.yml? → wizard::run()            │
+│                      └─ squad.yml exists + TTY? → prompt_reinit()│
+└──────────────────────────────────────────────────────────────────┘
 ```
 
+### Component Responsibilities
+
+| Component | Responsibility | Current State |
+|-----------|----------------|---------------|
+| `src/commands/welcome.rs` | No-arg invocation output | Static print_welcome() — println! only, no ratatui |
+| `src/commands/wizard.rs` | Interactive ratatui TUI form | 1362 lines, full ratatui event loop, AlternateScreen |
+| `src/commands/ui.rs` | TUI dashboard (fleet monitor) | ratatui + crossterm, connect-per-refresh pattern |
+| `src/commands/init.rs` | Init flow + TTY guard for reinit | Uses `std::io::stdin().is_terminal()` guard |
+| `src/main.rs` | SIGPIPE + command dispatch | `Option<Commands>` — None arm routes to welcome |
+| `npm-package/bin/run.js` | npm install subcommand | Downloads binary, scaffolds .squad/, no auto-launch |
+| `install.sh` | curl-based installer | Downloads binary to /usr/local/bin, no auto-launch |
+
 ---
 
-## Key Dependencies
+## Recommended Project Structure
 
-- **sqlx 0.7** — async SQLite pool, compile-time query checking, `sqlx::migrate!()`
-- **clap** — argument parsing, `Commands` enum defines all subcommands
-- **ratatui** — TUI dashboard in `src/commands/ui.rs`
-- **anyhow** — error propagation throughout commands layer and `main.rs`
-- **tokio** — async runtime, single-threaded
-- **uuid** — message IDs
-- **serde / serde_yaml** — `squad.yml` deserialization into `SquadConfig`
-- **std::process::Command** — direct tmux CLI calls (no tmux crate wrapper)
+```
+src/commands/
+├── welcome.rs          # MODIFY: add run_welcome() ratatui TUI entry point
+│                       #         keep print_welcome() as non-TTY fallback
+│                       #         keep welcome_content() for tests (unchanged)
+├── wizard.rs           # NO CHANGE — reused via commands::init::run() delegation
+├── ui.rs               # NO CHANGE — existing fleet dashboard
+├── init.rs             # NO CHANGE — guard clause and reinit logic unchanged
+└── mod.rs              # NO CHANGE — welcome module already declared
+
+npm-package/bin/run.js  # MODIFY: TTY-guarded spawnSync(destPath) at end of install()
+install.sh              # MODIFY: TTY-guarded exec squad-station at end
+```
+
+### Structure Rationale
+
+- **welcome.rs only:** One Rust file changes. The welcome TUI is a new entry point in the existing module — no new file, no new module, no new dependency.
+- **wizard.rs / ui.rs as reference:** Both are live ratatui implementations in this codebase. The AlternateScreen setup, panic hook, and restore pattern are copy-verified from `ui.rs` lines 284–338.
+- **init delegation:** The welcome TUI must not own any init logic. It calls `commands::init::run()` on Enter. This ensures hook installation, context generation, and the post-init diagram all fire correctly.
+- **run.js / install.sh:** Both need one guard-wrapped exec appended. Use absolute `destPath` (already computed during install) rather than relying on PATH resolution.
 
 ---
 
-## Database Layer
+## Architectural Patterns
 
-### Connection Pool
+### Pattern 1: TTY Guard Before Raw Mode
 
+**What:** Call `std::io::stdin().is_terminal()` (from `std::io::IsTerminal`) before entering crossterm raw mode. Non-TTY falls through to the existing `print_welcome()` plain-text path.
+
+**When to use:** Required on every ratatui surface in this codebase. `init.rs` already gates `prompt_reinit()` with this check. The welcome TUI must follow the same gate.
+
+**Trade-offs:**
+- Prevents crossterm raw mode crashes in CI, piped stdin, and automated test contexts.
+- Preserves the `--json` machine-readable contract completely.
+- Zero cost for the common case.
+
+**Existing precedent (init.rs line 103):**
 ```rust
-// src/db/mod.rs — connect() is async, returns SqlitePool
-pub async fn connect(db_path: &Path) -> anyhow::Result<SqlitePool> {
-    let opts = SqliteConnectOptions::new()
-        .filename(db_path)
-        .create_if_missing(true)
-        .journal_mode(SqliteJournalMode::Wal)
-        .busy_timeout(Duration::from_secs(5));
+} else if std::io::stdin().is_terminal() {
+    // Re-init: squad.yml exists and we have an interactive terminal
+    match prompt_reinit()? {
+```
 
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)  // single writer — prevents async WAL deadlock
-        .connect_with(opts)
-        .await?;
-
-    sqlx::migrate!("./src/db/migrations").run(&pool).await?;
-    Ok(pool)
+**Apply to welcome.rs:**
+```rust
+pub async fn run_welcome() -> anyhow::Result<()> {
+    if std::io::stdin().is_terminal() {
+        run_welcome_tui().await
+    } else {
+        print_welcome();
+        Ok(())
+    }
 }
 ```
 
-Key properties:
-- WAL mode for concurrent reads
-- `max_connections=1` — single writer to prevent WAL deadlock
-- 5s `busy_timeout` — waits for locks instead of failing immediately
-- Migrations applied automatically on every `connect()` call via `sqlx::migrate!()`
+### Pattern 2: AlternateScreen + Panic Hook Restore
 
-### Schema (post-migration 0003)
+**What:** Enter alternate screen before the ratatui loop. Install a panic hook that calls `disable_raw_mode` + `LeaveAlternateScreen` before propagating. Restore terminal on clean exit.
 
-**agents table:**
+**When to use:** All ratatui TUIs in this codebase. `ui.rs` lines 284–338 implement this pattern verbatim. `wizard.rs` mirrors it. The welcome TUI must replicate it.
 
-```sql
-CREATE TABLE agents (
-    id              TEXT PRIMARY KEY,
-    name            TEXT NOT NULL UNIQUE,  -- <project>-<tool>-<role> convention
-    tool            TEXT NOT NULL,          -- renamed from provider (AGNT-03)
-    role            TEXT NOT NULL DEFAULT 'worker',
-    command         TEXT NOT NULL,          -- legacy column, always '' (CONF-03 removed from config)
-    created_at      TEXT NOT NULL,
-    status          TEXT NOT NULL DEFAULT 'idle',  -- idle|busy|dead
-    status_updated_at TEXT NOT NULL,
-    model           TEXT DEFAULT NULL,      -- AGNT-01
-    description     TEXT DEFAULT NULL,      -- AGNT-01
-    current_task    TEXT DEFAULT NULL       -- AGNT-02: FK to messages.id
-);
+**Trade-offs:**
+- Terminal is never left in raw mode after a crash.
+- ~15 lines of boilerplate per TUI surface — acceptable given the small count.
+
+**Pattern (from ui.rs):**
+```rust
+let original_hook = std::panic::take_hook();
+std::panic::set_hook(Box::new(move |info| {
+    let _ = disable_raw_mode();
+    let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
+    original_hook(info);
+}));
+let mut terminal = setup_terminal()?;
+// ... event loop ...
+restore_terminal(&mut terminal)?;
+let _ = std::panic::take_hook(); // restore default
 ```
 
-**messages table:**
+### Pattern 3: First-Run Detection via squad.yml Existence
 
-```sql
-CREATE TABLE messages (
-    id          TEXT PRIMARY KEY,
-    agent_name  TEXT NOT NULL,              -- target agent name (legacy backcompat)
-    task        TEXT NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'pending',  -- pending|processing|completed|failed
-    priority    TEXT NOT NULL DEFAULT 'normal',   -- normal|high|urgent
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL,
-    from_agent  TEXT DEFAULT NULL,          -- MSGS-01
-    to_agent    TEXT DEFAULT NULL,          -- MSGS-01
-    type        TEXT NOT NULL DEFAULT 'task_request',  -- MSGS-02: task_request|task_completed|notify
-    completed_at TEXT DEFAULT NULL          -- MSGS-04
-);
+**What:** Check `Path::new("squad.yml").exists()` at the CWD to distinguish first-run from returning-user context. No new env var, no lockfile, no DB needed.
+
+**When to use:** Welcome TUI entry — determines CTA ("Press Enter to set up") vs guide-only mode.
+
+**Trade-offs:**
+- Zero new state — squad.yml is already the canonical project marker used by every command.
+- Consistent with init.rs guard clause (same check, same semantics).
+- CWD-dependent — users must be in their project directory, which is the existing UX contract for all squad-station commands.
+
+**Data flow:**
+```
+welcome::run_welcome_tui()
+    ↓
+Path::new("squad.yml").exists()?
+    ├── NO  → show title + "Press Enter to set up your first squad"
+    │         Enter → restore_terminal() → commands::init::run("squad.yml", false)
+    │         Esc/q → restore_terminal() → return Ok(())
+    │
+    └── YES → show title + version + quick commands guide
+              Any key → restore_terminal() → return Ok(())
 ```
 
-### Migration Files
+**Key detail:** Welcome TUI exits AlternateScreen *before* calling init. Init's wizard then enters its own AlternateScreen fresh. This avoids nested alternate buffer state.
 
-- **0001_initial.sql** — `agents` + `messages` base tables
-- **0002_agent_status.sql** — adds `status_updated_at` column to agents
-- **0003_v11.sql** — v1.1 schema: `RENAME COLUMN provider TO tool`, adds `model`, `description`, `current_task` to agents; adds `from_agent`, `to_agent`, `type`, `completed_at` to messages
+### Pattern 4: Post-Install Auto-Launch via Exec
+
+**What:** After binary install completes, launch `squad-station` (no args) using the absolute install path — not via PATH lookup — so the welcome TUI appears in the same terminal session.
+
+**When to use:** npm `install()` function in run.js and the end of install.sh, both guarded by TTY detection.
+
+**TTY detection in install.sh:**
+```sh
+if [ -t 1 ]; then
+  exec "$INSTALL_DIR/squad-station"
+fi
+```
+(`exec` replaces the shell process — no orphan processes, no double prompt.)
+
+**TTY detection in run.js:**
+```javascript
+if (process.stdout.isTTY) {
+  spawnSync(destPath, [], { stdio: 'inherit' });
+}
+```
+(`destPath` is the absolute path computed during `installBinary()`, not a PATH-resolved name.)
+
+**Trade-offs:**
+- Zero new infrastructure — binary is already on disk, just invoke it.
+- Absolute path avoids the PATH-not-updated problem when installing to `~/.local/bin`.
+- `exec` in sh eliminates orphan processes.
+- TTY guard in both the installer and welcome.rs provides defense-in-depth.
 
 ---
 
-## Config Format
+## Data Flow
 
-```yaml
-# squad.yml — current valid format (source: src/config.rs SquadConfig + AgentConfig)
-
-project: my-app                      # CONF-01: plain string, not nested struct
-
-orchestrator:
-  tool: claude-code                  # CONF-04: was 'provider'
-  role: orchestrator
-  model: claude-opus-4-5             # CONF-02: optional
-  description: "Lead orchestrator"   # CONF-02: optional
-  # NO command field (CONF-03: removed)
-
-agents:
-  - name: frontend                   # CLI-02: acts as role suffix
-    tool: claude-code
-    role: worker
-    model: claude-sonnet-4-5
-    description: "Frontend UI specialist"
-  - name: backend
-    tool: gemini
-    role: worker
-```
-
-Fields:
-- `project` — plain string (not nested struct)
-- `tool` — the AI provider/CLI tool (not `provider`)
-- `model`, `description` — optional per-agent metadata
-- No `command` field — removed in CONF-03
-- No `session` field — sessions are derived from agent name
-
----
-
-## Agent Naming
-
-The `name` field in `squad.yml` acts as the **role suffix**. The full agent name is auto-prefixed in `src/commands/init.rs` using the pattern:
+### First-Run Flow (post-install)
 
 ```
-<project>-<tool>-<role_suffix>
+curl | sh  OR  npx squad-station install
+    ↓
+Binary downloaded to /usr/local/bin/squad-station (or ~/.local/bin)
+.squad/ sdd/ and examples/ scaffolded (npm path only)
+    ↓
+[TTY check: process.stdout.isTTY OR [ -t 1 ]]
+    ↓
+exec /usr/local/bin/squad-station   (no args, absolute path)
+    ↓
+main.rs: cli.command = None
+    ↓
+commands::welcome::run_welcome().await
+    ↓
+std::io::stdin().is_terminal() = true
+    ↓
+Enter AlternateScreen — ratatui welcome TUI
+    │
+    ├── squad.yml NOT found at CWD
+    │       Display: ASCII title + version
+    │                "Press Enter to set up your first squad"
+    │                "Esc to exit"
+    │       On Enter → restore_terminal() → commands::init::run("squad.yml", false).await
+    │       On Esc/q → restore_terminal() → return Ok(())
+    │
+    └── squad.yml found at CWD
+            Display: ASCII title + version + quick commands list
+            On any key → restore_terminal() → return Ok(())
 ```
 
-Example: with `project: my-app`, `tool: claude-code`, `name: frontend` → full name is `my-app-claude-code-frontend`.
-
-This full name is used as:
-- The tmux session name
-- The `name` column in the `agents` DB table
-- The agent identifier in all CLI commands
-
----
-
-## Key Command Flows
-
-### send flow
+### Returning User Flow
 
 ```
-CLI receives --body flag (named, not positional)
-  └─> insert_message() into messages table
-  └─> update agent status to 'busy' in agents table
-  └─> tmux send-keys -l (literal mode) to agent's tmux session
+squad-station  (no args, in existing project dir)
+    ↓
+main.rs: cli.command = None
+    ↓
+commands::welcome::run_welcome()
+    ↓
+is_terminal() = true
+squad.yml exists → show informational TUI → user presses q/Esc → exit 0
 ```
 
-`send-keys -l` (literal mode) prevents shell injection — the message is never interpreted by the shell.
-
-### signal flow
+### Non-TTY / CI Flow
 
 ```
-signal command receives agent name + msg-id
-  └─> update message status to 'completed' in messages table
-  └─> update agent status to 'idle' in agents table
-  └─> inject plain string into orchestrator's tmux session:
-        "<agent> completed <msg-id>"
-```
-
-Signal format example: `my-app-claude-code-frontend completed 8c2e9e2f-1234-...`
-
-This is NOT the old `[SIGNAL] agent=X status=completed task_id=Y` format.
-
-### init flow
-
-```
-Load squad.yml → SquadConfig
-  └─> derive full agent names: <project>-<tool>-<role_suffix>
-  └─> INSERT OR IGNORE into agents table (idempotent)
-  └─> launch tmux sessions for each agent
+squad-station  (stdout not a TTY)
+    ↓
+commands::welcome::run_welcome()
+    ↓
+is_terminal() = false → print_welcome() [existing behavior] → exit 0
 ```
 
 ---
 
-## Design Properties
+## Integration Points
 
-| Property | Value |
-|----------|-------|
-| Execution model | Stateless — one invocation = one action, then exit |
-| DB access | sqlx async pool, single writer, WAL mode |
-| tmux integration | Direct `std::process::Command` calls (no crate wrapper) |
-| Priority ordering | urgent > high > normal (messages table) |
-| TUI behavior | `ratatui` drops pool after each fetch to prevent WAL starvation |
-| Hook scripts | `hooks/` directory — detect agent task completion per provider |
-| DB location | `~/.agentic-squad/<project-name>/station.db` |
-| DB override | `SQUAD_STATION_DB` env var (checked in `resolve_db_path`) |
+### New vs Modified: Explicit Boundary
+
+| Component | Change Type | What Changes |
+|-----------|-------------|--------------|
+| `src/commands/welcome.rs` | MODIFY | Add `run_welcome()` public async fn; add private `run_welcome_tui()` ratatui loop; keep `print_welcome()` as non-TTY path; `welcome_content()` unchanged |
+| `src/main.rs` | MODIFY | `None => commands::welcome::print_welcome()` → `None => commands::welcome::run_welcome().await?` |
+| `npm-package/bin/run.js` | MODIFY | Append TTY-guarded `spawnSync(destPath, [], { stdio: 'inherit' })` at end of `install()` |
+| `install.sh` | MODIFY | Append `[ -t 1 ] && exec "${INSTALL_DIR}/squad-station"` before final exit |
+| `src/commands/wizard.rs` | NO CHANGE | Reused as-is — welcome TUI calls init which calls wizard |
+| `src/commands/init.rs` | NO CHANGE | Guard clause and reinit logic unchanged |
+| `src/cli.rs` | NO CHANGE | `Option<Commands>` pattern stays; None arm behavior changes only in main.rs |
+
+### Internal Module Boundaries
+
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| `welcome.rs` → `init::run()` | Direct async fn call | Welcome exits AlternateScreen first, then init runs in normal terminal mode, then init's wizard opens its own AlternateScreen |
+| `welcome.rs` → `print_welcome()` | Internal call | Non-TTY fallback path — no coupling change |
+| `main.rs` → `welcome::run_welcome()` | Async fn call via `?` | main.rs `run()` is already `async fn` — no runtime change needed |
+| `run.js install()` → binary | `spawnSync(destPath)` | Uses absolute install path computed during the same install() call |
+| `install.sh` → binary | `exec "$INSTALL_DIR/squad-station"` | Absolute path, exec replaces shell process |
+
+---
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Duplicating Init Logic in Welcome TUI
+
+**What people do:** Embed wizard pages directly in `welcome.rs` to avoid a function call across the module boundary.
+**Why it's wrong:** `wizard.rs` is 1362 lines of validated, tested code. Hook installation (`auto_install_hooks`), context generation (`context::run()`), and the post-init diagram all live in `init.rs`. Duplicating any of this creates two sources of truth and silently breaks onboarding when either copy diverges.
+**Do this instead:** Welcome TUI restores the terminal, then calls `commands::init::run(PathBuf::from("squad.yml"), false).await`. All init behavior fires correctly with no duplication.
+
+### Anti-Pattern 2: Unconditional Exec in Installer (Missing TTY Guard)
+
+**What people do:** Append `exec squad-station` or `spawnSync(...)` at the end of install scripts without a TTY check.
+**Why it's wrong:** CI pipelines run `npm install` and `curl | sh` in non-interactive contexts. crossterm will fail to enter raw mode when there is no TTY. Even with the `is_terminal()` guard in `welcome.rs`, the spawn attempt itself is wrong in CI.
+**Do this instead:** Gate the binary launch with `process.stdout.isTTY` in Node.js and `[ -t 1 ]` in sh. The binary's own TTY guard is defense-in-depth, not the primary check.
+
+### Anti-Pattern 3: Nested AlternateScreen (Welcome Into Init Without Restoring First)
+
+**What people do:** Welcome TUI presses Enter, stays in AlternateScreen, and calls init — which opens wizard's own AlternateScreen — while the welcome buffer is still active.
+**Why it's wrong:** crossterm's `LeaveAlternateScreen` is reference-counted per nesting level on some terminals. Wizard's `LeaveAlternateScreen` may reveal the blank welcome buffer instead of the normal terminal. The user sees garbled output on exit.
+**Do this instead:** Call `restore_terminal(&mut terminal)?` in welcome.rs before delegating to `init::run()`. The wizard then enters its own AlternateScreen fresh from a clean terminal state.
+
+### Anti-Pattern 4: PATH-Based Binary Lookup for Post-Install Launch
+
+**What people do:** After installing to `~/.local/bin`, call `spawnSync('squad-station', ...)` — relying on PATH resolution.
+**Why it's wrong:** `~/.local/bin` is typically not in PATH until the user opens a new shell. The launch will fail with "command not found" immediately after the download completes.
+**Do this instead:** Use `destPath` (the absolute path already computed in `installBinary()`) for the post-install spawn. Print the PATH reminder message separately but do not depend on PATH for the launch.
+
+---
+
+## Suggested Build Order
+
+Dependencies flow strictly from Rust → installer scripts; no reverse dependency.
+
+| Step | Component | Work | Depends On |
+|------|-----------|------|------------|
+| 1 | `welcome.rs` | Add `run_welcome_tui()` ratatui skeleton: AlternateScreen + panic hook + event loop + `restore_terminal()` on exit. No conditional logic yet — always shows title and returns. | Nothing new; ratatui/crossterm already in Cargo.toml |
+| 2 | `welcome.rs` | Add `squad.yml` detection: branch display content between first-run CTA and returning-user guide. | Step 1 |
+| 3 | `welcome.rs` | Wire Enter key in first-run mode: `restore_terminal()`, then `commands::init::run(PathBuf::from("squad.yml"), false).await`. | Step 2; `init::run()` is stable |
+| 4 | `welcome.rs` | Expose `run_welcome()` as the public async entry point with TTY guard. | Step 3 |
+| 5 | `main.rs` | Swap `print_welcome()` call for `run_welcome().await?`. | Step 4 |
+| 6 | `install.sh` | Append TTY-guarded `exec "$INSTALL_DIR/squad-station"`. | Step 5 in spirit; can run in parallel with steps 1-5 |
+| 7 | `run.js` | Append TTY-guarded `spawnSync(destPath, [], { stdio: 'inherit' })` at end of `install()`. | Step 5 in spirit; can run in parallel with steps 1-5 |
+
+Steps 6 and 7 are independent of the Rust changes and can be developed and tested in parallel. The binary itself must exist at the target path before the auto-launch behavior can be validated end-to-end.
+
+---
+
+## Scaling Considerations
+
+Not applicable — this is a local CLI tool used per-developer per-project. The welcome TUI is a one-time surface per install session.
+
+| Concern | Approach |
+|---------|----------|
+| Multiple install methods (npm + curl) | Both trigger welcome TUI independently; no coordination needed; idempotent since binary is stateless |
+| Large terminal sizes | ratatui `Constraint::Percentage` and `Constraint::Min` handle arbitrary sizes; existing wizard.rs proves this |
+| Non-standard TERM values / dumb terminals | `is_terminal()` guard prevents raw mode entry; `print_welcome()` fallback covers dumb terminals |
+
+---
+
+## Sources
+
+- Direct source inspection: `src/commands/welcome.rs`, `src/commands/wizard.rs`, `src/commands/ui.rs`, `src/commands/init.rs`, `src/main.rs`, `src/cli.rs`, `src/config.rs`
+- Direct source inspection: `npm-package/bin/run.js`, `install.sh`
+- Existing pattern references:
+  - `init.rs` line 103: `is_terminal()` gate before raw mode
+  - `ui.rs` lines 284–338: panic hook + AlternateScreen setup/restore pattern
+  - `wizard.rs` lines 1–17: crossterm + ratatui imports (confirms no new deps needed)
+- Project context: `.planning/PROJECT.md` (v1.7 milestone target features)
+
+---
+*Architecture research for: Squad Station v1.7 — First-Run Onboarding TUI + Post-Install Auto-Launch*
+*Researched: 2026-03-17*
