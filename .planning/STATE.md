@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Interactive Init Wizard
-status: in-progress
-stopped_at: "Paused at checkpoint: 16-02-PLAN.md Task 2 human-verify"
-last_updated: "2026-03-17T06:00:00Z"
-last_activity: 2026-03-17 — Phase 16 Plan 02 Task 1 complete (wizard wired into init.rs); paused at human-verify checkpoint
+status: paused
+stopped_at: Phase 17 context gathered
+last_updated: "2026-03-17T07:19:52.517Z"
+last_activity: "2026-03-17 — Phase 16 Plan 02 Task 1 done: wizard wired into init.rs (28 lines, guard clause)"
 progress:
   total_phases: 2
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 1
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
   percent: 90
 ---
 
@@ -43,16 +43,23 @@ All decisions logged in PROJECT.md Key Decisions table.
 - Ask "how many agents?" then loop per-agent — explicit count, predictable UX
 - Re-init flow: prompt overwrite / add agents / abort — no silent clobber of existing squad.yml
 
-**Phase 16 Plan 01 decisions:**
-- Tool enum cycles ClaudeCode -> GeminiCli -> Antigravity (matches VALID_PROVIDERS order)
-- AgentDraft pre-allocated as vec on AgentCount confirm; Esc navigates by index (no data loss on back)
-- frame.size() not frame.area() — ratatui 0.26.3 compatible (confirmed from ui.rs pattern)
-- TextInputState.push/pop clear error field automatically (no stale inline errors)
+**Phase 16 Plan 01 decisions (actual — diverged from original plan):**
+- Provider enum (renamed from Tool) cycles ClaudeCode -> GeminiCli -> Antigravity
+- WizardResult: { project, sdd: SddWorkflow, orchestrator: AgentInput, agents (workers) } — not flat list
+- AgentInput: { name, role, provider, model, description } — "provider" not "tool", added "name"
+- New types: SddWorkflow (Bmad/GetShitDone/Superpower), Role, ModelSelector (per-provider model lists)
+- TextInputState gained cursor position: cursor_left/right, display(active) renders '|' at cursor
+- Orchestrator gets dedicated OrchestratorConfig page; role is implicit from page, not a field
+- AgentField: { Name, Provider, Model, Description } — not { Role, Tool, Model, Description }
+- Antigravity skips Model step entirely (Name → Provider → Description)
+- Workers pre-allocated vec on WorkerCount confirm; Esc navigates by index (no data loss on back)
+- frame.size() not frame.area() — ratatui 0.26.3 compatible
+- validate_project_name and validate_role NOT implemented (name optional, role implicit)
 
 **Phase 16 Plan 02 decisions:**
 - Wizard wired as guard clause at top of init::run(), before load_config call
 - Fully-qualified crate::commands::wizard::run() path used — no extra import needed
-- Phase 16 prints result summary; squad.yml generation deferred to Phase 17
+- Phase 16 prints result.project, result.sdd, result.orchestrator, result.agents (workers); squad.yml generation deferred to Phase 17
 
 ### Pending Todos
 
@@ -64,6 +71,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T06:00:00Z
-Stopped at: Paused at checkpoint Task 2 in 16-02-PLAN.md (human-verify)
-Resume file: .planning/phases/16-tui-wizard/16-02-SUMMARY.md
+Last session: 2026-03-17T07:19:52.515Z
+Stopped at: Phase 17 context gathered
+Resume file: .planning/phases/17-init-flow-integration/17-CONTEXT.md
