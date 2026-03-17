@@ -71,9 +71,16 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 - ✓ After `init` completes, ASCII diagram shows all agents (boxes + arrows + status) — v1.6
 - ✓ claude-code wizard model options: sonnet, opus, haiku (no version suffixes) — v1.6
 
-### Active
+## Current Milestone: v1.7 First-Run Onboarding
 
-<!-- Next milestone requirements go here -->
+**Goal:** Replace static welcome screen with an interactive ratatui TUI that guides new users through setup automatically after install.
+
+**Target features:**
+- Ratatui TUI welcome screen (large SQUAD-STATION title + version + quick guide)
+- Post-install auto-launch (npm postinstall + curl installer run `squad-station`)
+- Conditional flow: no squad.yml → "Press Enter to set up" → wizard; squad.yml exists → guide only
+
+### Active
 
 ### Out of Scope
 
@@ -162,4 +169,4 @@ Test suite: 211 tests (all green).
 | Workers wrap on 80-char boundary | Prevents diagram overflow on standard terminals | ✓ Good — readable layout for typical agent counts |
 
 ---
-*Last updated: 2026-03-17 after v1.6 milestone*
+*Last updated: 2026-03-17 after v1.7 milestone started*
