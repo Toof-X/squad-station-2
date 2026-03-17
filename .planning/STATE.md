@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Interactive Init Wizard
 status: in-progress
-stopped_at: "Completed 16-01-PLAN.md"
-last_updated: "2026-03-17T04:04:34Z"
-last_activity: 2026-03-17 — Phase 16 Plan 01 complete (TUI wizard core)
+stopped_at: "Paused at checkpoint: 16-02-PLAN.md Task 2 human-verify"
+last_updated: "2026-03-17T06:00:00Z"
+last_activity: 2026-03-17 — Phase 16 Plan 02 Task 1 complete (wizard wired into init.rs); paused at human-verify checkpoint
 progress:
   total_phases: 2
   completed_phases: 0
   total_plans: 0
   completed_plans: 1
-  percent: 87
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-17 after v1.5 milestone started)
 ## Current Position
 
 Phase: 16 of 17 (TUI Wizard)
-Plan: 1 of ? in current phase
-Status: In progress
-Last activity: 2026-03-17 — Phase 16 Plan 01 complete: TUI wizard core (wizard.rs, 832 lines, 11 tests)
+Plan: 2 of 2 in current phase
+Status: In progress (paused at human-verify checkpoint)
+Last activity: 2026-03-17 — Phase 16 Plan 02 Task 1 done: wizard wired into init.rs (28 lines, guard clause)
 
-Progress: [████████████░░] ~87% (v1.4 complete, Phase 16 Plan 01 done)
+Progress: [████████████░░] ~90% (v1.4 complete, Phase 16 Plans 01-02 in progress)
 
 ## Accumulated Context
 
@@ -49,6 +49,11 @@ All decisions logged in PROJECT.md Key Decisions table.
 - frame.size() not frame.area() — ratatui 0.26.3 compatible (confirmed from ui.rs pattern)
 - TextInputState.push/pop clear error field automatically (no stale inline errors)
 
+**Phase 16 Plan 02 decisions:**
+- Wizard wired as guard clause at top of init::run(), before load_config call
+- Fully-qualified crate::commands::wizard::run() path used — no extra import needed
+- Phase 16 prints result summary; squad.yml generation deferred to Phase 17
+
 ### Pending Todos
 
 None.
@@ -59,6 +64,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T04:04:34Z
-Stopped at: Completed 16-01-PLAN.md
-Resume file: .planning/phases/16-tui-wizard/16-01-SUMMARY.md
+Last session: 2026-03-17T06:00:00Z
+Stopped at: Paused at checkpoint Task 2 in 16-02-PLAN.md (human-verify)
+Resume file: .planning/phases/16-tui-wizard/16-02-SUMMARY.md

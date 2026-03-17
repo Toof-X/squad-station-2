@@ -50,7 +50,7 @@ Unified squad-orchestrator.md replacing 3 fragmented context files, DB moved to 
 
 **Milestone Goal:** Replace the require-squad.yml-first flow with a guided TUI wizard that generates squad.yml interactively, making `squad-station init` self-contained for first-time setup.
 
-- [ ] **Phase 16: TUI Wizard** - Interactive ratatui form collecting project name, agent count, and per-agent config with validation
+- [x] **Phase 16: TUI Wizard** - Interactive ratatui form collecting project name, agent count, and per-agent config with validation (completed 2026-03-17)
 - [ ] **Phase 17: Init Flow Integration** - squad.yml generation from wizard answers and re-init handling
 
 ## Phase Details
@@ -64,7 +64,7 @@ Unified squad-orchestrator.md replacing 3 fragmented context files, DB moved to 
   2. User can navigate field by field: project name, agent count, then per-agent role/tool/model/description
   3. Submitting an empty required field (role) or unknown tool value shows an inline error without exiting the wizard
   4. Completing the wizard with valid inputs returns control to the calling code with all collected values
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
 - [x] 16-01-PLAN.md — Complete wizard module: types, validation, TUI rendering, event loop
 - [ ] 16-02-PLAN.md — Wire wizard into init.rs and verify interactive flow
@@ -89,5 +89,5 @@ Plans:
 | 10-13. Antigravity & Hooks | v1.3 | - | Complete | 2026-03-09 |
 | 14. Unified Orchestrator Playbook | v1.4 | 2/2 | Complete | 2026-03-10 |
 | 15. Local DB Storage | v1.4 | 2/2 | Complete | 2026-03-10 |
-| 16. TUI Wizard | v1.5 | 1/2 | In progress | - |
+| 16. TUI Wizard | 2/2 | Complete   | 2026-03-17 | - |
 | 17. Init Flow Integration | v1.5 | 0/? | Not started | - |
