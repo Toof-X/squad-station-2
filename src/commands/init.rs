@@ -6,6 +6,34 @@ use owo_colors::Stream;
 use crate::{config, db, tmux};
 
 pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
+    // Check if squad.yml exists; if not, run the interactive wizard
+    if !config_path.exists() {
+        match crate::commands::wizard::run().await? {
+            Some(result) => {
+                // Phase 17 will use result to generate squad.yml and continue init
+                // For Phase 16: print result summary and return
+                println!("Wizard completed:");
+                println!("  Project: {}", result.project);
+                for (i, agent) in result.agents.iter().enumerate() {
+                    println!(
+                        "  Agent {}: role={}, tool={}, model={}, desc={}",
+                        i + 1,
+                        agent.role,
+                        agent.tool,
+                        agent.model.as_deref().unwrap_or("-"),
+                        agent.description.as_deref().unwrap_or("-"),
+                    );
+                }
+                println!("\n(squad.yml generation will be added in Phase 17)");
+                return Ok(());
+            }
+            None => {
+                println!("Init cancelled.");
+                return Ok(());
+            }
+        }
+    }
+
     // 1. Parse squad.yml
     let config = config::load_config(&config_path)?;
 
