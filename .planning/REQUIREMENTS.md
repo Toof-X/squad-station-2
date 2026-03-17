@@ -17,9 +17,9 @@
 
 ### First-Run Init
 
-- [ ] **INIT-01**: When no squad.yml exists, Enter key in welcome TUI launches the init wizard directly
-- [ ] **INIT-02**: When squad.yml exists, Enter key closes welcome (no re-init triggered)
-- [ ] **INIT-03**: Q / Escape closes the welcome TUI without launching anything
+- [x] **INIT-01**: When no squad.yml exists, Enter key in welcome TUI launches the init wizard directly
+- [x] **INIT-02**: When squad.yml exists, Enter key closes welcome (no re-init triggered)
+- [x] **INIT-03**: Q / Escape closes the welcome TUI without launching anything
 
 ### Install Flow
 
@@ -51,9 +51,9 @@
 | WELCOME-05 | Phase 21 | Pending |
 | WELCOME-06 | Phase 20 | Complete |
 | WELCOME-07 | Phase 20 | Complete |
-| INIT-01 | Phase 20 | Pending |
-| INIT-02 | Phase 20 | Pending |
-| INIT-03 | Phase 20 | Pending |
+| INIT-01 | Phase 20 | Complete |
+| INIT-02 | Phase 20 | Complete |
+| INIT-03 | Phase 20 | Complete |
 | INSTALL-01 | Phase 21 | Pending |
 | INSTALL-02 | Phase 21 | Pending |
 | INSTALL-03 | Phase 21 | Pending |

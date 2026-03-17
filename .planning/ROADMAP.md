@@ -119,5 +119,5 @@ Plans:
 | 17. Init Flow Integration | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 18. Welcome Screen & Wizard Polish | v1.6 | 2/2 | Complete | 2026-03-17 |
 | 19. Agent Diagram | v1.6 | 1/1 | Complete | 2026-03-17 |
-| 20. TTY-Safe Welcome TUI Core | 1/2 | In Progress|  | - |
+| 20. TTY-Safe Welcome TUI Core | 2/2 | Complete   | 2026-03-17 | - |
 | 21. Quick Guide and Install Flow | v1.7 | 0/2 | Not started | - |

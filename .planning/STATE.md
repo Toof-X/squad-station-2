@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: First-Run Onboarding
-status: planning
-stopped_at: "Completed 20-01-PLAN.md"
-last_updated: "2026-03-17T13:31:41Z"
+status: executing
+stopped_at: Completed 20-02-PLAN.md
+last_updated: "2026-03-17T13:56:46.831Z"
 last_activity: 2026-03-17 — Phase 20, Plan 01 complete (welcome TUI + ratatui 0.30 upgrade)
 progress:
   total_phases: 2
-  completed_phases: 0
-  total_plans: 4
-  completed_plans: 1
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
   percent: 5
 ---
 
@@ -50,6 +50,9 @@ All decisions logged in PROJECT.md Key Decisions table.
 
 **v1.7 decisions pending:**
 - Post-install auto-launch vs. print-hint-only for install scripts — research favors hint-only for safety
+- [Phase 20]: routing_action() extracted as pure function in welcome.rs for unit testability without terminal
+- [Phase 20]: Quit action maps to None return from run_welcome_tui(): main.rs exits silently to shell
+- [Phase 20]: init::run() called with hardcoded PathBuf::from('squad.yml') matching init subcommand default
 
 ### Pending Todos
 
@@ -61,6 +64,6 @@ None — all Phase 20, Plan 01 blockers resolved.
 
 ## Session Continuity
 
-Last session: 2026-03-17T13:31:41Z
-Stopped at: Completed 20-01-PLAN.md
-Resume file: .planning/phases/20-tty-safe-welcome-tui-core/20-02-PLAN.md
+Last session: 2026-03-17T13:56:46.829Z
+Stopped at: Completed 20-02-PLAN.md
+Resume file: None
