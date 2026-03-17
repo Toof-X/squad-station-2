@@ -7,13 +7,13 @@
 
 ### Welcome TUI
 
-- [ ] **WELCOME-01**: Bare `squad-station` always shows interactive TUI (replaces static welcome screen)
-- [ ] **WELCOME-02**: TUI displays large SQUAD-STATION title using pixel-font big text
-- [ ] **WELCOME-03**: TUI displays current version below title
-- [ ] **WELCOME-04**: TUI shows hint bar at bottom with available keys and auto-exit countdown
+- [x] **WELCOME-01**: Bare `squad-station` always shows interactive TUI (replaces static welcome screen)
+- [x] **WELCOME-02**: TUI displays large SQUAD-STATION title using pixel-font big text
+- [x] **WELCOME-03**: TUI displays current version below title
+- [x] **WELCOME-04**: TUI shows hint bar at bottom with available keys and auto-exit countdown
 - [ ] **WELCOME-05**: TUI includes quick guide page explaining Squad Station concept and basic workflow
-- [ ] **WELCOME-06**: TUI auto-exits after N seconds if no key pressed (countdown shown in hint bar)
-- [ ] **WELCOME-07**: Non-TTY fallback — when stdout is not a terminal, print static text instead of TUI
+- [x] **WELCOME-06**: TUI auto-exits after N seconds if no key pressed (countdown shown in hint bar)
+- [x] **WELCOME-07**: Non-TTY fallback — when stdout is not a terminal, print static text instead of TUI
 
 ### First-Run Init
 
@@ -44,13 +44,13 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WELCOME-01 | Phase 20 | Pending |
-| WELCOME-02 | Phase 20 | Pending |
-| WELCOME-03 | Phase 20 | Pending |
-| WELCOME-04 | Phase 20 | Pending |
+| WELCOME-01 | Phase 20 | Complete |
+| WELCOME-02 | Phase 20 | Complete |
+| WELCOME-03 | Phase 20 | Complete |
+| WELCOME-04 | Phase 20 | Complete |
 | WELCOME-05 | Phase 21 | Pending |
-| WELCOME-06 | Phase 20 | Pending |
-| WELCOME-07 | Phase 20 | Pending |
+| WELCOME-06 | Phase 20 | Complete |
+| WELCOME-07 | Phase 20 | Complete |
 | INIT-01 | Phase 20 | Pending |
 | INIT-02 | Phase 20 | Pending |
 | INIT-03 | Phase 20 | Pending |
