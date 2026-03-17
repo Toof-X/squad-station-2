@@ -23,11 +23,21 @@ async fn run(cli: cli::Cli) -> Result<()> {
     match cli.command {
         None => {
             use std::io::IsTerminal;
+            use std::path::PathBuf;
             if std::io::stdout().is_terminal() {
                 let has_config = std::path::Path::new("squad.yml").exists();
                 let action = commands::welcome::run_welcome_tui(has_config).await?;
-                // Routing will be implemented in Plan 20-02
-                let _ = action;
+                match action {
+                    Some(commands::welcome::WelcomeAction::LaunchInit) => {
+                        commands::init::run(PathBuf::from("squad.yml"), false).await?;
+                    }
+                    Some(commands::welcome::WelcomeAction::LaunchDashboard) => {
+                        commands::ui::run().await?;
+                    }
+                    _ => {
+                        // Quit or timeout — return silently to shell
+                    }
+                }
             } else {
                 commands::welcome::print_welcome();
             }

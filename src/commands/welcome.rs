@@ -34,6 +34,22 @@ pub enum WelcomeAction {
     Quit,
 }
 
+/// Determine the action for a given keypress in the welcome TUI.
+/// Returns None if the key should be ignored (countdown continues).
+pub fn routing_action(key: KeyCode, has_config: bool) -> Option<WelcomeAction> {
+    match key {
+        KeyCode::Enter => {
+            if has_config {
+                Some(WelcomeAction::LaunchDashboard)
+            } else {
+                Some(WelcomeAction::LaunchInit)
+            }
+        }
+        KeyCode::Char('q') | KeyCode::Esc => Some(WelcomeAction::Quit),
+        _ => None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Pure helper functions (unit-testable without a terminal)
 // ---------------------------------------------------------------------------
@@ -163,20 +179,12 @@ pub async fn run_welcome_tui(has_config: bool) -> anyhow::Result<Option<WelcomeA
         if event::poll(remaining.min(Duration::from_secs(1)))? {
             if let event::Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Enter => {
-                            action = if has_config {
-                                Some(WelcomeAction::LaunchDashboard)
-                            } else {
-                                Some(WelcomeAction::LaunchInit)
-                            };
-                            break;
-                        }
-                        KeyCode::Char('q') | KeyCode::Esc => {
-                            action = Some(WelcomeAction::Quit);
-                            break;
-                        }
-                        _ => {}
+                    if let Some(act) = routing_action(key.code, has_config) {
+                        action = match act {
+                            WelcomeAction::Quit => None,
+                            other => Some(other),
+                        };
+                        break;
                     }
                 }
             }
