@@ -62,7 +62,7 @@ Multi-page ratatui TUI wizard for `squad-station init`: collects project name, S
 **Milestone Goal:** Improve first-run and post-init UX with a branded welcome screen, an agent relationship diagram after init, and simplified claude-code model names in the wizard.
 
 - [x] **Phase 18: Welcome Screen & Wizard Polish** - Red ASCII title on bare invocation + simplified claude-code model names in wizard (completed 2026-03-17)
-- [ ] **Phase 19: Agent Diagram** - ASCII relationship diagram printed after init completes
+- [x] **Phase 19: Agent Diagram** - ASCII relationship diagram printed after init completes (completed 2026-03-17)
 
 ## Phase Details
 
@@ -90,7 +90,7 @@ Plans:
   1. After `squad-station init` completes, an ASCII diagram is printed showing each agent as a labeled box containing name, role, provider, and tmux session name
   2. The diagram shows directional arrows from the orchestrator box to each worker agent box
   3. Each agent box displays the agent's current DB status (idle / busy / dead)
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 19-01-PLAN.md — ASCII fleet diagram module + init.rs integration
@@ -108,4 +108,4 @@ Plans:
 | 16. TUI Wizard | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 17. Init Flow Integration | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 18. Welcome Screen & Wizard Polish | v1.6 | 2/2 | Complete | 2026-03-17 |
-| 19. Agent Diagram | v1.6 | 0/1 | Not started | - |
+| 19. Agent Diagram | 1/1 | Complete   | 2026-03-17 | - |

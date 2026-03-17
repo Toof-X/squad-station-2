@@ -14,9 +14,9 @@
 
 ### Agent Diagram
 
-- [ ] **DIAG-01**: After `squad-station init` completes (wizard + agent registration), an ASCII diagram is printed showing all agents as labeled boxes with name, role, provider, and tmux session name
-- [ ] **DIAG-02**: Diagram shows arrows from orchestrator to each worker agent
-- [ ] **DIAG-03**: Diagram shows current DB status (idle/busy/dead) for each agent
+- [x] **DIAG-01**: After `squad-station init` completes (wizard + agent registration), an ASCII diagram is printed showing all agents as labeled boxes with name, role, provider, and tmux session name
+- [x] **DIAG-02**: Diagram shows arrows from orchestrator to each worker agent
+- [x] **DIAG-03**: Diagram shows current DB status (idle/busy/dead) for each agent
 
 ### Wizard UX
 
@@ -53,9 +53,9 @@
 | WEL-04 | Phase 18 | Complete |
 | WIZ-01 | Phase 18 | Complete |
 | WIZ-02 | Phase 18 | Complete |
-| DIAG-01 | Phase 19 | Pending |
-| DIAG-02 | Phase 19 | Pending |
-| DIAG-03 | Phase 19 | Pending |
+| DIAG-01 | Phase 19 | Complete |
+| DIAG-02 | Phase 19 | Complete |
+| DIAG-03 | Phase 19 | Complete |
 
 **Coverage:**
 - v1.6 requirements: 9 total

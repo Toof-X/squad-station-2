@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: UX Polish
 status: planning
-stopped_at: Phase 19 context gathered
-last_updated: "2026-03-17T09:59:02.218Z"
+stopped_at: Completed 19-01-PLAN.md
+last_updated: "2026-03-17T10:24:05.237Z"
 last_activity: 2026-03-17 — v1.6 roadmap created, phases 18-19 defined
 progress:
   total_phases: 2
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  completed_phases: 2
+  total_plans: 3
+  completed_plans: 3
   percent: 0
 ---
 
@@ -45,6 +45,8 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 18-welcome-screen-wizard-polish]: welcome_content() as private test-facing function; print_welcome() applies color directly — avoids string-replace complexity with colored types
 - [Phase 18-welcome-screen-wizard-polish]: Option<Commands> in cli.rs Cli struct enables bare invocation without clap error; None arm in main.rs dispatches to welcome screen
 - [Phase 18-welcome-screen-wizard-polish]: Use short aliases (sonnet, opus, haiku) for ClaudeCode model options — cleaner UX decoupled from version churn
+- [Phase 19-agent-diagram]: render_diagram returns String for testability; print_diagram calls it
+- [Phase 19-agent-diagram]: flush-left orchestrator box accepted per plan spec
 
 ### Pending Todos
 
@@ -56,6 +58,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T09:59:02.216Z
-Stopped at: Phase 19 context gathered
-Resume file: .planning/phases/19-agent-diagram/19-CONTEXT.md
+Last session: 2026-03-17T10:24:05.235Z
+Stopped at: Completed 19-01-PLAN.md
+Resume file: None
