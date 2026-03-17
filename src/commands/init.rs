@@ -10,22 +10,10 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     if !config_path.exists() {
         match crate::commands::wizard::run().await? {
             Some(result) => {
-                // Phase 17 will use result to generate squad.yml and continue init
-                // For Phase 16: print result summary and return
-                println!("Wizard completed:");
-                println!("  Project: {}", result.project);
-                for (i, agent) in result.agents.iter().enumerate() {
-                    println!(
-                        "  Agent {}: role={}, tool={}, model={}, desc={}",
-                        i + 1,
-                        agent.role,
-                        agent.tool,
-                        agent.model.as_deref().unwrap_or("-"),
-                        agent.description.as_deref().unwrap_or("-"),
-                    );
-                }
-                println!("\n(squad.yml generation will be added in Phase 17)");
-                return Ok(());
+                let yaml = generate_squad_yml(&result);
+                std::fs::write(&config_path, &yaml)?;
+                println!("Generated squad.yml for project '{}'", result.project);
+                // Fall through to load_config below
             }
             None => {
                 println!("Init cancelled.");
@@ -261,6 +249,51 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Generate a squad.yml YAML string from a completed WizardResult.
+/// Optional fields (name, model, description) are omitted when empty/None.
+fn generate_squad_yml(result: &crate::commands::wizard::WizardResult) -> String {
+    let mut yaml = format!("project: {}\n", result.project);
+
+    // SDD section
+    let sdd_name = result.sdd.as_str();
+    yaml.push_str(&format!(
+        "\nsdd:\n  - name: {}\n    playbook: \".squad/sdd/{}-playbook.md\"\n",
+        sdd_name, sdd_name
+    ));
+
+    // Orchestrator section
+    yaml.push_str("\norchestrator:\n");
+    yaml.push_str(&format!("  provider: {}\n", result.orchestrator.provider));
+    if !result.orchestrator.name.is_empty() {
+        yaml.push_str(&format!("  name: {}\n", result.orchestrator.name));
+    }
+    yaml.push_str("  role: orchestrator\n");
+    if let Some(ref model) = result.orchestrator.model {
+        yaml.push_str(&format!("  model: {}\n", model));
+    }
+    if let Some(ref desc) = result.orchestrator.description {
+        yaml.push_str(&format!("  description: {}\n", desc));
+    }
+
+    // Agents section
+    yaml.push_str("\nagents:\n");
+    for agent in &result.agents {
+        yaml.push_str(&format!("  - provider: {}\n", agent.provider));
+        if !agent.name.is_empty() {
+            yaml.push_str(&format!("    name: {}\n", agent.name));
+        }
+        yaml.push_str("    role: worker\n");
+        if let Some(ref model) = agent.model {
+            yaml.push_str(&format!("    model: {}\n", model));
+        }
+        if let Some(ref desc) = agent.description {
+            yaml.push_str(&format!("    description: {}\n", desc));
+        }
+    }
+
+    yaml
+}
+
 fn auto_install_hooks(provider: &str) -> anyhow::Result<bool> {
     match provider {
         "claude-code" => install_claude_hooks(".claude/settings.json"),
@@ -386,6 +419,112 @@ fn get_launch_command(agent: &config::AgentConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::wizard::{AgentInput, SddWorkflow, WizardResult};
+
+    fn make_wizard_result() -> WizardResult {
+        WizardResult {
+            project: "my-project".to_string(),
+            sdd: SddWorkflow::GetShitDone,
+            orchestrator: AgentInput {
+                name: "orch".to_string(),
+                role: "orchestrator".to_string(),
+                provider: "claude-code".to_string(),
+                model: Some("claude-sonnet-4-6".to_string()),
+                description: Some("main orchestrator".to_string()),
+            },
+            agents: vec![AgentInput {
+                name: "backend".to_string(),
+                role: "worker".to_string(),
+                provider: "gemini-cli".to_string(),
+                model: Some("gemini-2.5-pro".to_string()),
+                description: None,
+            }],
+        }
+    }
+
+    #[test]
+    fn test_generate_squad_yml_contains_required_sections() {
+        let result = make_wizard_result();
+        let yaml = generate_squad_yml(&result);
+        assert!(yaml.starts_with("project: my-project\n"), "YAML must start with project: line");
+        assert!(yaml.contains("sdd:"), "YAML must contain sdd section");
+        assert!(yaml.contains("orchestrator:"), "YAML must contain orchestrator section");
+        assert!(yaml.contains("agents:"), "YAML must contain agents section");
+    }
+
+    #[test]
+    fn test_generate_squad_yml_sdd_playbook_path() {
+        let result = make_wizard_result();
+        let yaml = generate_squad_yml(&result);
+        assert!(
+            yaml.contains("playbook: \".squad/sdd/get-shit-done-playbook.md\""),
+            "SDD playbook path must be correct, got:\n{}",
+            yaml
+        );
+    }
+
+    #[test]
+    fn test_generate_squad_yml_orchestrator_fields() {
+        let result = make_wizard_result();
+        let yaml = generate_squad_yml(&result);
+        assert!(yaml.contains("role: orchestrator"), "orchestrator must have role: orchestrator");
+        assert!(yaml.contains("provider: claude-code"), "orchestrator provider must be set");
+        assert!(
+            yaml.contains("model: claude-sonnet-4-6"),
+            "orchestrator model must be set"
+        );
+    }
+
+    #[test]
+    fn test_generate_squad_yml_omits_empty_name() {
+        let mut result = make_wizard_result();
+        result.orchestrator.name = "".to_string();
+        result.agents[0].name = "".to_string();
+        let yaml = generate_squad_yml(&result);
+        // Name should not appear if it's empty
+        // The orchestrator line itself won't have a name: field
+        let lines: Vec<&str> = yaml.lines().collect();
+        // Check no "name: " line appears in orchestrator section (between "orchestrator:" and "agents:")
+        let orch_start = lines.iter().position(|l| l.trim() == "orchestrator:").unwrap();
+        let agents_start = lines.iter().position(|l| l.trim() == "agents:").unwrap();
+        let orch_lines: Vec<&str> = lines[orch_start..agents_start].to_vec();
+        assert!(
+            !orch_lines.iter().any(|l| l.contains("name:")),
+            "Empty name must be omitted from orchestrator section"
+        );
+    }
+
+    #[test]
+    fn test_generate_squad_yml_omits_none_model() {
+        let mut result = make_wizard_result();
+        result.agents[0].model = None;
+        let yaml = generate_squad_yml(&result);
+        let lines: Vec<&str> = yaml.lines().collect();
+        let agents_start = lines.iter().position(|l| l.trim() == "agents:").unwrap();
+        let agent_lines: Vec<&str> = lines[agents_start..].to_vec();
+        // The worker agent had no model; model: line should not appear in agents section
+        // But the orchestrator still has a model, so we check count
+        let model_lines_in_agents: Vec<&str> =
+            agent_lines.iter().filter(|l| l.contains("model:")).copied().collect();
+        assert!(
+            model_lines_in_agents.is_empty(),
+            "None model must be omitted from worker section"
+        );
+    }
+
+    #[test]
+    fn test_generate_squad_yml_roundtrips_through_serde() {
+        let result = make_wizard_result();
+        let yaml = generate_squad_yml(&result);
+        let config: Result<crate::config::SquadConfig, _> = serde_saphyr::from_str(&yaml);
+        assert!(
+            config.is_ok(),
+            "Generated YAML must parse as SquadConfig, got error: {:?}",
+            config.err()
+        );
+        let config = config.unwrap();
+        assert_eq!(config.project, "my-project");
+    }
 
     #[test]
     fn test_install_claude_hooks_includes_post_tool_use() {

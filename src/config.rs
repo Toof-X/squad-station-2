@@ -8,8 +8,21 @@ const VALID_PROVIDERS: &[&str] = &["antigravity", "claude-code", "gemini-cli"];
 /// Valid model identifiers per provider (provider → allowed model slugs)
 fn valid_models_for(provider: &str) -> Option<&'static [&'static str]> {
     match provider {
-        "claude-code" => Some(&["opus", "sonnet", "haiku"]),
-        "gemini-cli" => Some(&["gemini-3.1-pro-preview", "gemini-3-flash-preview"]),
+        "claude-code" => Some(&[
+            "opus",
+            "sonnet",
+            "haiku",
+            "claude-sonnet-4-6",
+            "claude-opus-4-6",
+            "claude-haiku-4-5",
+        ]),
+        "gemini-cli" => Some(&[
+            "gemini-3.1-pro-preview",
+            "gemini-3-flash-preview",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+        ]),
         _ => None, // no model validation for providers that don't support a model override
     }
 }
@@ -209,6 +222,37 @@ mod tests {
             &make_agent("gemini-cli", Some("gemini-3-flash-preview"))
         )
         .is_ok());
+    }
+
+    #[test]
+    fn full_model_ids_accepted_claude() {
+        assert!(
+            validate_agent_config("a", &make_agent("claude-code", Some("claude-sonnet-4-6")))
+                .is_ok()
+        );
+        assert!(
+            validate_agent_config("a", &make_agent("claude-code", Some("claude-opus-4-6")))
+                .is_ok()
+        );
+        assert!(
+            validate_agent_config("a", &make_agent("claude-code", Some("claude-haiku-4-5")))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn full_model_ids_accepted_gemini() {
+        assert!(
+            validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-2.5-pro"))).is_ok()
+        );
+        assert!(
+            validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-2.5-flash")))
+                .is_ok()
+        );
+        assert!(
+            validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-2.5-flash-lite")))
+                .is_ok()
+        );
     }
 
     #[test]
