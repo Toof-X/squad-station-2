@@ -40,16 +40,16 @@
 | INIT-01 | Phase 16 | Pending |
 | INIT-02 | Phase 16 | Pending |
 | INIT-03 | Phase 16 | Pending |
-| INIT-04 | Phase 16 | Pending |
-| INIT-05 | Phase 16 | Pending |
+| INIT-04 | Phase 17 | Pending |
+| INIT-05 | Phase 17 | Pending |
 | INIT-06 | Phase 16 | Pending |
 | INIT-07 | Phase 16 | Pending |
 
 **Coverage:**
 - v1.5 requirements: 7 total
-- Mapped to phases: TBD (roadmapper will assign)
-- Unmapped: 7 ⚠️
+- Mapped to phases: 7/7
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-17*
-*Last updated: 2026-03-17 after initial definition*
+*Last updated: 2026-03-17 after roadmap creation*

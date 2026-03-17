@@ -7,6 +7,7 @@
 - [x] **v1.2 Distribution** - Phases 7-9 (shipped 2026-03-09)
 - [x] **v1.3 Antigravity & Hooks Optimization** - Phases 10-13 (shipped 2026-03-09)
 - [x] **v1.4 Unified Playbook & Local DB** - Phases 14-15 (shipped 2026-03-10)
+- [ ] **v1.5 Interactive Init Wizard** - Phases 16-17 (in progress)
 
 ## Phases
 
@@ -45,6 +46,36 @@ Unified squad-orchestrator.md replacing 3 fragmented context files, DB moved to 
 
 </details>
 
+### v1.5 Interactive Init Wizard (In Progress)
+
+**Milestone Goal:** Replace the require-squad.yml-first flow with a guided TUI wizard that generates squad.yml interactively, making `squad-station init` self-contained for first-time setup.
+
+- [ ] **Phase 16: TUI Wizard** - Interactive ratatui form collecting project name, agent count, and per-agent config with validation
+- [ ] **Phase 17: Init Flow Integration** - squad.yml generation from wizard answers and re-init handling
+
+## Phase Details
+
+### Phase 16: TUI Wizard
+**Goal**: Users can interactively configure a squad through a guided TUI form before any files are written
+**Depends on**: Phase 15 (existing init infrastructure)
+**Requirements**: INIT-01, INIT-02, INIT-03, INIT-06, INIT-07
+**Success Criteria** (what must be TRUE):
+  1. Running `squad-station init` in a directory without squad.yml opens a ratatui TUI form
+  2. User can navigate field by field: project name, agent count, then per-agent role/tool/model/description
+  3. Submitting an empty required field (role) or unknown tool value shows an inline error without exiting the wizard
+  4. Completing the wizard with valid inputs returns control to the calling code with all collected values
+**Plans**: TBD
+
+### Phase 17: Init Flow Integration
+**Goal**: Users can run `squad-station init` from scratch or re-init an existing project, with squad.yml generated or updated automatically
+**Depends on**: Phase 16
+**Requirements**: INIT-04, INIT-05
+**Success Criteria** (what must be TRUE):
+  1. After completing the wizard, a valid squad.yml is written to disk matching the entered values before agent registration begins
+  2. Running `squad-station init` when squad.yml already exists prompts the user to overwrite, add agents, or abort — and each choice produces the correct outcome
+  3. Choosing abort leaves the existing squad.yml unchanged and exits cleanly
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -55,3 +86,5 @@ Unified squad-orchestrator.md replacing 3 fragmented context files, DB moved to 
 | 10-13. Antigravity & Hooks | v1.3 | - | Complete | 2026-03-09 |
 | 14. Unified Orchestrator Playbook | v1.4 | 2/2 | Complete | 2026-03-10 |
 | 15. Local DB Storage | v1.4 | 2/2 | Complete | 2026-03-10 |
+| 16. TUI Wizard | v1.5 | 0/? | Not started | - |
+| 17. Init Flow Integration | v1.5 | 0/? | Not started | - |
