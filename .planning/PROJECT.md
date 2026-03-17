@@ -63,6 +63,22 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ### Active
 
+<!-- Current milestone: v1.5 Interactive Init Wizard -->
+- [ ] User is prompted for project name during `init` (TUI wizard, no pre-written squad.yml required)
+- [ ] User is prompted for number of agents, then per-agent: role, tool, model, description
+- [ ] `init` generates squad.yml from wizard answers before registering agents
+- [ ] When squad.yml exists: user prompted to overwrite, add agents, or abort
+- [ ] TUI wizard validates inputs before accepting
+
+## Current Milestone: v1.5 Interactive Init Wizard
+
+**Goal:** Replace the require-squad.yml-first flow with a guided TUI wizard that generates squad.yml interactively during `init`.
+
+**Target features:**
+- Interactive TUI wizard (ratatui) for project name, agent count, and per-agent config
+- squad.yml generation from wizard answers
+- Re-init handling: overwrite / add agents / abort
+
 ### Out of Scope
 
 - Task management / workflow logic — đó là việc của Orchestrator AI
@@ -135,4 +151,4 @@ Database: `.squad/station.db` in project directory (no home-dir dependency, no `
 | No old DB migration | Dev builds only, no production data to preserve — clean break | ✓ Good — zero complexity |
 
 ---
-*Last updated: 2026-03-10 after v1.4 milestone complete*
+*Last updated: 2026-03-17 after v1.5 milestone started*
