@@ -4,7 +4,7 @@ milestone: v1.6
 milestone_name: UX Polish
 status: planning
 stopped_at: Completed 18-02-PLAN.md — wizard model names simplified to short aliases
-last_updated: "2026-03-17T09:43:56.030Z"
+last_updated: "2026-03-17T09:47:16.357Z"
 last_activity: 2026-03-17 — v1.6 roadmap created, phases 18-19 defined
 progress:
   total_phases: 2
