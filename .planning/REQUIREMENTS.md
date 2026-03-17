@@ -42,29 +42,27 @@
 
 ## Traceability
 
-*(Populated during roadmap creation)*
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WELCOME-01 | — | Pending |
-| WELCOME-02 | — | Pending |
-| WELCOME-03 | — | Pending |
-| WELCOME-04 | — | Pending |
-| WELCOME-05 | — | Pending |
-| WELCOME-06 | — | Pending |
-| WELCOME-07 | — | Pending |
-| INIT-01 | — | Pending |
-| INIT-02 | — | Pending |
-| INIT-03 | — | Pending |
-| INSTALL-01 | — | Pending |
-| INSTALL-02 | — | Pending |
-| INSTALL-03 | — | Pending |
+| WELCOME-01 | Phase 20 | Pending |
+| WELCOME-02 | Phase 20 | Pending |
+| WELCOME-03 | Phase 20 | Pending |
+| WELCOME-04 | Phase 20 | Pending |
+| WELCOME-05 | Phase 21 | Pending |
+| WELCOME-06 | Phase 20 | Pending |
+| WELCOME-07 | Phase 20 | Pending |
+| INIT-01 | Phase 20 | Pending |
+| INIT-02 | Phase 20 | Pending |
+| INIT-03 | Phase 20 | Pending |
+| INSTALL-01 | Phase 21 | Pending |
+| INSTALL-02 | Phase 21 | Pending |
+| INSTALL-03 | Phase 21 | Pending |
 
 **Coverage:**
 - v1.7 requirements: 13 total
-- Mapped to phases: 0
-- Unmapped: 13 ⚠️
+- Mapped to phases: 13
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-17*
-*Last updated: 2026-03-17 after initial definition*
+*Last updated: 2026-03-17 — traceability populated after roadmap creation*

@@ -9,6 +9,7 @@
 - [x] **v1.4 Unified Playbook & Local DB** - Phases 14-15 (shipped 2026-03-10)
 - [x] **v1.5 Interactive Init Wizard** - Phases 16-17 (shipped 2026-03-17)
 - [x] **v1.6 UX Polish** - Phases 18-19 (shipped 2026-03-17)
+- 🚧 **v1.7 First-Run Onboarding** - Phases 20-21 (in progress)
 
 ## Phases
 
@@ -67,6 +68,43 @@ Branded welcome screen on bare invocation, ASCII agent fleet diagram after init,
 
 </details>
 
+### 🚧 v1.7 First-Run Onboarding (In Progress)
+
+**Milestone Goal:** Replace static welcome screen with an interactive ratatui TUI that guides new users through setup automatically after install.
+
+## Phase Details
+
+### Phase 20: TTY-Safe Welcome TUI Core
+**Goal**: Users see an interactive ratatui welcome TUI on bare `squad-station` invocation — with big pixel-font title, version, hint bar, auto-exit countdown, and conditional routing to the init wizard or exit based on squad.yml presence
+**Depends on**: Phase 19 (v1.6 complete)
+**Requirements**: WELCOME-01, WELCOME-02, WELCOME-03, WELCOME-04, WELCOME-06, WELCOME-07, INIT-01, INIT-02, INIT-03
+**Success Criteria** (what must be TRUE):
+  1. Running `squad-station` with no arguments in a real terminal opens a ratatui TUI with a large pixel-font SQUAD-STATION title and the current version string below it
+  2. The TUI displays a hint bar at the bottom showing available keys (Enter, Q/Esc) and an auto-exit countdown; the screen closes automatically when the countdown reaches zero
+  3. When no squad.yml exists and the user presses Enter, the TUI closes cleanly and the init wizard launches immediately
+  4. When squad.yml exists and the user presses Enter, the TUI closes without triggering any re-init
+  5. Running `squad-station` with stdout piped (non-TTY) prints static welcome text without attempting to enter raw mode
+**Plans**: TBD
+
+Plans:
+- [ ] 20-01: ratatui 0.29 + crossterm 0.28 + tui-big-text upgrade and welcome TUI event loop
+- [ ] 20-02: Conditional routing (squad.yml detection, Enter-to-wizard handoff, Q/Esc close)
+
+### Phase 21: Quick Guide and Install Flow
+**Goal**: Users see a quick guide page in the welcome TUI explaining the Squad Station concept, and both install paths surface the binary to new users immediately after a successful install in interactive environments
+**Depends on**: Phase 20
+**Requirements**: WELCOME-05, INSTALL-01, INSTALL-02, INSTALL-03
+**Success Criteria** (what must be TRUE):
+  1. The welcome TUI has a second page (quick guide) that explains the Squad Station concept and basic workflow in 3-4 lines, reachable by pressing a navigation key from the title page
+  2. After `npm install -g squad-station` in an interactive terminal, the install script launches `squad-station` automatically so the user sees the welcome TUI without a separate invocation
+  3. After running the curl installer in an interactive terminal, `squad-station` launches automatically at the end of the install script
+  4. Running either installer in a non-interactive environment (CI pipeline, pipe, sudo) completes silently without attempting to launch the binary or enter raw mode
+**Plans**: TBD
+
+Plans:
+- [ ] 21-01: Quick guide TUI page (second state in welcome state machine)
+- [ ] 21-02: TTY-guarded auto-launch in npm postinstall and curl installer
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -81,3 +119,5 @@ Branded welcome screen on bare invocation, ASCII agent fleet diagram after init,
 | 17. Init Flow Integration | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 18. Welcome Screen & Wizard Polish | v1.6 | 2/2 | Complete | 2026-03-17 |
 | 19. Agent Diagram | v1.6 | 1/1 | Complete | 2026-03-17 |
+| 20. TTY-Safe Welcome TUI Core | v1.7 | 0/2 | Not started | - |
+| 21. Quick Guide and Install Flow | v1.7 | 0/2 | Not started | - |
