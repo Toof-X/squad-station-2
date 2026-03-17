@@ -69,7 +69,19 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ### Active
 
-<!-- Next milestone: TBD -->
+<!-- Current milestone: v1.6 UX Polish -->
+- [ ] `squad-station` (no args) shows red ASCII title, version, next-step hint, subcommand list
+- [ ] After `init` completes, ASCII diagram shows all agents (boxes + arrows + status)
+- [ ] claude-code wizard model options: sonnet, opus, haiku (no version suffixes)
+
+## Current Milestone: v1.6 UX Polish
+
+**Goal:** Improve first-run and post-init UX with a branded welcome screen, an agent relationship diagram after init, and simplified claude-code model names in the wizard.
+
+**Target features:**
+- Red ASCII SQUAD-STATION title on bare `squad-station` invocation
+- ASCII agent diagram printed after init completes (boxes + arrows + status)
+- claude-code wizard models: sonnet / opus / haiku (no version suffixes)
 
 ### Out of Scope
 
@@ -151,4 +163,4 @@ Database: `.squad/station.db` in project directory (no home-dir dependency, no `
 | `KeyAction::Cancel` variant | Explicit Esc cancel path for worker-only wizard; doesn't repurpose Continue | ✓ Good — clean intent, no call-site changes |
 
 ---
-*Last updated: 2026-03-17 after v1.5 milestone*
+*Last updated: 2026-03-17 after v1.6 milestone started*

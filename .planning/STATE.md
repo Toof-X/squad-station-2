@@ -1,34 +1,34 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Interactive Init Wizard
-status: completed
-stopped_at: Completed 17-02-PLAN.md — Phase 17 milestone v1.5 complete
-last_updated: "2026-03-17T08:20:24.799Z"
-last_activity: "2026-03-17 — Phase 17 Plan 02 done: re-init prompt (overwrite/add-agents/abort), human E2E verified all 5 scenarios"
+milestone: v1.6
+milestone_name: UX Polish
+status: planning
+stopped_at: Milestone v1.6 started — defining requirements
+last_updated: "2026-03-17T00:00:00.000Z"
+last_activity: "2026-03-17 — Milestone v1.6 started: welcome screen, agent diagram, claude model simplification"
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-17 after v1.5 milestone)
+See: .planning/PROJECT.md (updated 2026-03-17 after v1.6 milestone started)
 
 **Core value:** Routing messages reliably between Orchestrator and agents — stateless CLI, no daemon
-**Current focus:** Planning next milestone
+**Current focus:** v1.6 — Defining roadmap
 
 ## Current Position
 
-Phase: 17 of 17 (Init Flow Integration)
-Plan: 2 of 2 in current phase
-Status: Phase 17 complete — all plans done, milestone v1.5 complete
-Last activity: 2026-03-17 — Phase 17 Plan 02 done: re-init prompt (overwrite/add-agents/abort), human E2E verified all 5 scenarios
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-17 — Milestone v1.6 started
 
 Progress: [██████████████] 100% (v1.5 complete — Phase 16 and Phase 17 fully done)
 
