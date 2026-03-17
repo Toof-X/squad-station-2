@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Interactive Init Wizard
-status: in-progress
-stopped_at: "Completed 17-01-PLAN.md"
-last_updated: "2026-03-17T07:40:00.000Z"
-last_activity: "2026-03-17 — Phase 17 Plan 01 complete: squad.yml generation + model validation + run_worker_only"
+status: completed
+stopped_at: Paused at Task 2 checkpoint (human-verify) in 17-02-PLAN.md
+last_updated: "2026-03-17T07:47:41.062Z"
+last_activity: "2026-03-17 — Phase 17 Plan 01 done: squad.yml generation, model validation expanded, run_worker_only added"
 progress:
   total_phases: 2
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
   percent: 95
 ---
 
@@ -65,6 +65,8 @@ All decisions logged in PROJECT.md Key Decisions table.
 - generate_squad_yml builds YAML as a String (not serde_yaml) for deterministic ordering
 - KeyAction::Cancel variant added to wizard for worker-only Esc cancellation
 - worker_only: bool on WizardState rather than threading flag through handle_key
+- [Phase 17]: Non-interactive guard (is_terminal()) skips prompt_reinit() in non-TTY environments — backward-compatible with integration tests
+- [Phase 17]: append_workers_to_yaml uses pure string manipulation (not serde) consistent with generate_squad_yml from Plan 01
 
 ### Pending Todos
 
@@ -76,6 +78,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T07:40:00.000Z
-Stopped at: Completed 17-01-PLAN.md
-Resume file: .planning/phases/17-init-flow-integration/17-01-SUMMARY.md
+Last session: 2026-03-17T07:47:34.696Z
+Stopped at: Paused at Task 2 checkpoint (human-verify) in 17-02-PLAN.md
+Resume file: None

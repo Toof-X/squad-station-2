@@ -11,7 +11,7 @@
 - [x] **INIT-02**: User is prompted for number of agents (integer input)
 - [x] **INIT-03**: For each agent, user is prompted for role, tool (claude-code/gemini-cli/antigravity), model, and description
 - [x] **INIT-04**: `init` generates squad.yml from wizard answers before proceeding with agent registration
-- [ ] **INIT-05**: When squad.yml already exists, user is prompted to choose: overwrite, add agents, or abort
+- [x] **INIT-05**: When squad.yml already exists, user is prompted to choose: overwrite, add agents, or abort
 
 ### TUI Wizard UX
 
@@ -41,7 +41,7 @@
 | INIT-02 | Phase 16 | Complete (16-01) |
 | INIT-03 | Phase 16 | Complete (16-01) |
 | INIT-04 | Phase 17 | Complete (17-01) |
-| INIT-05 | Phase 17 | Pending |
+| INIT-05 | Phase 17 | Complete |
 | INIT-06 | Phase 16 | Complete (16-01) |
 | INIT-07 | Phase 16 | Complete (16-01) |
 
