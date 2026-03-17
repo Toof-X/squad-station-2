@@ -47,20 +47,20 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WEL-01 | — | Pending |
-| WEL-02 | — | Pending |
-| WEL-03 | — | Pending |
-| WEL-04 | — | Pending |
-| DIAG-01 | — | Pending |
-| DIAG-02 | — | Pending |
-| DIAG-03 | — | Pending |
-| WIZ-01 | — | Pending |
-| WIZ-02 | — | Pending |
+| WEL-01 | Phase 18 | Pending |
+| WEL-02 | Phase 18 | Pending |
+| WEL-03 | Phase 18 | Pending |
+| WEL-04 | Phase 18 | Pending |
+| WIZ-01 | Phase 18 | Pending |
+| WIZ-02 | Phase 18 | Pending |
+| DIAG-01 | Phase 19 | Pending |
+| DIAG-02 | Phase 19 | Pending |
+| DIAG-03 | Phase 19 | Pending |
 
 **Coverage:**
 - v1.6 requirements: 9 total
-- Mapped to phases: 0/9
-- Unmapped: 9 ⚠️
+- Mapped to phases: 9/9
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-17*
