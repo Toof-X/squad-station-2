@@ -76,7 +76,11 @@ Multi-page ratatui TUI wizard for `squad-station init`: collects project name, S
   3. The welcome screen lists all available subcommands (init, send, signal, peek, list, ui, view, status, agents, context, register)
   4. In the wizard, selecting claude-code as provider shows model options `sonnet`, `opus`, `haiku` — no version suffix strings
   5. After wizard completion, the generated squad.yml stores simplified model names (e.g., `model: sonnet`, not `model: claude-sonnet-4-6`)
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 18-01-PLAN.md — Welcome screen module + CLI dispatch wiring
+- [ ] 18-02-PLAN.md — Simplified claude-code model names in wizard
 
 ### Phase 19: Agent Diagram
 **Goal**: Users see a visual summary of their agent fleet immediately after init completes
@@ -100,5 +104,5 @@ Multi-page ratatui TUI wizard for `squad-station init`: collects project name, S
 | 15. Local DB Storage | v1.4 | 2/2 | Complete | 2026-03-10 |
 | 16. TUI Wizard | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 17. Init Flow Integration | v1.5 | 2/2 | Complete | 2026-03-17 |
-| 18. Welcome Screen & Wizard Polish | v1.6 | 0/? | Not started | - |
+| 18. Welcome Screen & Wizard Polish | v1.6 | 0/2 | Planning | - |
 | 19. Agent Diagram | v1.6 | 0/? | Not started | - |
