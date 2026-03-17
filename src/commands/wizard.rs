@@ -1,5 +1,20 @@
 // wizard.rs — TUI wizard for interactive squad.yml configuration
-// Implementation added in Task 2; data types and validation are here.
+// Multi-page ratatui form that collects project name, agent count, and per-agent
+// configuration (role, tool, model, description) with inline validation.
+
+use crossterm::{
+    event::{self, KeyCode, KeyEventKind, KeyModifiers},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
+    Frame, Terminal,
+};
 
 // ----------------------------------------------------------------------------
 // Public API types
@@ -175,6 +190,32 @@ impl WizardState {
                 .collect(),
         }
     }
+
+    /// Current step number (1-based) for the progress header
+    fn current_step(&self) -> usize {
+        match &self.page {
+            WizardPage::ProjectName => 1,
+            WizardPage::AgentCount => 2,
+            WizardPage::AgentConfig { index } => 3 + index,
+            WizardPage::Summary => 3 + self.agent_count,
+        }
+    }
+
+    /// Total number of steps: ProjectName + AgentCount + agent_count + Summary
+    fn total_steps(&self) -> usize {
+        // Before agent count is known, assume at least 1 agent
+        let count = if self.agent_count > 0 { self.agent_count } else { 1 };
+        2 + count + 1
+    }
+
+    fn page_title(&self) -> String {
+        match &self.page {
+            WizardPage::ProjectName => "Project Name".to_string(),
+            WizardPage::AgentCount => "Agent Count".to_string(),
+            WizardPage::AgentConfig { index } => format!("Agent {} Configuration", index + 1),
+            WizardPage::Summary => "Review".to_string(),
+        }
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -212,12 +253,446 @@ fn validate_role(input: &str) -> Result<(), String> {
 }
 
 // ----------------------------------------------------------------------------
-// Public run function (stub — full implementation in Task 2)
+// Terminal setup / teardown
+// ----------------------------------------------------------------------------
+
+fn setup_terminal() -> anyhow::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
+    enable_raw_mode()?;
+    execute!(std::io::stdout(), EnterAlternateScreen)?;
+    Terminal::new(CrosstermBackend::new(std::io::stdout())).map_err(Into::into)
+}
+
+fn restore_terminal(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+) -> anyhow::Result<()> {
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
+    Ok(())
+}
+
+// ----------------------------------------------------------------------------
+// Key action
+// ----------------------------------------------------------------------------
+
+enum KeyAction {
+    Continue,
+    Complete,
+}
+
+// ----------------------------------------------------------------------------
+// Event handler
+// ----------------------------------------------------------------------------
+
+fn handle_key(state: &mut WizardState, key: KeyCode) -> KeyAction {
+    match &state.page {
+        WizardPage::ProjectName => match key {
+            KeyCode::Enter => {
+                let val = state.project_input.value.clone();
+                match validate_project_name(&val) {
+                    Ok(()) => state.page = WizardPage::AgentCount,
+                    Err(msg) => state.project_input.error = Some(msg),
+                }
+            }
+            KeyCode::Esc => {} // first page — no-op
+            KeyCode::Backspace => state.project_input.pop(),
+            KeyCode::Char(c) => state.project_input.push(c),
+            _ => {}
+        },
+        WizardPage::AgentCount => match key {
+            KeyCode::Enter => {
+                let val = state.count_input.value.clone();
+                match validate_count(&val) {
+                    Ok(n) => {
+                        state.agent_count = n;
+                        // Pre-allocate agent drafts (preserving any existing drafts)
+                        while state.agents.len() < n {
+                            state.agents.push(AgentDraft::new());
+                        }
+                        state.page = WizardPage::AgentConfig { index: 0 };
+                    }
+                    Err(msg) => state.count_input.error = Some(msg),
+                }
+            }
+            KeyCode::Esc => state.page = WizardPage::ProjectName,
+            KeyCode::Backspace => state.count_input.pop(),
+            KeyCode::Char(c) => state.count_input.push(c),
+            _ => {}
+        },
+        WizardPage::AgentConfig { index } => {
+            let index = *index;
+            let focused = state.agents[index].focused_field;
+            match focused {
+                AgentField::Role => match key {
+                    KeyCode::Enter => {
+                        let val = state.agents[index].role.value.clone();
+                        match validate_role(&val) {
+                            Ok(()) => state.agents[index].focused_field = AgentField::Tool,
+                            Err(msg) => state.agents[index].role.error = Some(msg),
+                        }
+                    }
+                    KeyCode::Backspace => state.agents[index].role.pop(),
+                    KeyCode::Char(c) => state.agents[index].role.push(c),
+                    KeyCode::Esc => {
+                        if index == 0 {
+                            state.page = WizardPage::AgentCount;
+                        } else {
+                            state.agents[index - 1].focused_field = AgentField::Description;
+                            state.page = WizardPage::AgentConfig { index: index - 1 };
+                        }
+                    }
+                    _ => {}
+                },
+                AgentField::Tool => match key {
+                    KeyCode::Enter => {
+                        state.agents[index].focused_field = AgentField::Model;
+                    }
+                    KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
+                        state.agents[index].tool = state.agents[index].tool.cycle_next();
+                    }
+                    KeyCode::Esc => {
+                        state.agents[index].focused_field = AgentField::Role;
+                    }
+                    _ => {}
+                },
+                AgentField::Model => match key {
+                    KeyCode::Enter => {
+                        state.agents[index].focused_field = AgentField::Description;
+                    }
+                    KeyCode::Backspace => state.agents[index].model.pop(),
+                    KeyCode::Char(c) => state.agents[index].model.push(c),
+                    KeyCode::Esc => {
+                        state.agents[index].focused_field = AgentField::Tool;
+                    }
+                    _ => {}
+                },
+                AgentField::Description => match key {
+                    KeyCode::Enter => {
+                        if index == state.agent_count - 1 {
+                            state.page = WizardPage::Summary;
+                        } else {
+                            state.agents[index + 1].focused_field = AgentField::Role;
+                            state.page = WizardPage::AgentConfig { index: index + 1 };
+                        }
+                    }
+                    KeyCode::Backspace => state.agents[index].description.pop(),
+                    KeyCode::Char(c) => state.agents[index].description.push(c),
+                    KeyCode::Esc => {
+                        state.agents[index].focused_field = AgentField::Model;
+                    }
+                    _ => {}
+                },
+            }
+        }
+        WizardPage::Summary => match key {
+            KeyCode::Enter => return KeyAction::Complete,
+            KeyCode::Esc => {
+                let last = state.agent_count - 1;
+                state.agents[last].focused_field = AgentField::Description;
+                state.page = WizardPage::AgentConfig { index: last };
+            }
+            _ => {}
+        },
+    }
+    KeyAction::Continue
+}
+
+// ----------------------------------------------------------------------------
+// Rendering
+// ----------------------------------------------------------------------------
+
+fn render_page(frame: &mut Frame, state: &WizardState) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // header
+            Constraint::Min(10),   // content
+            Constraint::Length(2), // footer
+        ])
+        .split(frame.size());
+
+    // Header
+    let step = state.current_step();
+    let total = state.total_steps();
+    let title_text = format!("Step {} of {} -- {}", step, total, state.page_title());
+    let header = Paragraph::new(Line::from(vec![Span::styled(
+        title_text,
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )]))
+    .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(header, chunks[0]);
+
+    // Content — varies by page
+    match &state.page {
+        WizardPage::ProjectName => render_text_field(
+            frame,
+            chunks[1],
+            " Project Name ",
+            &state.project_input,
+            true,
+        ),
+        WizardPage::AgentCount => render_text_field(
+            frame,
+            chunks[1],
+            " How Many Agents? ",
+            &state.count_input,
+            true,
+        ),
+        WizardPage::AgentConfig { index } => {
+            render_agent_page(frame, chunks[1], &state.agents[*index]);
+        }
+        WizardPage::Summary => {
+            render_summary_page(frame, chunks[1], state);
+        }
+    }
+
+    // Footer
+    let footer_text = match &state.page {
+        WizardPage::ProjectName => "Enter: next   Ctrl+C: cancel",
+        WizardPage::AgentCount => "Enter: next   Esc: back   Ctrl+C: cancel",
+        WizardPage::AgentConfig { index } => {
+            let focused = state.agents[*index].focused_field;
+            if focused == AgentField::Tool {
+                "Left/Right/Tab: cycle tool   Enter: next   Esc: back   Ctrl+C: cancel"
+            } else {
+                "Enter: next   Esc: back   Ctrl+C: cancel"
+            }
+        }
+        WizardPage::Summary => "Enter: confirm   Esc: back   Ctrl+C: cancel",
+    };
+    let footer = Paragraph::new(footer_text);
+    frame.render_widget(footer, chunks[2]);
+}
+
+/// Render a single text input field with optional error line below.
+fn render_text_field(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    title: &str,
+    input: &TextInputState,
+    focused: bool,
+) {
+    let field_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // field
+            Constraint::Length(1), // error
+            Constraint::Min(0),    // spacer
+        ])
+        .split(area);
+
+    let border_color = if input.error.is_some() {
+        Color::Red
+    } else if focused {
+        Color::Cyan
+    } else {
+        Color::Reset
+    };
+
+    let display_value = format!("{}|", input.value);
+    let field_widget = Paragraph::new(display_value).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border_color))
+            .title(title),
+    );
+    frame.render_widget(field_widget, field_chunks[0]);
+
+    if let Some(err) = &input.error {
+        let error_widget = Paragraph::new(format!("  {}", err))
+            .style(Style::default().fg(Color::Red));
+        frame.render_widget(error_widget, field_chunks[1]);
+    }
+}
+
+/// Render the 4-field agent configuration page.
+fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &AgentDraft) {
+    // 4 fields, each followed by an error/hint line: [field(3), hint(1)] x4 + spacer
+    let agent_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Role field
+            Constraint::Length(1), // Role error
+            Constraint::Length(3), // Tool field
+            Constraint::Length(1), // Tool hint
+            Constraint::Length(3), // Model field
+            Constraint::Length(1), // Model hint
+            Constraint::Length(3), // Description field
+            Constraint::Length(1), // Description hint
+            Constraint::Min(0),    // spacer
+        ])
+        .split(area);
+
+    // --- Role field ---
+    let role_focused = draft.focused_field == AgentField::Role;
+    let role_color = if draft.role.error.is_some() {
+        Color::Red
+    } else if role_focused {
+        Color::Cyan
+    } else {
+        Color::Reset
+    };
+    let role_value = if role_focused {
+        format!("{}|", draft.role.value)
+    } else {
+        draft.role.value.clone()
+    };
+    let role_widget = Paragraph::new(role_value).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(role_color))
+            .title(" Role "),
+    );
+    frame.render_widget(role_widget, agent_chunks[0]);
+
+    if let Some(err) = &draft.role.error {
+        let error_widget = Paragraph::new(format!("  {}", err))
+            .style(Style::default().fg(Color::Red));
+        frame.render_widget(error_widget, agent_chunks[1]);
+    }
+
+    // --- Tool selector ---
+    let tool_focused = draft.focused_field == AgentField::Tool;
+    let tool_color = if tool_focused { Color::Cyan } else { Color::Reset };
+    let tool_display = format!("[ {} ]", draft.tool.as_str());
+    let tool_widget = Paragraph::new(Line::from(vec![Span::raw(tool_display)])).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(tool_color))
+            .title(" Tool "),
+    );
+    frame.render_widget(tool_widget, agent_chunks[2]);
+    // No hint/error for tool row (always valid)
+
+    // --- Model field ---
+    let model_focused = draft.focused_field == AgentField::Model;
+    let model_color = if model_focused { Color::Cyan } else { Color::Reset };
+    let model_value = if model_focused {
+        format!("{}|", draft.model.value)
+    } else {
+        draft.model.value.clone()
+    };
+    let model_widget = Paragraph::new(model_value).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(model_color))
+            .title(" Model "),
+    );
+    frame.render_widget(model_widget, agent_chunks[4]);
+
+    let model_hint = Paragraph::new("optional -- press Enter to skip")
+        .style(Style::default().add_modifier(Modifier::DIM));
+    frame.render_widget(model_hint, agent_chunks[5]);
+
+    // --- Description field ---
+    let desc_focused = draft.focused_field == AgentField::Description;
+    let desc_color = if desc_focused { Color::Cyan } else { Color::Reset };
+    let desc_value = if desc_focused {
+        format!("{}|", draft.description.value)
+    } else {
+        draft.description.value.clone()
+    };
+    let desc_widget = Paragraph::new(desc_value).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(desc_color))
+            .title(" Description "),
+    );
+    frame.render_widget(desc_widget, agent_chunks[6]);
+
+    let desc_hint = Paragraph::new("optional -- press Enter to skip")
+        .style(Style::default().add_modifier(Modifier::DIM));
+    frame.render_widget(desc_hint, agent_chunks[7]);
+}
+
+/// Render the summary page.
+fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &WizardState) {
+    let summary_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(5),    // agent list block
+            Constraint::Length(1), // confirm hint
+        ])
+        .split(area);
+
+    let project_line = format!("Project: {}", state.project_input.value.trim());
+    let items: Vec<ListItem> = std::iter::once(ListItem::new(project_line))
+        .chain(state.agents.iter().enumerate().map(|(i, d)| {
+            let model_str = if d.model.value.trim().is_empty() {
+                "-".to_string()
+            } else {
+                d.model.value.trim().to_string()
+            };
+            let desc_str = if d.description.value.trim().is_empty() {
+                "-".to_string()
+            } else {
+                d.description.value.trim().to_string()
+            };
+            ListItem::new(format!(
+                "Agent {}: role={}, tool={}, model={}, desc={}",
+                i + 1,
+                d.role.value.trim(),
+                d.tool.as_str(),
+                model_str,
+                desc_str
+            ))
+        }))
+        .collect();
+
+    let list_widget = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Review "),
+    );
+    frame.render_widget(list_widget, summary_chunks[0]);
+
+    let confirm_hint = Paragraph::new("Press Enter to confirm, Esc to go back")
+        .style(Style::default().add_modifier(Modifier::DIM));
+    frame.render_widget(confirm_hint, summary_chunks[1]);
+}
+
+// ----------------------------------------------------------------------------
+// Public run function
 // ----------------------------------------------------------------------------
 
 pub async fn run() -> anyhow::Result<Option<WizardResult>> {
-    // Full implementation in Task 2
-    todo!("Wizard TUI implementation")
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
+        original_hook(info);
+    }));
+
+    let mut terminal = setup_terminal()?;
+    let mut state = WizardState::new();
+
+    loop {
+        terminal.draw(|frame| render_page(frame, &state))?;
+
+        if event::poll(std::time::Duration::from_millis(250))? {
+            if let event::Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    // Ctrl+C: cancel wizard
+                    if key.code == KeyCode::Char('c')
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                    {
+                        restore_terminal(&mut terminal)?;
+                        return Ok(None);
+                    }
+
+                    match handle_key(&mut state, key.code) {
+                        KeyAction::Continue => {}
+                        KeyAction::Complete => {
+                            restore_terminal(&mut terminal)?;
+                            return Ok(Some(state.into_result()));
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ----------------------------------------------------------------------------
