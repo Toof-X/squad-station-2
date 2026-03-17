@@ -90,7 +90,10 @@ Plans:
   1. After `squad-station init` completes, an ASCII diagram is printed showing each agent as a labeled box containing name, role, provider, and tmux session name
   2. The diagram shows directional arrows from the orchestrator box to each worker agent box
   3. Each agent box displays the agent's current DB status (idle / busy / dead)
-**Plans**: TBD
+**Plans:** 1 plan
+
+Plans:
+- [ ] 19-01-PLAN.md — ASCII fleet diagram module + init.rs integration
 
 ## Progress
 
@@ -104,5 +107,5 @@ Plans:
 | 15. Local DB Storage | v1.4 | 2/2 | Complete | 2026-03-10 |
 | 16. TUI Wizard | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 17. Init Flow Integration | v1.5 | 2/2 | Complete | 2026-03-17 |
-| 18. Welcome Screen & Wizard Polish | 2/2 | Complete    | 2026-03-17 | - |
-| 19. Agent Diagram | v1.6 | 0/? | Not started | - |
+| 18. Welcome Screen & Wizard Polish | v1.6 | 2/2 | Complete | 2026-03-17 |
+| 19. Agent Diagram | v1.6 | 0/1 | Not started | - |
