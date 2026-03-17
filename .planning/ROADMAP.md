@@ -84,11 +84,11 @@ Branded welcome screen on bare invocation, ASCII agent fleet diagram after init,
   3. When no squad.yml exists and the user presses Enter, the TUI closes cleanly and the init wizard launches immediately
   4. When squad.yml exists and the user presses Enter, the TUI closes without triggering any re-init
   5. Running `squad-station` with stdout piped (non-TTY) prints static welcome text without attempting to enter raw mode
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 20-01: ratatui 0.29 + crossterm 0.28 + tui-big-text upgrade and welcome TUI event loop
-- [ ] 20-02: Conditional routing (squad.yml detection, Enter-to-wizard handoff, Q/Esc close)
+- [ ] 20-01-PLAN.md — Upgrade ratatui 0.30 + crossterm 0.29 + tui-big-text 0.8 and implement welcome TUI with BigText title, countdown, hint bar, TTY guard
+- [ ] 20-02-PLAN.md — Wire conditional routing (squad.yml detection, Enter-to-wizard/dashboard handoff, Q/Esc close) and human verification
 
 ### Phase 21: Quick Guide and Install Flow
 **Goal**: Users see a quick guide page in the welcome TUI explaining the Squad Station concept, and both install paths surface the binary to new users immediately after a successful install in interactive environments
@@ -119,5 +119,5 @@ Plans:
 | 17. Init Flow Integration | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 18. Welcome Screen & Wizard Polish | v1.6 | 2/2 | Complete | 2026-03-17 |
 | 19. Agent Diagram | v1.6 | 1/1 | Complete | 2026-03-17 |
-| 20. TTY-Safe Welcome TUI Core | v1.7 | 0/2 | Not started | - |
+| 20. TTY-Safe Welcome TUI Core | v1.7 | 0/2 | Planning | - |
 | 21. Quick Guide and Install Flow | v1.7 | 0/2 | Not started | - |
