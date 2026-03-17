@@ -259,6 +259,46 @@ pub fn print_welcome() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::KeyCode;
+
+    // --- Routing action tests ---
+
+    #[test]
+    fn test_routing_action_enter_no_config() {
+        assert_eq!(
+            routing_action(KeyCode::Enter, false),
+            Some(WelcomeAction::LaunchInit)
+        );
+    }
+
+    #[test]
+    fn test_routing_action_enter_with_config() {
+        assert_eq!(
+            routing_action(KeyCode::Enter, true),
+            Some(WelcomeAction::LaunchDashboard)
+        );
+    }
+
+    #[test]
+    fn test_routing_action_quit_q() {
+        assert_eq!(
+            routing_action(KeyCode::Char('q'), false),
+            Some(WelcomeAction::Quit)
+        );
+    }
+
+    #[test]
+    fn test_routing_action_quit_esc() {
+        assert_eq!(
+            routing_action(KeyCode::Esc, true),
+            Some(WelcomeAction::Quit)
+        );
+    }
+
+    #[test]
+    fn test_routing_action_ignored_key() {
+        assert_eq!(routing_action(KeyCode::Char('a'), false), None);
+    }
 
     // --- Existing tests (static fallback verification) ---
 
