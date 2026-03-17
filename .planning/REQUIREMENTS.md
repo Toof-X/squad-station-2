@@ -7,10 +7,10 @@
 
 ### Welcome Screen
 
-- [ ] **WEL-01**: Running `squad-station` with no subcommand displays a welcome screen with a large ASCII "SQUAD-STATION" title rendered in red
-- [ ] **WEL-02**: Welcome screen shows the current binary version
-- [ ] **WEL-03**: Welcome screen shows a "next step" message directing the user to run `squad-station init`
-- [ ] **WEL-04**: Welcome screen lists available subcommands (init, send, signal, peek, list, ui, view, status, agents, context, register)
+- [x] **WEL-01**: Running `squad-station` with no subcommand displays a welcome screen with a large ASCII "SQUAD-STATION" title rendered in red
+- [x] **WEL-02**: Welcome screen shows the current binary version
+- [x] **WEL-03**: Welcome screen shows a "next step" message directing the user to run `squad-station init`
+- [x] **WEL-04**: Welcome screen lists available subcommands (init, send, signal, peek, list, ui, view, status, agents, context, register)
 
 ### Agent Diagram
 
@@ -47,10 +47,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WEL-01 | Phase 18 | Pending |
-| WEL-02 | Phase 18 | Pending |
-| WEL-03 | Phase 18 | Pending |
-| WEL-04 | Phase 18 | Pending |
+| WEL-01 | Phase 18 | Complete |
+| WEL-02 | Phase 18 | Complete |
+| WEL-03 | Phase 18 | Complete |
+| WEL-04 | Phase 18 | Complete |
 | WIZ-01 | Phase 18 | Pending |
 | WIZ-02 | Phase 18 | Pending |
 | DIAG-01 | Phase 19 | Pending |
