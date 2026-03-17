@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: UX Polish
 status: planning
-stopped_at: Completed 18-01-PLAN.md — welcome screen implemented
-last_updated: "2026-03-17T09:39:38.037Z"
+stopped_at: Completed 18-02-PLAN.md — wizard model names simplified to short aliases
+last_updated: "2026-03-17T09:43:56.030Z"
 last_activity: 2026-03-17 — v1.6 roadmap created, phases 18-19 defined
 progress:
   total_phases: 2
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -44,6 +44,7 @@ All decisions logged in PROJECT.md Key Decisions table.
 - `main.rs` dispatches subcommands via clap match — no-arg path is where welcome screen hooks in
 - [Phase 18-welcome-screen-wizard-polish]: welcome_content() as private test-facing function; print_welcome() applies color directly — avoids string-replace complexity with colored types
 - [Phase 18-welcome-screen-wizard-polish]: Option<Commands> in cli.rs Cli struct enables bare invocation without clap error; None arm in main.rs dispatches to welcome screen
+- [Phase 18-welcome-screen-wizard-polish]: Use short aliases (sonnet, opus, haiku) for ClaudeCode model options — cleaner UX decoupled from version churn
 
 ### Pending Todos
 
@@ -55,6 +56,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T09:39:38.035Z
-Stopped at: Completed 18-01-PLAN.md — welcome screen implemented
+Last session: 2026-03-17T09:43:56.029Z
+Stopped at: Completed 18-02-PLAN.md — wizard model names simplified to short aliases
 Resume file: None

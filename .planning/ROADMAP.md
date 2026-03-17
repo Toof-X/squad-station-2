@@ -61,7 +61,7 @@ Multi-page ratatui TUI wizard for `squad-station init`: collects project name, S
 
 **Milestone Goal:** Improve first-run and post-init UX with a branded welcome screen, an agent relationship diagram after init, and simplified claude-code model names in the wizard.
 
-- [ ] **Phase 18: Welcome Screen & Wizard Polish** - Red ASCII title on bare invocation + simplified claude-code model names in wizard
+- [x] **Phase 18: Welcome Screen & Wizard Polish** - Red ASCII title on bare invocation + simplified claude-code model names in wizard (completed 2026-03-17)
 - [ ] **Phase 19: Agent Diagram** - ASCII relationship diagram printed after init completes
 
 ## Phase Details
@@ -76,7 +76,7 @@ Multi-page ratatui TUI wizard for `squad-station init`: collects project name, S
   3. The welcome screen lists all available subcommands (init, send, signal, peek, list, ui, view, status, agents, context, register)
   4. In the wizard, selecting claude-code as provider shows model options `sonnet`, `opus`, `haiku` — no version suffix strings
   5. After wizard completion, the generated squad.yml stores simplified model names (e.g., `model: sonnet`, not `model: claude-sonnet-4-6`)
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 18-01-PLAN.md — Welcome screen module + CLI dispatch wiring
@@ -104,5 +104,5 @@ Plans:
 | 15. Local DB Storage | v1.4 | 2/2 | Complete | 2026-03-10 |
 | 16. TUI Wizard | v1.5 | 2/2 | Complete | 2026-03-17 |
 | 17. Init Flow Integration | v1.5 | 2/2 | Complete | 2026-03-17 |
-| 18. Welcome Screen & Wizard Polish | 1/2 | In Progress|  | - |
+| 18. Welcome Screen & Wizard Polish | 2/2 | Complete   | 2026-03-17 | - |
 | 19. Agent Diagram | v1.6 | 0/? | Not started | - |

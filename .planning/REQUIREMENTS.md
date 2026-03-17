@@ -20,8 +20,8 @@
 
 ### Wizard UX
 
-- [ ] **WIZ-01**: When `claude-code` is selected as provider in the wizard, model options show `sonnet`, `opus`, `haiku` (without version suffixes)
-- [ ] **WIZ-02**: `claude-code` model selection stores the simplified name in squad.yml (e.g., `model: sonnet`)
+- [x] **WIZ-01**: When `claude-code` is selected as provider in the wizard, model options show `sonnet`, `opus`, `haiku` (without version suffixes)
+- [x] **WIZ-02**: `claude-code` model selection stores the simplified name in squad.yml (e.g., `model: sonnet`)
 
 ## Future Requirements
 
@@ -51,8 +51,8 @@
 | WEL-02 | Phase 18 | Complete |
 | WEL-03 | Phase 18 | Complete |
 | WEL-04 | Phase 18 | Complete |
-| WIZ-01 | Phase 18 | Pending |
-| WIZ-02 | Phase 18 | Pending |
+| WIZ-01 | Phase 18 | Complete |
+| WIZ-02 | Phase 18 | Complete |
 | DIAG-01 | Phase 19 | Pending |
 | DIAG-02 | Phase 19 | Pending |
 | DIAG-03 | Phase 19 | Pending |
