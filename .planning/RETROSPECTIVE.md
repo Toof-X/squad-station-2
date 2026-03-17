@@ -233,6 +233,54 @@
 
 ---
 
+## Milestone: v1.5 — Interactive Init Wizard
+
+**Shipped:** 2026-03-17
+**Phases:** 2 (16-17) | **Plans:** 4 | **Files changed:** 12 (+2,754 / -367) | **Tests:** 201
+
+### What Was Built
+- Multi-page ratatui wizard (1362 lines): 5 pages collecting project name, SDD workflow, orchestrator + N worker configs with cursor-aware text inputs and radio selectors
+- `squad-station init` now fully self-contained — no pre-existing squad.yml required
+- Squad.yml generation from `WizardResult` with full model ID validation (short names + full IDs)
+- Re-init prompt (overwrite/add-agents/abort) via crossterm raw-mode keypress
+- Non-interactive TTY guard (`is_terminal()`) preserving backward compat with integration tests
+- Worker-only wizard entry point (`run_worker_only`) enabling add-agents path without re-collecting project/orchestrator config
+
+### What Worked
+- TDD from plan 1: data types + validation tests written before TUI rendering — caught type mismatch early (Tool→Provider rename)
+- Guard clause approach in init.rs: minimal diff, existing path unchanged, wizard plugs in cleanly before load_config
+- String builder for YAML generation: deterministic field ordering, no new dependency (serde_yaml avoided)
+- `is_terminal()` guard discovered during Task 1 verification (4 tests broke immediately) — self-corrected within same commit
+- Phase 16 → Phase 17 dependency was clean: wizard API stable before integration work began
+- 20+ unit tests added in Phase 16 exceeded plan (11 planned) — extra coverage for cursor movement and ModelSelector
+
+### What Was Inefficient
+- Human-verify checkpoint in Phase 16 Plan 02 caused an artificial pause — summary was written before verification completed; verification gate could have been scoped as a separate task post-build
+- No milestone audit run — skipped again despite being recommended
+- SUMMARY `one_liner` frontmatter still inconsistently populated
+
+### Patterns Established
+- TUI wizard page state machine: `WizardPage` enum drives both render fn and handle_key dispatch
+- `render_radio_list` shared helper: reusable for any enum-selector field (SDD, Provider, Model)
+- `PageTransition` enum from `handle_agent_key`: decouples field logic from page routing, no call-site changes needed
+- `worker_only: bool` on `WizardState`: cleaner than threading flag parameter through handle_key callees
+- Crossterm raw-mode keypress for single-choice prompts: enables non-wizard interactive prompts in CLI context
+- `append_workers_to_yaml`: pure string manipulation for YAML append — consistent with generate_squad_yml approach
+
+### Key Lessons
+1. TDD pays off even for TUI code — type-level tests (Provider cycling, ModelSelector) caught design issues before rendering
+2. Guard clause pattern for new features in existing commands: minimal diff, no risk to existing paths
+3. String building for YAML generation is preferable to serde_yaml when structure is simple — deterministic + no new dep
+4. Non-interactive guard (`is_terminal()`) should be added upfront whenever crossterm raw mode is used — not as a bugfix
+5. Human-verify checkpoints mid-plan create documentation state inconsistency — better scoped as "build then separately verify"
+
+### Cost Observations
+- Model mix: ~90% sonnet, ~10% haiku
+- Sessions: ~3 execution sessions
+- Notable: 1362-line wizard module with 20+ tests built in 3 minutes (Phase 16 Plan 01 — fast execution)
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -244,6 +292,7 @@
 | v1.2 | 3 | 5 | 58+ | Distribution layer — CI/CD, npm, curl installer, no new Rust code |
 | v1.3 | 4 | 8 | 58+ | Provider abstraction, safe injection, first formal milestone audit |
 | v1.4 | 2 | 4 | 164 | Unified playbook, local DB, smallest milestone — focused scope |
+| v1.5 | 2 | 4 | 201 | TUI wizard for init, squad.yml generation, re-init prompt, crossterm UX |
 
 ### Cumulative Quality
 
@@ -254,12 +303,15 @@
 | v1.2 | 58+ | 0 | 0 (audit skipped) |
 | v1.3 | 58+ | 0 | 3 (cosmetic: stale comments, 1 edge case, 1 stale doc section) |
 | v1.4 | 164 | 0 | 0 (clean close, audit skipped) |
+| v1.5 | 201 | 0 | 0 (clean close, audit skipped) |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. Safety-first architecture: wire all safety primitives in the foundation phase
 2. Stateless CLI + SQLite WAL = simple, testable, concurrent-safe
 3. Atomic schema migrations with clear before/after states — clean upgrade path, no data loss
-4. Fill SUMMARY one_liner during execution — milestone tooling depends on it (5 milestones in a row with empty field)
-5. Run milestone audit before completion — v1.3 first to do this; caught only tech debt (no blocking gaps)
+4. Fill SUMMARY one_liner during execution — milestone tooling depends on it (6 milestones in a row with empty field)
+5. Run milestone audit before completion — v1.3 first and last to do this; should be default
 6. Small focused milestones (2 phases) execute efficiently — minimal overhead, clear scope
+7. TDD for TUI code works — type-level tests catch design issues before rendering implementation begins
+8. Non-interactive guard (`is_terminal()`) must be added upfront for crossterm raw-mode code — not as a bugfix after tests break

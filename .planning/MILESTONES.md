@@ -1,5 +1,22 @@
 # Milestones
 
+## v1.5 Interactive Init Wizard (Shipped: 2026-03-17)
+
+**Phases:** 16-17 | **Plans:** 4 | **Files changed:** 12 (+2,754 / -367) | **Timeline:** 1 day (2026-03-17)
+**Git range:** feat(16-01) wizard data types → feat(17-02) re-init prompt
+
+**Key accomplishments:**
+- Multi-page ratatui wizard (1362 lines): 5 pages collecting project name, SDD workflow, orchestrator + N worker configs with cursor-aware text inputs and radio selectors
+- `squad-station init` is now fully self-contained — no pre-existing squad.yml required; wizard generates one from user input
+- Squad.yml generation from `WizardResult` with full model ID validation (`claude-sonnet-4-6`, `gemini-2.5-pro`, etc.) — 201 tests pass
+- Re-init prompt (overwrite/add-agents/abort) via crossterm raw-mode keypress with non-interactive TTY guard for backward-compatible CI/tests
+- Worker-only wizard entry point (`run_worker_only`) enables "add agents" flow without re-collecting project/orchestrator config
+- SDD workflow selection (Bmad/GetShitDone/Superpower) embedded in wizard Project page
+
+**Archives:** [v1.5-ROADMAP.md](milestones/v1.5-ROADMAP.md) | [v1.5-REQUIREMENTS.md](milestones/v1.5-REQUIREMENTS.md)
+
+---
+
 ## v1.4 Unified Playbook & Local DB (Shipped: 2026-03-10)
 
 **Phases:** 14-15 | **Plans:** 4 | **Files changed:** 23 (+1,505 / -213) | **Timeline:** 1 day (2026-03-10)

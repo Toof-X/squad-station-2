@@ -60,24 +60,16 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 - ✓ `dirs` crate removed from dependencies — v1.4
 - ✓ `.gitignore` excludes `.squad/`, docs updated for new DB path — v1.4
 - ✓ `SQUAD_STATION_DB` env var override preserved through DB path change — v1.4
+- ✓ `squad-station init` launches multi-page ratatui TUI wizard when no squad.yml exists — v1.5
+- ✓ Wizard collects project name, SDD workflow, orchestrator config, and per-worker config (provider, model, description) — v1.5
+- ✓ `init` generates squad.yml from wizard answers (full model ID validation) before registering agents — v1.5
+- ✓ Re-init prompt (overwrite/add-agents/abort) when squad.yml already exists; non-interactive TTY guard for CI safety — v1.5
+- ✓ Worker-only wizard entry point (`run_worker_only`) for "add agents" re-init path — v1.5
+- ✓ Wizard validates inputs with inline error feedback; radio selectors for Provider and Model — v1.5
 
 ### Active
 
-<!-- Current milestone: v1.5 Interactive Init Wizard -->
-- [ ] User is prompted for project name during `init` (TUI wizard, no pre-written squad.yml required)
-- [ ] User is prompted for number of agents, then per-agent: role, tool, model, description
-- [ ] `init` generates squad.yml from wizard answers before registering agents
-- [ ] When squad.yml exists: user prompted to overwrite, add agents, or abort
-- [ ] TUI wizard validates inputs before accepting
-
-## Current Milestone: v1.5 Interactive Init Wizard
-
-**Goal:** Replace the require-squad.yml-first flow with a guided TUI wizard that generates squad.yml interactively during `init`.
-
-**Target features:**
-- Interactive TUI wizard (ratatui) for project name, agent count, and per-agent config
-- squad.yml generation from wizard answers
-- Re-init handling: overwrite / add agents / abort
+<!-- Next milestone: TBD -->
 
 ### Out of Scope
 
@@ -91,12 +83,13 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ## Context
 
-Shipped v1.4 Unified Playbook & Local DB with 6,169 LOC Rust (codebase + tests).
-Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.26, serde-saphyr, owo-colors 3, uuid (temp file naming).
+Shipped v1.5 Interactive Init Wizard with 9,406 LOC Rust (codebase + tests).
+Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.26, crossterm, serde-saphyr, owo-colors 3, uuid (temp file naming).
 Distribution: npm package + curl | sh installer, both download pre-built binaries from GitHub Releases.
 CI/CD: GitHub Actions matrix workflow produces 4 musl/darwin binaries on v* tag push.
 Providers supported: claude-code, gemini-cli, antigravity (DB-only IDE orchestrator).
 Hook registration: inline `squad-station signal $TMUX_PANE` command (scripts in hooks/ deprecated).
+Init flow: TUI wizard (ratatui) generates squad.yml from scratch; re-init prompt handles overwrite/add-agents/abort.
 Context generation: `.agent/workflows/squad-orchestrator.md` — single unified playbook for IDE orchestrator.
 Safe injection: load-buffer/paste-buffer pattern for multiline task bodies (no shell-injection artifacts).
 Database: `.squad/station.db` in project directory (no home-dir dependency, no `dirs` crate).
@@ -149,6 +142,13 @@ Database: `.squad/station.db` in project directory (no home-dir dependency, no `
 | `build_orchestrator_md` as pub function | Integration tests can import and verify playbook content directly | ✓ Good — testable playbook generation |
 | DB at `<cwd>/.squad/station.db` | Data locality — no home-dir resolution, no project-name collision risk | ✓ Good — simpler path, no `dirs` crate |
 | No old DB migration | Dev builds only, no production data to preserve — clean break | ✓ Good — zero complexity |
+| Wizard as guard clause in init.rs | Minimal diff; existing init path for present squad.yml unchanged | ✓ Good — clean separation, zero coupling |
+| `generate_squad_yml` as string builder | Deterministic field ordering; avoids serde_yaml dependency | ✓ Good — simple, readable output |
+| `WizardResult` with separate `orchestrator` + `agents` | Orchestrator configured on its own page; role implicit from page context | ✓ Good — cleaner UX, no role selector field |
+| `SddWorkflow` enum in wizard | Captures workflow preference early; embedded in squad.yml for orchestrator context | ✓ Good — zero-friction SDD setup |
+| `is_terminal()` guard in re-init prompt | crossterm raw mode fails in non-TTY (CI, tests); guard preserves backward compat | ✓ Good — all 201 tests pass unchanged |
+| `run_worker_only()` on wizard | Skips Project + OrchestratorConfig pages for add-agents path — no re-entry of existing config | ✓ Good — correct UX for append flow |
+| `KeyAction::Cancel` variant | Explicit Esc cancel path for worker-only wizard; doesn't repurpose Continue | ✓ Good — clean intent, no call-site changes |
 
 ---
-*Last updated: 2026-03-17 after v1.5 milestone started*
+*Last updated: 2026-03-17 after v1.5 milestone*
