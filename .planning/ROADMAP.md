@@ -64,7 +64,10 @@ Unified squad-orchestrator.md replacing 3 fragmented context files, DB moved to 
   2. User can navigate field by field: project name, agent count, then per-agent role/tool/model/description
   3. Submitting an empty required field (role) or unknown tool value shows an inline error without exiting the wizard
   4. Completing the wizard with valid inputs returns control to the calling code with all collected values
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 16-01-PLAN.md — Complete wizard module: types, validation, TUI rendering, event loop
+- [ ] 16-02-PLAN.md — Wire wizard into init.rs and verify interactive flow
 
 ### Phase 17: Init Flow Integration
 **Goal**: Users can run `squad-station init` from scratch or re-init an existing project, with squad.yml generated or updated automatically
@@ -86,5 +89,5 @@ Unified squad-orchestrator.md replacing 3 fragmented context files, DB moved to 
 | 10-13. Antigravity & Hooks | v1.3 | - | Complete | 2026-03-09 |
 | 14. Unified Orchestrator Playbook | v1.4 | 2/2 | Complete | 2026-03-10 |
 | 15. Local DB Storage | v1.4 | 2/2 | Complete | 2026-03-10 |
-| 16. TUI Wizard | v1.5 | 0/? | Not started | - |
+| 16. TUI Wizard | v1.5 | 0/2 | Planning | - |
 | 17. Init Flow Integration | v1.5 | 0/? | Not started | - |
