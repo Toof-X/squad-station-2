@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Interactive Init Wizard
 status: completed
-stopped_at: Paused at Task 2 checkpoint (human-verify) in 17-02-PLAN.md
-last_updated: "2026-03-17T07:47:41.062Z"
-last_activity: "2026-03-17 — Phase 17 Plan 01 done: squad.yml generation, model validation expanded, run_worker_only added"
+stopped_at: Completed 17-02-PLAN.md — Phase 17 milestone v1.5 complete
+last_updated: "2026-03-17T08:14:39.825Z"
+last_activity: "2026-03-17 — Phase 17 Plan 02 done: re-init prompt (overwrite/add-agents/abort), human E2E verified all 5 scenarios"
 progress:
   total_phases: 2
   completed_phases: 2
   total_plans: 4
   completed_plans: 4
-  percent: 95
+  percent: 100
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-17 after v1.5 milestone started)
 ## Current Position
 
 Phase: 17 of 17 (Init Flow Integration)
-Plan: 1 of 2 in current phase
-Status: Plan 01 complete, advancing to Plan 02
-Last activity: 2026-03-17 — Phase 17 Plan 01 done: squad.yml generation, model validation expanded, run_worker_only added
+Plan: 2 of 2 in current phase
+Status: Phase 17 complete — all plans done, milestone v1.5 complete
+Last activity: 2026-03-17 — Phase 17 Plan 02 done: re-init prompt (overwrite/add-agents/abort), human E2E verified all 5 scenarios
 
-Progress: [█████████████░] ~95% (v1.4 complete, Phase 16 done, Phase 17 Plan 01 done)
+Progress: [██████████████] 100% (v1.5 complete — Phase 16 and Phase 17 fully done)
 
 ## Accumulated Context
 
@@ -67,6 +67,7 @@ All decisions logged in PROJECT.md Key Decisions table.
 - worker_only: bool on WizardState rather than threading flag through handle_key
 - [Phase 17]: Non-interactive guard (is_terminal()) skips prompt_reinit() in non-TTY environments — backward-compatible with integration tests
 - [Phase 17]: append_workers_to_yaml uses pure string manipulation (not serde) consistent with generate_squad_yml from Plan 01
+- [Phase 17]: Human E2E verification approved all 5 init flow scenarios: first-time init, overwrite, add-agents, abort, and Ctrl+C cancellation
 
 ### Pending Todos
 
@@ -78,6 +79,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T07:47:34.696Z
-Stopped at: Paused at Task 2 checkpoint (human-verify) in 17-02-PLAN.md
+Last session: 2026-03-17T08:14:33.600Z
+Stopped at: Completed 17-02-PLAN.md — Phase 17 milestone v1.5 complete
 Resume file: None

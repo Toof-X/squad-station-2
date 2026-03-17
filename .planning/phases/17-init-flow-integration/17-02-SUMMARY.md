@@ -19,10 +19,12 @@ decisions:
   - "Ctrl+C and Esc both map to ReinitChoice::Abort for consistent exit UX"
   - "append_workers_to_yaml is pure string manipulation (not serde_yaml) — consistent with generate_squad_yml approach from Plan 01"
   - "is_terminal() guard preserves all existing integration tests without modification"
+requirements-completed: [INIT-05]
+
 metrics:
-  duration: "~12 minutes"
+  duration: "~20 minutes"
   completed: "2026-03-17"
-  tasks_completed: 1
+  tasks_completed: 2
   tasks_total: 2
   files_modified: 1
 ---
@@ -67,7 +69,9 @@ The `is_terminal()` guard ensures all existing integration tests continue passin
 | Task | Name | Status | Commit |
 |------|------|--------|--------|
 | 1 | Implement re-init prompt | Complete | ba01fce |
-| 2 | Human E2E verification | Paused at checkpoint | — |
+| 2 | Human E2E verification | Approved | human-verified |
+
+Human verified all 5 scenarios: first-time init, overwrite, add agents, abort (q), and Ctrl+C cancellation — all produced correct outcomes.
 
 ## Deviations from Plan
 
