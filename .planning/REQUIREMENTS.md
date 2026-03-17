@@ -1,66 +1,70 @@
 # Requirements: Squad Station
 
 **Defined:** 2026-03-17
-**Core Value:** Routing messages đáng tin cậy giữa Orchestrator và agents — stateless CLI commands không cần daemon
+**Core Value:** Routing messages reliably between Orchestrator and agents — stateless CLI, no daemon
 
-## v1.6 Requirements
+## v1.7 Requirements
 
-### Welcome Screen
+### Welcome TUI
 
-- [x] **WEL-01**: Running `squad-station` with no subcommand displays a welcome screen with a large ASCII "SQUAD-STATION" title rendered in red
-- [x] **WEL-02**: Welcome screen shows the current binary version
-- [x] **WEL-03**: Welcome screen shows a "next step" message directing the user to run `squad-station init`
-- [x] **WEL-04**: Welcome screen lists available subcommands (init, send, signal, peek, list, ui, view, status, agents, context, register)
+- [ ] **WELCOME-01**: Bare `squad-station` always shows interactive TUI (replaces static welcome screen)
+- [ ] **WELCOME-02**: TUI displays large SQUAD-STATION title using pixel-font big text
+- [ ] **WELCOME-03**: TUI displays current version below title
+- [ ] **WELCOME-04**: TUI shows hint bar at bottom with available keys and auto-exit countdown
+- [ ] **WELCOME-05**: TUI includes quick guide page explaining Squad Station concept and basic workflow
+- [ ] **WELCOME-06**: TUI auto-exits after N seconds if no key pressed (countdown shown in hint bar)
+- [ ] **WELCOME-07**: Non-TTY fallback — when stdout is not a terminal, print static text instead of TUI
 
-### Agent Diagram
+### First-Run Init
 
-- [x] **DIAG-01**: After `squad-station init` completes (wizard + agent registration), an ASCII diagram is printed showing all agents as labeled boxes with name, role, provider, and tmux session name
-- [x] **DIAG-02**: Diagram shows arrows from orchestrator to each worker agent
-- [x] **DIAG-03**: Diagram shows current DB status (idle/busy/dead) for each agent
+- [ ] **INIT-01**: When no squad.yml exists, Enter key in welcome TUI launches the init wizard directly
+- [ ] **INIT-02**: When squad.yml exists, Enter key closes welcome (no re-init triggered)
+- [ ] **INIT-03**: Q / Escape closes the welcome TUI without launching anything
 
-### Wizard UX
+### Install Flow
 
-- [x] **WIZ-01**: When `claude-code` is selected as provider in the wizard, model options show `sonnet`, `opus`, `haiku` (without version suffixes)
-- [x] **WIZ-02**: `claude-code` model selection stores the simplified name in squad.yml (e.g., `model: sonnet`)
+- [ ] **INSTALL-01**: npm postinstall checks `process.stdout.isTTY` and auto-launches `squad-station` if interactive
+- [ ] **INSTALL-02**: curl | sh installer checks `[ -t 1 ]` and auto-launches `squad-station` if interactive
+- [ ] **INSTALL-03**: Both install scripts degrade silently in non-interactive environments (CI, pipes, sudo)
 
-## Future Requirements
+## v2 Requirements
 
-### Enhanced Welcome
-
-- **WEL-F01**: Welcome screen shows link to online documentation / PLAYBOOK
-- **WEL-F02**: Welcome screen detects existing squad.yml and shows squad status summary instead of init prompt
-
-### Enhanced Diagram
-
-- **DIAG-F01**: Diagram available as standalone `squad-station diagram` subcommand (re-runnable any time)
-- **DIAG-F02**: Diagram shows message queue depth per agent
+*(None identified — scope is focused)*
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Interactive diagram (navigable TUI) | Static ASCII sufficient for post-init overview |
-| Web-based dashboard | TUI + CLI sufficient |
-| Animated/updating diagram | Post-init is a one-time print, not a live view |
+| Web onboarding page | TUI is sufficient; web adds infra complexity |
+| Auto-update check on welcome | Network call on every bare invocation is slow and privacy-invasive |
+| Analytics / telemetry on first-run | Out of scope by design — no tracking |
+| Animated splash screen | tui-big-text renders static pixel font; animation adds complexity without value |
 
 ## Traceability
 
+*(Populated during roadmap creation)*
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WEL-01 | Phase 18 | Complete |
-| WEL-02 | Phase 18 | Complete |
-| WEL-03 | Phase 18 | Complete |
-| WEL-04 | Phase 18 | Complete |
-| WIZ-01 | Phase 18 | Complete |
-| WIZ-02 | Phase 18 | Complete |
-| DIAG-01 | Phase 19 | Complete |
-| DIAG-02 | Phase 19 | Complete |
-| DIAG-03 | Phase 19 | Complete |
+| WELCOME-01 | — | Pending |
+| WELCOME-02 | — | Pending |
+| WELCOME-03 | — | Pending |
+| WELCOME-04 | — | Pending |
+| WELCOME-05 | — | Pending |
+| WELCOME-06 | — | Pending |
+| WELCOME-07 | — | Pending |
+| INIT-01 | — | Pending |
+| INIT-02 | — | Pending |
+| INIT-03 | — | Pending |
+| INSTALL-01 | — | Pending |
+| INSTALL-02 | — | Pending |
+| INSTALL-03 | — | Pending |
 
 **Coverage:**
-- v1.6 requirements: 9 total
-- Mapped to phases: 9/9
-- Unmapped: 0
+- v1.7 requirements: 13 total
+- Mapped to phases: 0
+- Unmapped: 13 ⚠️
 
 ---
 *Requirements defined: 2026-03-17*
+*Last updated: 2026-03-17 after initial definition*
