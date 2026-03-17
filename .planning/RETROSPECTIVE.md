@@ -281,6 +281,45 @@
 
 ---
 
+## Milestone: v1.6 — UX Polish
+
+**Shipped:** 2026-03-17
+**Phases:** 2 | **Plans:** 3 | **Tests:** 211
+
+### What Was Built
+- `src/commands/welcome.rs` — branded welcome screen on bare invocation: red ASCII SQUAD STATION title, version, init hint, 11-subcommand two-column list
+- `src/commands/diagram.rs` — ASCII agent fleet diagram printed after `squad-station init`: orchestrator + worker boxes with Unicode borders, directional arrows, colored status badges
+- ClaudeCode wizard model options simplified from full version strings (claude-sonnet-4-6) to short aliases (sonnet, opus, haiku)
+- `Option<Commands>` in clap Cli struct — bare invocation no longer errors; None arm routes to welcome screen
+
+### What Worked
+- TDD throughout: `welcome_content()` and `render_diagram()` as testable plain-string builders — 4 + 10 unit tests respectively, no stdout capture needed
+- Phase scope was tight and clear — 3 plans, no ambiguity, all executed in ~1 day
+- `render_diagram()` returning String (not printing) was the right design choice — diagrams fully testable with simple assert
+- Worker wrapping on 80-char boundary solved terminal overflow without complexity
+
+### What Was Inefficient
+- No milestone audit run — skipped again
+- SUMMARY `one_liner` frontmatter still not populated by CLI tooling (tasks=0 in gsd-tools output)
+
+### Patterns Established
+- Test-facing content fn pattern: `fn content() -> String` for testable output; `fn print_*()` for colored terminal output
+- `render_*(data) -> String` + `print_*(data)` pair: clean testability boundary for any visual CLI output
+- Short model aliases in wizard: user-visible names decoupled from API version strings; stored as-is in squad.yml
+
+### Key Lessons
+1. Keep testable content function separate from printing function — one call to the renderer, one call to the printer
+2. ASCII art figlet output doesn't contain literal word substrings — always add plaintext subtitle for test assertions
+3. owo-colors `if_supports_color` returns a display type, not `&str` — cannot pass to `str::replacen()`, use direct println! instead
+4. Focused 1-day milestones with clear UX scope execute extremely efficiently — no planning overhead at execution time
+
+### Cost Observations
+- Model mix: ~95% sonnet, ~5% haiku
+- Sessions: ~2 execution sessions
+- Notable: 3-minute Phase 19 execution (diagram module + 10 tests, no plan deviations)
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -293,6 +332,7 @@
 | v1.3 | 4 | 8 | 58+ | Provider abstraction, safe injection, first formal milestone audit |
 | v1.4 | 2 | 4 | 164 | Unified playbook, local DB, smallest milestone — focused scope |
 | v1.5 | 2 | 4 | 201 | TUI wizard for init, squad.yml generation, re-init prompt, crossterm UX |
+| v1.6 | 2 | 3 | 211 | Welcome screen, agent fleet diagram, simplified model names — pure UX polish |
 
 ### Cumulative Quality
 
@@ -304,6 +344,7 @@
 | v1.3 | 58+ | 0 | 3 (cosmetic: stale comments, 1 edge case, 1 stale doc section) |
 | v1.4 | 164 | 0 | 0 (clean close, audit skipped) |
 | v1.5 | 201 | 0 | 0 (clean close, audit skipped) |
+| v1.6 | 211 | 0 | 0 (clean close, audit skipped) |
 
 ### Top Lessons (Verified Across Milestones)
 

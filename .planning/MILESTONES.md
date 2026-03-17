@@ -1,5 +1,14 @@
 # Milestones
 
+## v1.6 UX Polish (Shipped: 2026-03-17)
+
+**Phases completed:** 2 phases, 3 plans, 0 tasks
+
+**Key accomplishments:**
+- (none recorded)
+
+---
+
 ## v1.5 Interactive Init Wizard (Shipped: 2026-03-17)
 
 **Phases:** 16-17 | **Plans:** 4 | **Files changed:** 12 (+2,754 / -367) | **Timeline:** 1 day (2026-03-17)

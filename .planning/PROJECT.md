@@ -67,21 +67,13 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 - ✓ Worker-only wizard entry point (`run_worker_only`) for "add agents" re-init path — v1.5
 - ✓ Wizard validates inputs with inline error feedback; radio selectors for Provider and Model — v1.5
 
+- ✓ `squad-station` (no args) shows red ASCII title, version, next-step hint, subcommand list — v1.6
+- ✓ After `init` completes, ASCII diagram shows all agents (boxes + arrows + status) — v1.6
+- ✓ claude-code wizard model options: sonnet, opus, haiku (no version suffixes) — v1.6
+
 ### Active
 
-<!-- Current milestone: v1.6 UX Polish -->
-- [ ] `squad-station` (no args) shows red ASCII title, version, next-step hint, subcommand list
-- [ ] After `init` completes, ASCII diagram shows all agents (boxes + arrows + status)
-- [ ] claude-code wizard model options: sonnet, opus, haiku (no version suffixes)
-
-## Current Milestone: v1.6 UX Polish
-
-**Goal:** Improve first-run and post-init UX with a branded welcome screen, an agent relationship diagram after init, and simplified claude-code model names in the wizard.
-
-**Target features:**
-- Red ASCII SQUAD-STATION title on bare `squad-station` invocation
-- ASCII agent diagram printed after init completes (boxes + arrows + status)
-- claude-code wizard models: sonnet / opus / haiku (no version suffixes)
+<!-- Next milestone requirements go here -->
 
 ### Out of Scope
 
@@ -95,16 +87,18 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ## Context
 
-Shipped v1.5 Interactive Init Wizard with 9,406 LOC Rust (codebase + tests).
+Shipped v1.6 UX Polish with ~82K LOC Rust (codebase + tests, total project).
 Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.26, crossterm, serde-saphyr, owo-colors 3, uuid (temp file naming).
 Distribution: npm package + curl | sh installer, both download pre-built binaries from GitHub Releases.
 CI/CD: GitHub Actions matrix workflow produces 4 musl/darwin binaries on v* tag push.
 Providers supported: claude-code, gemini-cli, antigravity (DB-only IDE orchestrator).
 Hook registration: inline `squad-station signal $TMUX_PANE` command (scripts in hooks/ deprecated).
-Init flow: TUI wizard (ratatui) generates squad.yml from scratch; re-init prompt handles overwrite/add-agents/abort.
+Init flow: TUI wizard (ratatui) generates squad.yml from scratch; re-init prompt handles overwrite/add-agents/abort. Post-init prints ASCII agent fleet diagram.
+Welcome screen: bare `squad-station` invocation prints red ASCII art title, version, init hint, subcommand list.
 Context generation: `.agent/workflows/squad-orchestrator.md` — single unified playbook for IDE orchestrator.
 Safe injection: load-buffer/paste-buffer pattern for multiline task bodies (no shell-injection artifacts).
 Database: `.squad/station.db` in project directory (no home-dir dependency, no `dirs` crate).
+Test suite: 211 tests (all green).
 
 ## Constraints
 
@@ -161,6 +155,11 @@ Database: `.squad/station.db` in project directory (no home-dir dependency, no `
 | `is_terminal()` guard in re-init prompt | crossterm raw mode fails in non-TTY (CI, tests); guard preserves backward compat | ✓ Good — all 201 tests pass unchanged |
 | `run_worker_only()` on wizard | Skips Project + OrchestratorConfig pages for add-agents path — no re-entry of existing config | ✓ Good — correct UX for append flow |
 | `KeyAction::Cancel` variant | Explicit Esc cancel path for worker-only wizard; doesn't repurpose Continue | ✓ Good — clean intent, no call-site changes |
+| `Option<Commands>` in clap Cli struct | Bare invocation no longer errors; None arm routes to welcome screen | ✓ Good — clean pattern, zero coupling to existing subcommands |
+| `welcome_content()` as testable private fn | Returns plain string; `print_welcome()` applies color — separates test concerns from terminal state | ✓ Good — 4 tests pass without capturing stdout |
+| Short model aliases for ClaudeCode | sonnet/opus/haiku instead of full version strings — decoupled from version churn | ✓ Good — cleaner UX, stored as-is in squad.yml |
+| `render_diagram()` returns String | Enables unit testing without stdout capture; `print_diagram()` calls it | ✓ Good — 10 diagram tests with full assertion coverage |
+| Workers wrap on 80-char boundary | Prevents diagram overflow on standard terminals | ✓ Good — readable layout for typical agent counts |
 
 ---
-*Last updated: 2026-03-17 after v1.6 milestone started*
+*Last updated: 2026-03-17 after v1.6 milestone*
