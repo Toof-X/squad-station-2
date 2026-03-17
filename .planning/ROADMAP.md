@@ -93,4 +93,4 @@ Plans:
 | 14. Unified Orchestrator Playbook | v1.4 | 2/2 | Complete | 2026-03-10 |
 | 15. Local DB Storage | v1.4 | 2/2 | Complete | 2026-03-10 |
 | 16. TUI Wizard | 2/2 | Complete   | 2026-03-17 | - |
-| 17. Init Flow Integration | 2/2 | Complete   | 2026-03-17 | - |
+| 17. Init Flow Integration | 2/2 | Complete    | 2026-03-17 | - |
