@@ -361,6 +361,11 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
         println!("  Monitor all agents (read-only view):");
         println!("     {}", cyan("squad-station view"));
         println!();
+
+        // Reconcile agent statuses before printing diagram
+        crate::commands::helpers::reconcile_agent_statuses(&pool).await?;
+        let agents = db::agents::list_agents(&pool).await?;
+        crate::commands::diagram::print_diagram(&agents);
     }
 
     Ok(())
