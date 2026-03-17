@@ -79,7 +79,7 @@ Plans:
   3. Choosing abort leaves the existing squad.yml unchanged and exits cleanly
 **Plans:** 2 plans
 Plans:
-- [ ] 17-01-PLAN.md — squad.yml generation from WizardResult, model validation update, worker-only wizard entry point
+- [x] 17-01-PLAN.md — squad.yml generation from WizardResult, model validation update, worker-only wizard entry point
 - [ ] 17-02-PLAN.md — Re-init prompt (overwrite/add agents/abort) and end-to-end verification
 
 ## Progress
@@ -93,4 +93,4 @@ Plans:
 | 14. Unified Orchestrator Playbook | v1.4 | 2/2 | Complete | 2026-03-10 |
 | 15. Local DB Storage | v1.4 | 2/2 | Complete | 2026-03-10 |
 | 16. TUI Wizard | 2/2 | Complete   | 2026-03-17 | - |
-| 17. Init Flow Integration | v1.5 | 0/2 | Not started | - |
+| 17. Init Flow Integration | v1.5 | 1/2 | In progress | - |

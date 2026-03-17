@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Interactive Init Wizard
-status: paused
-stopped_at: Phase 17 context gathered
-last_updated: "2026-03-17T07:19:52.517Z"
-last_activity: "2026-03-17 — Phase 16 Plan 02 Task 1 done: wizard wired into init.rs (28 lines, guard clause)"
+status: in-progress
+stopped_at: "Completed 17-01-PLAN.md"
+last_updated: "2026-03-17T07:40:00.000Z"
+last_activity: "2026-03-17 — Phase 17 Plan 01 complete: squad.yml generation + model validation + run_worker_only"
 progress:
   total_phases: 2
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 90
+  total_plans: 3
+  completed_plans: 3
+  percent: 95
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-17 after v1.5 milestone started)
 
 **Core value:** Routing messages reliably between Orchestrator and agents — stateless CLI, no daemon
-**Current focus:** Phase 16 — TUI Wizard
+**Current focus:** Phase 17 — Init Flow Integration
 
 ## Current Position
 
-Phase: 16 of 17 (TUI Wizard)
-Plan: 2 of 2 in current phase
-Status: In progress (paused at human-verify checkpoint)
-Last activity: 2026-03-17 — Phase 16 Plan 02 Task 1 done: wizard wired into init.rs (28 lines, guard clause)
+Phase: 17 of 17 (Init Flow Integration)
+Plan: 1 of 2 in current phase
+Status: Plan 01 complete, advancing to Plan 02
+Last activity: 2026-03-17 — Phase 17 Plan 01 done: squad.yml generation, model validation expanded, run_worker_only added
 
-Progress: [████████████░░] ~90% (v1.4 complete, Phase 16 Plans 01-02 in progress)
+Progress: [█████████████░] ~95% (v1.4 complete, Phase 16 done, Phase 17 Plan 01 done)
 
 ## Accumulated Context
 
@@ -61,6 +61,11 @@ All decisions logged in PROJECT.md Key Decisions table.
 - Fully-qualified crate::commands::wizard::run() path used — no extra import needed
 - Phase 16 prints result.project, result.sdd, result.orchestrator, result.agents (workers); squad.yml generation deferred to Phase 17
 
+**Phase 17 Plan 01 decisions:**
+- generate_squad_yml builds YAML as a String (not serde_yaml) for deterministic ordering
+- KeyAction::Cancel variant added to wizard for worker-only Esc cancellation
+- worker_only: bool on WizardState rather than threading flag through handle_key
+
 ### Pending Todos
 
 None.
@@ -71,6 +76,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T07:19:52.515Z
-Stopped at: Phase 17 context gathered
-Resume file: .planning/phases/17-init-flow-integration/17-CONTEXT.md
+Last session: 2026-03-17T07:40:00.000Z
+Stopped at: Completed 17-01-PLAN.md
+Resume file: .planning/phases/17-init-flow-integration/17-01-SUMMARY.md
