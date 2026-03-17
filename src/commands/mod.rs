@@ -2,6 +2,7 @@ pub mod agents;
 pub mod clean;
 pub mod close;
 pub mod context;
+pub mod diagram;
 pub mod freeze;
 pub mod helpers;
 pub mod init;
