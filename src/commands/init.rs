@@ -1,9 +1,89 @@
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use owo_colors::OwoColorize;
 use owo_colors::Stream;
 
 use crate::{config, db, tmux};
+
+/// Choice returned by the re-init prompt when squad.yml already exists.
+enum ReinitChoice {
+    Overwrite,
+    AddAgents,
+    Abort,
+}
+
+/// Display a re-init menu and read a single keypress from stdin.
+/// Returns the user's choice. Ctrl+C and Esc both map to Abort.
+fn prompt_reinit() -> anyhow::Result<ReinitChoice> {
+    use crossterm::{event, terminal};
+
+    println!("squad.yml already exists. What would you like to do?");
+    println!("  [o] Overwrite — replace with new wizard config");
+    println!("  [a] Add agents — add more workers to existing config");
+    println!("  [q] Abort — exit without changes");
+
+    terminal::enable_raw_mode()?;
+    let choice = loop {
+        match event::read() {
+            Ok(event::Event::Key(key)) => {
+                if key.kind != crossterm::event::KeyEventKind::Press {
+                    continue;
+                }
+                match key.code {
+                    crossterm::event::KeyCode::Char('o') => break ReinitChoice::Overwrite,
+                    crossterm::event::KeyCode::Char('a') => break ReinitChoice::AddAgents,
+                    crossterm::event::KeyCode::Char('q') => break ReinitChoice::Abort,
+                    crossterm::event::KeyCode::Esc => break ReinitChoice::Abort,
+                    crossterm::event::KeyCode::Char('c')
+                        if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) =>
+                    {
+                        break ReinitChoice::Abort;
+                    }
+                    _ => {} // ignore other keys, loop again
+                }
+            }
+            Ok(_) => {} // non-key events: ignore
+            Err(e) => {
+                terminal::disable_raw_mode()?;
+                return Err(e.into());
+            }
+        }
+    };
+    terminal::disable_raw_mode()?;
+    Ok(choice)
+}
+
+/// Append new worker agent entries to existing squad.yml content.
+/// Preserves all existing content; new entries are appended at the end.
+/// If new_workers is empty, returns the original content unchanged.
+fn append_workers_to_yaml(
+    existing_yaml: &str,
+    new_workers: &[crate::commands::wizard::AgentInput],
+) -> String {
+    let mut result = existing_yaml.to_string();
+    if new_workers.is_empty() {
+        return result;
+    }
+    // Ensure trailing newline before appending
+    if !result.ends_with('\n') {
+        result.push('\n');
+    }
+    for agent in new_workers {
+        result.push_str(&format!("  - provider: {}\n", agent.provider));
+        if !agent.name.is_empty() {
+            result.push_str(&format!("    name: {}\n", agent.name));
+        }
+        result.push_str("    role: worker\n");
+        if let Some(ref model) = agent.model {
+            result.push_str(&format!("    model: {}\n", model));
+        }
+        if let Some(ref desc) = agent.description {
+            result.push_str(&format!("    description: {}\n", desc));
+        }
+    }
+    result
+}
 
 pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     // Check if squad.yml exists; if not, run the interactive wizard
@@ -17,6 +97,43 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
             }
             None => {
                 println!("Init cancelled.");
+                return Ok(());
+            }
+        }
+    } else if std::io::stdin().is_terminal() {
+        // Re-init: squad.yml exists and we have an interactive terminal — prompt user
+        match prompt_reinit()? {
+            ReinitChoice::Overwrite => {
+                match crate::commands::wizard::run().await? {
+                    Some(result) => {
+                        let yaml = generate_squad_yml(&result);
+                        std::fs::write(&config_path, &yaml)?;
+                        println!("Replaced squad.yml for project '{}'", result.project);
+                        // Fall through to load_config below
+                    }
+                    None => {
+                        println!("Init cancelled.");
+                        return Ok(());
+                    }
+                }
+            }
+            ReinitChoice::AddAgents => {
+                match crate::commands::wizard::run_worker_only().await? {
+                    Some(new_workers) => {
+                        let existing = std::fs::read_to_string(&config_path)?;
+                        let updated = append_workers_to_yaml(&existing, &new_workers);
+                        std::fs::write(&config_path, &updated)?;
+                        println!("Added {} worker(s) to squad.yml", new_workers.len());
+                        // Fall through to load_config below
+                    }
+                    None => {
+                        println!("Init cancelled.");
+                        return Ok(());
+                    }
+                }
+            }
+            ReinitChoice::Abort => {
+                println!("Init aborted.");
                 return Ok(());
             }
         }
@@ -420,6 +537,95 @@ fn get_launch_command(agent: &config::AgentConfig) -> String {
 mod tests {
     use super::*;
     use crate::commands::wizard::{AgentInput, SddWorkflow, WizardResult};
+
+    fn make_worker(provider: &str, name: &str) -> AgentInput {
+        AgentInput {
+            name: name.to_string(),
+            role: "worker".to_string(),
+            provider: provider.to_string(),
+            model: None,
+            description: None,
+        }
+    }
+
+    fn make_worker_with_model(provider: &str, name: &str, model: &str) -> AgentInput {
+        AgentInput {
+            name: name.to_string(),
+            role: "worker".to_string(),
+            provider: provider.to_string(),
+            model: Some(model.to_string()),
+            description: None,
+        }
+    }
+
+    #[test]
+    fn test_append_workers_to_yaml_adds_entries() {
+        let existing = "project: test\nagents:\n  - provider: claude-code\n    role: worker\n";
+        let new_workers = vec![
+            make_worker("gemini-cli", "worker2"),
+            make_worker("claude-code", "worker3"),
+        ];
+        let result = append_workers_to_yaml(existing, &new_workers);
+        assert!(result.contains("provider: gemini-cli"), "Must contain new gemini-cli worker");
+        assert!(result.contains("provider: claude-code"), "Must contain existing + new claude-code");
+        // Count occurrences of "provider:" — should be 3 (1 existing + 2 new)
+        let count = result.matches("provider:").count();
+        assert_eq!(count, 3, "Expected 3 provider entries, got {}", count);
+    }
+
+    #[test]
+    fn test_append_workers_to_yaml_preserves_existing() {
+        let existing = "project: my-project\norchestrator:\n  provider: claude-code\n  role: orchestrator\nagents:\n  - provider: gemini-cli\n    role: worker\n";
+        let new_workers = vec![make_worker("claude-code", "new-worker")];
+        let result = append_workers_to_yaml(existing, &new_workers);
+        // Existing content must appear at the start unchanged
+        assert!(
+            result.starts_with(existing),
+            "Result must start with existing YAML content.\nExisting: {}\nResult: {}",
+            existing,
+            result
+        );
+    }
+
+    #[test]
+    fn test_append_workers_to_yaml_empty_workers() {
+        let existing = "project: test\nagents:\n  - provider: claude-code\n    role: worker\n";
+        let result = append_workers_to_yaml(existing, &[]);
+        // Should be identical to input (or at most have trailing newline)
+        assert!(
+            result.starts_with(existing),
+            "Empty workers must not modify existing content"
+        );
+        assert_eq!(
+            result.matches("provider:").count(),
+            1,
+            "Must have exactly 1 provider entry when no workers added"
+        );
+    }
+
+    #[test]
+    fn test_append_workers_to_yaml_includes_name_when_nonempty() {
+        let existing = "agents:\n";
+        let workers = vec![make_worker("claude-code", "my-agent")];
+        let result = append_workers_to_yaml(existing, &workers);
+        assert!(result.contains("name: my-agent"), "Named worker must have name field");
+    }
+
+    #[test]
+    fn test_append_workers_to_yaml_omits_name_when_empty() {
+        let existing = "agents:\n";
+        let workers = vec![make_worker("claude-code", "")];
+        let result = append_workers_to_yaml(existing, &workers);
+        assert!(!result.contains("name:"), "Unnamed worker must not have name field");
+    }
+
+    #[test]
+    fn test_append_workers_to_yaml_includes_model_when_present() {
+        let existing = "agents:\n";
+        let workers = vec![make_worker_with_model("claude-code", "", "claude-sonnet-4-6")];
+        let result = append_workers_to_yaml(existing, &workers);
+        assert!(result.contains("model: claude-sonnet-4-6"), "Model must appear in output");
+    }
 
     fn make_wizard_result() -> WizardResult {
         WizardResult {
