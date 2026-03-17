@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: First-Run Onboarding
-status: ready_to_plan
-stopped_at: Roadmap created; phases 20-21 defined
-last_updated: "2026-03-17"
-last_activity: 2026-03-17 — v1.7 roadmap created; phases 20-21 scoped
+status: planning
+stopped_at: Phase 20 context gathered
+last_updated: "2026-03-17T12:57:54.562Z"
+last_activity: 2026-03-17 — v1.7 roadmap created; phases 20-21 defined
 progress:
   total_phases: 2
   completed_phases: 0
-  total_plans: 4
+  total_plans: 0
   completed_plans: 0
   percent: 0
 ---
@@ -58,6 +58,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17
-Stopped at: Roadmap created for v1.7; ready to plan Phase 20
-Resume file: None
+Last session: 2026-03-17T12:57:54.560Z
+Stopped at: Phase 20 context gathered
+Resume file: .planning/phases/20-tty-safe-welcome-tui-core/20-CONTEXT.md
