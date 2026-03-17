@@ -170,10 +170,27 @@ fn status_color(status: &str) -> Color {
 }
 
 fn draw_ui(frame: &mut Frame, app: &mut App) {
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(frame.area());
+
+    // --- Title bar ---
+    let title = Paragraph::new(Line::from(vec![
+        Span::styled(
+            " SQUAD-STATION ",
+            Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]))
+    .block(Block::default().borders(Borders::ALL));
+    frame.render_widget(title, outer[0]);
+
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
-        .split(frame.size());
+        .split(outer[1]);
 
     // --- Left panel: agent list ---
     let agent_panel_focused = app.focus == FocusPanel::AgentPanel;

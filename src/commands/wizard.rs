@@ -752,7 +752,7 @@ fn render_page(frame: &mut Frame, state: &WizardState) {
             Constraint::Min(10),   // content
             Constraint::Length(2), // footer
         ])
-        .split(frame.size());
+        .split(frame.area());
 
     // Header
     let step = state.current_step();
