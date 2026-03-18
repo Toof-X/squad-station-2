@@ -41,9 +41,13 @@ function install() {
   console.log('  2. Edit \x1b[36msquad.yml\x1b[0m — set project name, providers, models');
   console.log('  3. Run  \x1b[36msquad-station init\x1b[0m — launch tmux sessions\n');
 
-  // Launch welcome TUI only when --tui flag is passed
+  // Launch welcome TUI only when --tui flag is passed and binary supports it
   if (tui && process.stdout.isTTY) {
-    spawnSync(destPath, ['--tui'], { stdio: 'inherit' });
+    var help = spawnSync(destPath, ['--help'], { encoding: 'utf8' });
+    var helpText = (help.stdout || '') + (help.stderr || '');
+    if (helpText.indexOf('--tui') !== -1) {
+      spawnSync(destPath, ['--tui'], { stdio: 'inherit' });
+    }
   }
 }
 
