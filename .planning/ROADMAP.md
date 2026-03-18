@@ -99,11 +99,11 @@ Plans:
   2. After `npm install -g squad-station` in an interactive terminal, the install script launches `squad-station` automatically so the user sees the welcome TUI without a separate invocation
   3. After running the curl installer in an interactive terminal, `squad-station` launches automatically at the end of the install script
   4. Running either installer in a non-interactive environment (CI pipeline, pipe, sudo) completes silently without attempting to launch the binary or enter raw mode
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 21-01: Quick guide TUI page (second state in welcome state machine)
-- [ ] 21-02: TTY-guarded auto-launch in npm postinstall and curl installer
+- [ ] 21-01-PLAN.md — Quick guide TUI page (WelcomePage enum, draw_guide, guide routing/content pure functions, updated tests)
+- [ ] 21-02-PLAN.md — TTY-guarded auto-launch in npm install and curl installer
 
 ## Progress
 
