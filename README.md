@@ -6,26 +6,22 @@ Squad Station routes messages between an AI orchestrator and N agents running in
 
 ## Installation
 
-### npm (recommended)
+### npx (recommended)
 
 ```bash
-npm install -g squad-station
+# Install binary and scaffold project files
+npx squad-station-2 install
+
+# Same, but launch the interactive welcome TUI after install
+npx squad-station-2 install --tui
 ```
 
-Requires Node.js 14+. Postinstall downloads the native binary for your platform and launches the welcome screen in interactive terminals.
-
-### curl
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/thientranhung/squad-station/master/install.sh | sh
-```
-
-Installs to `/usr/local/bin` (falls back to `~/.local/bin`). Supports macOS and Linux. Launches the welcome screen automatically after install in interactive terminals.
+Requires Node.js 14+. Downloads the native binary for your platform to `/usr/local/bin` (falls back to `~/.local/bin`) and scaffolds `.squad/` project files.
 
 ### Build from source
 
 ```bash
-git clone https://github.com/thientranhung/squad-station.git
+git clone https://github.com/Toof-X/squad-station.git
 cd squad-station
 cargo build --release
 # Binary: target/release/squad-station
