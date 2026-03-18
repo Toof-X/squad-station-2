@@ -24,10 +24,6 @@ function install() {
   var force = args.includes('--force') || args.includes('-f');
   var tui = args.includes('--tui');
 
-  console.log('\n\x1b[32m══════════════════════════════════\x1b[0m');
-  console.log('  \x1b[1mSquad Station Install\x1b[0m');
-  console.log('\x1b[32m══════════════════════════════════\x1b[0m\n');
-
   // Step 1: Install binary
   var destPath = installBinary();
 
@@ -39,7 +35,11 @@ function install() {
   console.log('  1. Copy an example config:');
   console.log('     \x1b[36mcp .squad/examples/orchestrator-claude.yml squad.yml\x1b[0m');
   console.log('  2. Edit \x1b[36msquad.yml\x1b[0m — set project name, providers, models');
-  console.log('  3. Run  \x1b[36msquad-station init\x1b[0m — launch tmux sessions\n');
+  if (tui) {
+    console.log('  3. Run  \x1b[36msquad-station --tui\x1b[0m — explore the welcome screen, or \x1b[36msquad-station init\x1b[0m to launch tmux sessions\n');
+  } else {
+    console.log('  3. Run  \x1b[36msquad-station init\x1b[0m — launch tmux sessions\n');
+  }
 
   // Launch welcome TUI only when --tui flag is passed and binary supports it
   if (tui && process.stdout.isTTY) {
