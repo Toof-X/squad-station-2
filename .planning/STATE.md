@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: First-Run Onboarding
 status: executing
-stopped_at: Completed 20-02-PLAN.md
-last_updated: "2026-03-17T13:56:46.831Z"
+stopped_at: Phase 21 context gathered
+last_updated: "2026-03-18T02:02:43.711Z"
 last_activity: 2026-03-17 — Phase 20, Plan 01 complete (welcome TUI + ratatui 0.30 upgrade)
 progress:
   total_phases: 2
@@ -64,6 +64,6 @@ None — all Phase 20, Plan 01 blockers resolved.
 
 ## Session Continuity
 
-Last session: 2026-03-17T13:56:46.829Z
-Stopped at: Completed 20-02-PLAN.md
-Resume file: None
+Last session: 2026-03-18T02:02:43.709Z
+Stopped at: Phase 21 context gathered
+Resume file: .planning/phases/21-quick-guide-and-install-flow/21-CONTEXT.md
