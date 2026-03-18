@@ -24,7 +24,8 @@ async fn run(cli: cli::Cli) -> Result<()> {
         None => {
             use std::io::IsTerminal;
             use std::path::PathBuf;
-            if std::io::stdout().is_terminal() {
+            if cli.tui && std::io::stdout().is_terminal() {
+                // --tui: interactive welcome screen with countdown and auto-launch
                 let has_config = std::path::Path::new("squad.yml").exists();
                 let action = commands::welcome::run_welcome_tui(has_config).await?;
                 match action {
@@ -34,11 +35,10 @@ async fn run(cli: cli::Cli) -> Result<()> {
                     Some(commands::welcome::WelcomeAction::LaunchDashboard) => {
                         commands::ui::run().await?;
                     }
-                    _ => {
-                        // Quit or timeout — return silently to shell
-                    }
+                    _ => {}
                 }
             } else {
+                // Default: static welcome text, prompt user to create squad.yml
                 commands::welcome::print_welcome();
             }
             Ok(())

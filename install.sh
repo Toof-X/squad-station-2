@@ -68,5 +68,5 @@ fi
 
 # Auto-launch welcome TUI in interactive terminals
 if [ -t 1 ]; then
-  exec "${INSTALL_DIR}/squad-station"
+  exec "${INSTALL_DIR}/squad-station" --tui
 fi

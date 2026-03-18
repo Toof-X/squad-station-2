@@ -9,6 +9,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub json: bool,
 
+    /// Launch interactive welcome TUI (auto-launched by installer in TTY environments)
+    #[arg(long)]
+    pub tui: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }

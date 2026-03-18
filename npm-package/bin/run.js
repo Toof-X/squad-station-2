@@ -42,7 +42,7 @@ function install() {
 
   // Auto-launch welcome TUI in interactive terminals
   if (process.stdout.isTTY) {
-    spawnSync(destPath, [], { stdio: 'inherit' });
+    spawnSync(destPath, ['--tui'], { stdio: 'inherit' });
   }
 }
 
