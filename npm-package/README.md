@@ -8,10 +8,10 @@ Squad Station routes messages between an AI orchestrator and N agents running in
 
 ```bash
 # Install binary and scaffold project files
-npx squad-station-2 install
+npx squad-station-2@latest install
 
 # Same, but launch the interactive welcome TUI after install
-npx squad-station-2 install --tui
+npx squad-station-2@latest install --tui
 ```
 
 This downloads the `squad-station` binary to your system and scaffolds project files:
@@ -90,15 +90,11 @@ agents:
 - tmux
 - Node.js 14+ (for `npx install` only)
 
-## Alternative Install
+## Build from source
 
 ```bash
-# curl
-curl -fsSL https://raw.githubusercontent.com/thientranhung/squad-station/master/install.sh | sh
-
-# From source
-git clone https://github.com/thientranhung/squad-station.git
-cd squad-station && cargo build --release
+git clone https://github.com/Toof-X/squad-station-2.git
+cd squad-station-2 && cargo build --release
 ```
 
 ## License
