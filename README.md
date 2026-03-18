@@ -12,7 +12,7 @@ Squad Station routes messages between an AI orchestrator and N agents running in
 npm install -g squad-station
 ```
 
-Requires Node.js 14+. Postinstall downloads the native binary for your platform.
+Requires Node.js 14+. Postinstall downloads the native binary for your platform and launches the welcome screen in interactive terminals.
 
 ### curl
 
@@ -20,7 +20,7 @@ Requires Node.js 14+. Postinstall downloads the native binary for your platform.
 curl -fsSL https://raw.githubusercontent.com/thientranhung/squad-station/master/install.sh | sh
 ```
 
-Installs to `/usr/local/bin` (falls back to `~/.local/bin`). Supports macOS and Linux.
+Installs to `/usr/local/bin` (falls back to `~/.local/bin`). Supports macOS and Linux. Launches the welcome screen automatically after install in interactive terminals.
 
 ### Build from source
 
@@ -33,45 +33,60 @@ cargo build --release
 
 Requires Rust toolchain. See [Cargo docs](https://doc.rust-lang.org/cargo/getting-started/installation.html).
 
-## Quickstart
+## First Run
 
-**Step 1 — Create `squad.yml`:**
+Running `squad-station` with no arguments opens an interactive welcome screen:
 
-```yaml
-project: my-app
-orchestrator:
-  tool: claude-code
-  role: orchestrator
-agents:
-  - name: backend
-    tool: gemini
-    role: worker
+```
+SQUAD-STATION
+v0.x.x
+
+Multi-agent orchestration for AI coding
+
+  Commands:
+    init        Initialize squad from config
+    send        Send a task to an agent
+    ...
+
+  Ok to proceed? (y)
+● ○  Tab: Guide  Q: Quit  25s
 ```
 
-**Step 2 — Initialize:**
+- **y / Enter** — launch the init wizard (or open the dashboard if already configured)
+- **Tab** — open the Quick Guide
+- **Q / Esc** — exit
+- Timeout — exits silently with no action
+
+The title scales with terminal width: full pixel font on wide terminals, compact on narrow.
+
+## Quickstart
+
+**Step 1 — Run the init wizard:**
 
 ```bash
 squad-station init
 ```
 
-Registers agents from squad.yml and opens their tmux sessions.
+The interactive TUI wizard collects your project name, SDD workflow, orchestrator config, and worker agent configs. It generates `squad.yml` and registers all agents automatically.
 
-**Step 3 — Send a task:**
+**Step 2 — Send a task:**
 
 ```bash
-squad-station send my-app-gemini-backend --body "Implement the /api/health endpoint"
+squad-station send my-app-claude-code-backend --body "Implement the /api/health endpoint"
 ```
 
-**Step 4 — Signal completion** (run from inside the agent's tmux session or hook):
+**Step 3 — Signal completion** (from inside the agent's tmux session via hook):
 
 ```bash
-squad-station signal my-app-gemini-backend
+squad-station signal $TMUX_PANE
 ```
 
-**Step 5 — List pending tasks:**
+**Step 4 — Monitor your fleet:**
 
 ```bash
-squad-station list
+squad-station ui      # TUI dashboard
+squad-station status  # text overview
+squad-station list    # message queue
 ```
 
 See [docs/PLAYBOOK.md](docs/PLAYBOOK.md) for the complete workflow guide.
@@ -80,10 +95,18 @@ See [docs/PLAYBOOK.md](docs/PLAYBOOK.md) for the complete workflow guide.
 
 Squad Station is a stateless Rust CLI. There is no background daemon. Every command opens the SQLite database, reads or writes, and exits.
 
-- `agents` table — registered agents with `tool` (e.g. `claude-code`, `gemini`), role, command, status
+- `agents` table — registered agents with `tool` (e.g. `claude-code`, `gemini-cli`), role, model, description, and status
 - `messages` table — tasks routed to agents with bidirectional `from_agent`/`to_agent` fields, priority (urgent > high > normal), and a full status lifecycle: `pending → processing → done` (or `failed`)
-- tmux sessions — each agent runs in its own named session; `send-keys -l` prevents shell injection
-- Hooks in `hooks/` detect task completion per tool and call `squad-station signal`
+- tmux sessions — each agent runs in its own named session; `send-keys -l` prevents shell injection; multiline bodies use `load-buffer`/`paste-buffer`
+- Inline hooks — `squad-station signal $TMUX_PANE` registered directly in provider stop/completion hooks; no external scripts required
+
+## Providers
+
+| Tool | Provider key | Notes |
+|------|-------------|-------|
+| Claude Code | `claude-code` | Hook: Stop event |
+| Gemini CLI | `gemini-cli` | Hook: AfterAgent event |
+| Any IDE (DB-only) | `antigravity` | Skips tmux — orchestrator reads DB directly |
 
 ## Requirements
 
