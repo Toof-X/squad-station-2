@@ -32,9 +32,18 @@ pub enum WelcomeAction {
     LaunchInit,
     LaunchDashboard,
     Quit,
+    ShowGuide,
+    ShowTitle,
 }
 
-/// Determine the action for a given keypress in the welcome TUI.
+/// Current page in the welcome TUI state machine.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WelcomePage {
+    Title,
+    Guide,
+}
+
+/// Determine the action for a given keypress in the welcome TUI (title page).
 /// Returns None if the key should be ignored (countdown continues).
 pub fn routing_action(key: KeyCode, has_config: bool) -> Option<WelcomeAction> {
     match key {
@@ -46,6 +55,17 @@ pub fn routing_action(key: KeyCode, has_config: bool) -> Option<WelcomeAction> {
             }
         }
         KeyCode::Char('q') | KeyCode::Esc => Some(WelcomeAction::Quit),
+        KeyCode::Tab | KeyCode::Right => Some(WelcomeAction::ShowGuide),
+        _ => None,
+    }
+}
+
+/// Determine the action for a given keypress on the guide page.
+/// Returns None if the key should be ignored.
+pub fn guide_routing_action(key: KeyCode) -> Option<WelcomeAction> {
+    match key {
+        KeyCode::Tab | KeyCode::Left => Some(WelcomeAction::ShowTitle),
+        KeyCode::Char('q') | KeyCode::Esc => Some(WelcomeAction::Quit),
         _ => None,
     }
 }
@@ -56,10 +76,33 @@ pub fn routing_action(key: KeyCode, has_config: bool) -> Option<WelcomeAction> {
 
 pub fn hint_bar_text(has_config: bool, remaining_secs: u64) -> String {
     if has_config {
-        format!("Enter: Open dashboard  Q: Quit  auto-exit {}s", remaining_secs)
+        format!("\u{25cf} \u{25cb}  Enter: Open dashboard  Tab: Guide  Q: Quit  auto-exit {}s", remaining_secs)
     } else {
-        format!("Enter: Set up  Q: Quit  auto-exit {}s", remaining_secs)
+        format!("\u{25cf} \u{25cb}  Enter: Set up  Tab: Guide  Q: Quit  auto-exit {}s", remaining_secs)
     }
+}
+
+/// Hint bar text for the guide page (dot indicator shows second page active).
+pub fn guide_hint_bar_text() -> String {
+    "\u{25cb} \u{25cf}  Tab/\u{2190}: Back  Q: Quit".to_string()
+}
+
+/// Multi-line content for the guide page: concept summary + 3 numbered steps + footer.
+pub fn guide_content() -> String {
+    let mut out = String::new();
+    out.push_str("One orchestrator AI coordinates N worker agents. Each agent runs in its own tmux session.");
+    out.push_str("\n\n");
+    out.push_str("  1. Set up your squad\n");
+    out.push_str("     Run squad-station init to register your agents.\n");
+    out.push_str("\n");
+    out.push_str("  2. Send tasks to agents\n");
+    out.push_str("     Use squad-station send to assign work to any agent by name.\n");
+    out.push_str("\n");
+    out.push_str("  3. Agents signal completion automatically\n");
+    out.push_str("     Hook scripts notify squad-station when a task finishes.\n");
+    out.push_str("\n");
+    out.push_str("Run squad-station --help for all commands");
+    out
 }
 
 fn commands_list() -> String {
@@ -352,30 +395,30 @@ mod tests {
         }
     }
 
-    // --- New tests for TUI pure functions ---
+    // --- Updated hint_bar_text tests (now include dot indicator and Tab: Guide) ---
 
     #[test]
     fn test_hint_bar_text_no_config() {
-        assert_eq!(
-            hint_bar_text(false, 5),
-            "Enter: Set up  Q: Quit  auto-exit 5s"
-        );
+        let text = hint_bar_text(false, 5);
+        assert!(text.contains("Tab: Guide"), "Expected 'Tab: Guide' in hint bar");
+        assert!(text.contains("Enter: Set up"), "Expected 'Enter: Set up' in hint bar");
+        assert!(text.contains("auto-exit 5s"), "Expected 'auto-exit 5s' in hint bar");
     }
 
     #[test]
     fn test_hint_bar_text_with_config() {
-        assert_eq!(
-            hint_bar_text(true, 3),
-            "Enter: Open dashboard  Q: Quit  auto-exit 3s"
-        );
+        let text = hint_bar_text(true, 3);
+        assert!(text.contains("Tab: Guide"), "Expected 'Tab: Guide' in hint bar");
+        assert!(text.contains("Enter: Open dashboard"), "Expected 'Enter: Open dashboard' in hint bar");
+        assert!(text.contains("auto-exit 3s"), "Expected 'auto-exit 3s' in hint bar");
     }
 
     #[test]
     fn test_hint_bar_text_one_second() {
-        assert_eq!(
-            hint_bar_text(false, 1),
-            "Enter: Set up  Q: Quit  auto-exit 1s"
-        );
+        let text = hint_bar_text(false, 1);
+        assert!(text.contains("Tab: Guide"), "Expected 'Tab: Guide' in hint bar");
+        assert!(text.contains("Enter: Set up"), "Expected 'Enter: Set up' in hint bar");
+        assert!(text.contains("auto-exit 1s"), "Expected 'auto-exit 1s' in hint bar");
     }
 
     #[test]
@@ -392,5 +435,98 @@ mod tests {
                 cmd
             );
         }
+    }
+
+    // --- New routing_action tests for ShowGuide ---
+
+    #[test]
+    fn test_routing_action_tab_opens_guide() {
+        assert_eq!(
+            routing_action(KeyCode::Tab, false),
+            Some(WelcomeAction::ShowGuide)
+        );
+    }
+
+    #[test]
+    fn test_routing_action_right_opens_guide() {
+        assert_eq!(
+            routing_action(KeyCode::Right, false),
+            Some(WelcomeAction::ShowGuide)
+        );
+    }
+
+    #[test]
+    fn test_routing_action_left_noop() {
+        assert_eq!(routing_action(KeyCode::Left, false), None);
+    }
+
+    // --- New guide_routing_action tests ---
+
+    #[test]
+    fn test_guide_routing_tab_returns_title() {
+        assert_eq!(
+            guide_routing_action(KeyCode::Tab),
+            Some(WelcomeAction::ShowTitle)
+        );
+    }
+
+    #[test]
+    fn test_guide_routing_left_returns_title() {
+        assert_eq!(
+            guide_routing_action(KeyCode::Left),
+            Some(WelcomeAction::ShowTitle)
+        );
+    }
+
+    #[test]
+    fn test_guide_routing_quit() {
+        assert_eq!(
+            guide_routing_action(KeyCode::Char('q')),
+            Some(WelcomeAction::Quit)
+        );
+    }
+
+    #[test]
+    fn test_guide_routing_esc_quit() {
+        assert_eq!(
+            guide_routing_action(KeyCode::Esc),
+            Some(WelcomeAction::Quit)
+        );
+    }
+
+    #[test]
+    fn test_guide_routing_enter_noop() {
+        assert_eq!(guide_routing_action(KeyCode::Enter), None);
+    }
+
+    // --- guide_hint_bar_text tests ---
+
+    #[test]
+    fn test_guide_hint_bar_text() {
+        let text = guide_hint_bar_text();
+        assert!(text.contains("Tab"), "Expected 'Tab' in guide hint bar");
+        assert!(text.contains("Back"), "Expected 'Back' in guide hint bar");
+        assert!(text.contains("Q: Quit"), "Expected 'Q: Quit' in guide hint bar");
+    }
+
+    // --- guide_content tests ---
+
+    #[test]
+    fn test_guide_content() {
+        let content = guide_content();
+        assert!(content.contains("orchestrator"), "Expected 'orchestrator' in guide content");
+        assert!(content.contains("tmux"), "Expected 'tmux' in guide content");
+        assert!(content.contains("Set up your squad"), "Expected 'Set up your squad' in guide content");
+        assert!(content.contains("Send tasks"), "Expected 'Send tasks' in guide content");
+        assert!(content.contains("signal completion"), "Expected 'signal completion' in guide content");
+        assert!(content.contains("squad-station --help"), "Expected 'squad-station --help' in guide content");
+    }
+
+    // --- hint_bar_text includes Tab: Guide ---
+
+    #[test]
+    fn test_hint_bar_text_includes_tab_guide() {
+        let text = hint_bar_text(false, 5);
+        assert!(text.contains("Tab: Guide"), "Expected 'Tab: Guide' in hint bar text");
     }
 }
