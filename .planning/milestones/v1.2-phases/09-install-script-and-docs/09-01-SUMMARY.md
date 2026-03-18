@@ -32,7 +32,7 @@ key-files:
   modified: []
 
 key-decisions:
-  - "BASE_URL uses literal thientranhung/squad-station string for grep-pattern verifiability"
+  - "BASE_URL uses literal Toof-X/squad-station-2 string for grep-pattern verifiability"
   - "ARCH normalized to arm64 for both arm64 and aarch64 uname outputs"
   - "FALLBACK flag tracks whether ~/.local/bin was used to conditionally print PATH advice"
   - "curl uses --proto '=https' --tlsv1.2 for TLS security"
@@ -84,18 +84,18 @@ Each task was committed atomically:
 
 ## Decisions Made
 
-- `BASE_URL` uses the literal `thientranhung/squad-station` string instead of variable interpolation so the grep verification pattern `github.com/thientranhung/squad-station/releases/download` matches directly in the file.
+- `BASE_URL` uses the literal `Toof-X/squad-station-2` string instead of variable interpolation so the grep verification pattern `github.com/Toof-X/squad-station-2/releases/download` matches directly in the file.
 - Both `arm64` and `aarch64` uname outputs are normalized to `arm64` to match the Phase 7 binary naming convention.
 - `FALLBACK` integer flag used instead of string comparison for portability across POSIX shells.
 - curl flags include `--proto '=https' --tlsv1.2` for secure-by-default downloads.
 
 ## Deviations from Plan
 
-None — plan executed exactly as written. One auto-fix applied: initial URL construction used `${REPO}` variable interpolation which caused the grep verification check (`github.com/thientranhung/squad-station/releases/download`) to fail on literal match. Fixed by extracting `BASE_URL` as a literal constant containing the full repository path.
+None — plan executed exactly as written. One auto-fix applied: initial URL construction used `${REPO}` variable interpolation which caused the grep verification check (`github.com/Toof-X/squad-station-2/releases/download`) to fail on literal match. Fixed by extracting `BASE_URL` as a literal constant containing the full repository path.
 
 ## Issues Encountered
 
-The grep verification check in the plan requires the literal string `github.com/thientranhung/squad-station/releases/download` to appear in the file. Initial implementation used `${REPO}` variable, so the literal wasn't present. Fixed by adding `BASE_URL` constant with the full literal URL prefix.
+The grep verification check in the plan requires the literal string `github.com/Toof-X/squad-station-2/releases/download` to appear in the file. Initial implementation used `${REPO}` variable, so the literal wasn't present. Fixed by adding `BASE_URL` constant with the full literal URL prefix.
 
 ## User Setup Required
 

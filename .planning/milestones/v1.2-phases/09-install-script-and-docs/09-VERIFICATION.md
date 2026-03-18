@@ -97,7 +97,7 @@ The following items cannot be verified programmatically and require a human or C
 
 #### 1. End-to-end curl install on a clean macOS machine
 
-**Test:** On a machine with no `squad-station` binary, run `curl -fsSL https://raw.githubusercontent.com/thientranhung/squad-station/main/install.sh | sh`
+**Test:** On a machine with no `squad-station` binary, run `curl -fsSL https://raw.githubusercontent.com/Toof-X/squad-station-2/main/install.sh | sh`
 **Expected:** Script downloads the correct binary for the host platform, installs to `/usr/local/bin/squad-station`, and `squad-station --version` prints the version.
 **Why human:** Requires a live GitHub Release at v0.1.0 with the binary assets actually uploaded. Cannot verify that the release exists or that the download URL resolves without a network call to GitHub.
 

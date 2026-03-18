@@ -54,7 +54,7 @@ human_verification:
 |------|----|-----|--------|---------|
 | package.json | bin/run.js | `"bin": {"squad-station": "./bin/run.js"}` | VERIFIED | Exact pattern present in package.json line 10 |
 | package.json | scripts/postinstall.js | `"scripts": {"postinstall": "node scripts/postinstall.js"}` | VERIFIED | Exact pattern present in package.json line 13 |
-| scripts/postinstall.js | GitHub Releases download URL | `https.get` with `github.com/thientranhung/squad-station/releases/download/v{VERSION}/{assetName}` | VERIFIED | Line 53 constructs URL; downloadFile called with redirect following (lines 27-48) |
+| scripts/postinstall.js | GitHub Releases download URL | `https.get` with `github.com/Toof-X/squad-station-2/releases/download/v{VERSION}/{assetName}` | VERIFIED | Line 53 constructs URL; downloadFile called with redirect following (lines 27-48) |
 | bin/run.js | bin/squad-station | `spawnSync(binaryPath, ...)` where `binaryPath = path.join(__dirname, 'squad-station')` | VERIFIED | Lines 7, 15 confirmed |
 | scripts/postinstall.js | bin/squad-station (chmod) | `fs.chmodSync(destPath, 0o755)` | VERIFIED | Line 62 confirmed |
 
