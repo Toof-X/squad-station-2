@@ -11,7 +11,7 @@ You COORDINATE agents on behalf of the user via `squad-station send`.
 
 Only proceed after reading. The playbook defines your workflow.
 
-- [ ] Project root: `/Users/tranthien/Documents/2.DEV/2.PRIVATE/squad-station`
+- [ ] Project root: `/Users/tranquoctoan/Workspaces/Contributes/squad-station`
 - [ ] Verify agents are alive: `squad-station agents`
 
 ## Completion Notification (Automatic)

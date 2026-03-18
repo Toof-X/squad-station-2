@@ -20,86 +20,201 @@ pub fn render_diagram(agents: &[Agent]) -> String {
     let mut out = String::new();
     out.push_str("\nAgent Fleet:\n");
 
-    // Render orchestrator box(es)
-    for orch in &orchestrators {
-        let box_lines = render_agent_box(orch, true);
-        for line in &box_lines {
-            out.push_str(line);
-            out.push('\n');
+    if orchestrators.is_empty() {
+        for w in &workers {
+            for line in render_agent_box(w, false) {
+                out.push_str(&line);
+                out.push('\n');
+            }
         }
-    }
-
-    if workers.is_empty() {
         return out;
     }
 
-    // Render workers in rows of up to ~80 chars width, with arrow rows above each row
     const MAX_ROW_WIDTH: usize = 80;
     const GAP: usize = 2;
 
-    // Pre-render all worker boxes
-    let worker_boxes: Vec<Vec<String>> = workers.iter().map(|w| render_agent_box(w, false)).collect();
+    for orch in &orchestrators {
+        let mut orch_box = render_agent_box(orch, true);
+        let orch_width = visible_len(&orch_box[0]);
+        let orch_center = orch_width / 2;
 
-    // Group boxes into rows
-    let mut rows: Vec<Vec<&Vec<String>>> = Vec::new();
-    let mut current_row: Vec<&Vec<String>> = Vec::new();
-    let mut current_width: usize = 0;
-
-    for box_lines in &worker_boxes {
-        let box_width = box_lines.first().map(|l| visible_len(l)).unwrap_or(0);
-        let needed = if current_row.is_empty() {
-            box_width
-        } else {
-            current_width + GAP + box_width
-        };
-
-        if !current_row.is_empty() && needed > MAX_ROW_WIDTH {
-            rows.push(current_row);
-            current_row = Vec::new();
-            current_width = 0;
+        if !workers.is_empty() {
+            // Replace the center char of the bottom border with ┬ to show the stem exit point
+            let last = orch_box.len() - 1;
+            orch_box[last] = replace_char_at(&orch_box[last], orch_center, '┬');
         }
 
-        current_row.push(box_lines);
-        current_width = if current_row.len() == 1 {
-            box_width
-        } else {
-            current_width + GAP + box_width
-        };
-    }
-    if !current_row.is_empty() {
-        rows.push(current_row);
-    }
-
-    for row in &rows {
-        // Arrow rows
-        let arrow_lines = render_arrow_row(row, GAP);
-        for line in &arrow_lines {
+        for line in &orch_box {
             out.push_str(line);
             out.push('\n');
         }
 
-        // Worker boxes side by side
-        let max_height = row.iter().map(|b| b.len()).max().unwrap_or(0);
-        for line_idx in 0..max_height {
-            let mut row_str = String::new();
-            for (col_idx, box_lines) in row.iter().enumerate() {
-                if col_idx > 0 {
-                    row_str.push_str(&" ".repeat(GAP));
-                }
-                if line_idx < box_lines.len() {
-                    row_str.push_str(&box_lines[line_idx]);
-                } else {
-                    // Pad with spaces to maintain alignment
-                    let box_width = box_lines.first().map(|l| visible_len(l)).unwrap_or(0);
-                    row_str.push_str(&" ".repeat(box_width));
-                }
+        if workers.is_empty() {
+            continue;
+        }
+
+        // Pre-render worker boxes
+        let worker_boxes: Vec<Vec<String>> = workers.iter().map(|w| render_agent_box(w, false)).collect();
+
+        // Group boxes into rows
+        let mut rows: Vec<Vec<usize>> = Vec::new();
+        let mut current_row: Vec<usize> = Vec::new();
+        let mut current_width: usize = 0;
+
+        for (idx, box_lines) in worker_boxes.iter().enumerate() {
+            let box_width = visible_len(&box_lines[0]);
+            let needed = if current_row.is_empty() { box_width } else { current_width + GAP + box_width };
+            if !current_row.is_empty() && needed > MAX_ROW_WIDTH {
+                rows.push(current_row);
+                current_row = Vec::new();
+                current_width = 0;
             }
-            out.push_str(&row_str);
-            out.push('\n');
+            current_row.push(idx);
+            current_width = needed;
+        }
+        if !current_row.is_empty() {
+            rows.push(current_row);
+        }
+
+        for (row_num, row_indices) in rows.iter().enumerate() {
+            // Compute worker midpoints within this row
+            let mut x_offset = 0usize;
+            let mut worker_mids: Vec<usize> = Vec::new();
+            for &idx in row_indices {
+                let bw = visible_len(&worker_boxes[idx][0]);
+                worker_mids.push(x_offset + bw / 2);
+                x_offset += bw + GAP;
+            }
+
+            if row_num == 0 {
+                // First row: full connector from orchestrator stem to worker midpoints
+                for line in render_connector(orch_center, &worker_mids) {
+                    out.push_str(&line);
+                    out.push('\n');
+                }
+            } else {
+                // Subsequent rows: simple ▼ directly above each worker box
+                let canvas = worker_mids.last().copied().unwrap_or(0) + 1;
+                let mut arrow_line: Vec<char> = vec![' '; canvas];
+                for &m in &worker_mids {
+                    arrow_line[m] = '▼';
+                }
+                out.push_str(&arrow_line.iter().collect::<String>());
+                out.push('\n');
+            }
+
+            // Worker boxes side by side
+            let row_boxes: Vec<&Vec<String>> = row_indices.iter().map(|&i| &worker_boxes[i]).collect();
+            let max_height = row_boxes.iter().map(|b| b.len()).max().unwrap_or(0);
+            for line_idx in 0..max_height {
+                let mut row_str = String::new();
+                for (col_idx, box_lines) in row_boxes.iter().enumerate() {
+                    if col_idx > 0 {
+                        row_str.push_str(&" ".repeat(GAP));
+                    }
+                    if line_idx < box_lines.len() {
+                        row_str.push_str(&box_lines[line_idx]);
+                    } else {
+                        let bw = visible_len(&box_lines[0]);
+                        row_str.push_str(&" ".repeat(bw));
+                    }
+                }
+                out.push_str(&row_str);
+                out.push('\n');
+            }
         }
     }
 
     out
+}
+
+/// Replace the char at visible position `pos` in a plain (no-ANSI) string.
+fn replace_char_at(s: &str, pos: usize, replacement: char) -> String {
+    s.chars()
+        .enumerate()
+        .map(|(i, c)| if i == pos { replacement } else { c })
+        .collect()
+}
+
+/// Render connector lines from `orch_center` (x-position of orchestrator stem) down
+/// to each worker midpoint in `worker_mids`.
+///
+/// Output lines (no trailing newline):
+///   line1: │ at orch_center
+///   line2: horizontal bar with proper box-drawing chars
+///   line3: │ at each worker_mid
+///   line4: ▼ at each worker_mid
+fn render_connector(orch_center: usize, worker_mids: &[usize]) -> Vec<String> {
+    if worker_mids.is_empty() {
+        return vec![];
+    }
+
+    let left_most = orch_center.min(*worker_mids.first().unwrap());
+    let right_most = orch_center.max(*worker_mids.last().unwrap());
+    let canvas = right_most + 1;
+
+    // Special case: single worker exactly at orch_center → straight line down
+    if worker_mids.len() == 1 && worker_mids[0] == orch_center {
+        let mut l1 = vec![' '; canvas];
+        let mut l2 = vec![' '; canvas];
+        l1[orch_center] = '│';
+        l2[orch_center] = '▼';
+        return vec![l1.iter().collect(), l2.iter().collect()];
+    }
+
+    // Line 1: │ descending from orchestrator stem
+    let mut line1: Vec<char> = vec![' '; canvas];
+    line1[orch_center] = '│';
+
+    // Line 2: horizontal bar connecting orch_center to all worker_mids
+    let mut line2: Vec<char> = vec![' '; canvas];
+    for x in left_most..=right_most {
+        let is_left = x == left_most;
+        let is_right = x == right_most;
+        let up = x == orch_center;
+        let down = worker_mids.contains(&x);
+        let left = !is_left;
+        let right = !is_right;
+        line2[x] = box_char(up, down, left, right);
+    }
+
+    // Line 3: │ at each worker midpoint
+    let mut line3: Vec<char> = vec![' '; canvas];
+    for &m in worker_mids {
+        line3[m] = '│';
+    }
+
+    // Line 4: ▼ at each worker midpoint
+    let mut line4: Vec<char> = vec![' '; canvas];
+    for &m in worker_mids {
+        line4[m] = '▼';
+    }
+
+    vec![
+        line1.iter().collect(),
+        line2.iter().collect(),
+        line3.iter().collect(),
+        line4.iter().collect(),
+    ]
+}
+
+/// Select the correct box-drawing character given which directions connect.
+fn box_char(up: bool, down: bool, left: bool, right: bool) -> char {
+    match (up, down, left, right) {
+        (false, false, _, _) => '─',
+        (false, true, false, true) => '┌',
+        (false, true, true, false) => '┐',
+        (false, true, true, true) => '┬',
+        (false, true, false, false) => '│',
+        (true, false, false, true) => '└',
+        (true, false, true, false) => '┘',
+        (true, false, true, true) => '┴',
+        (true, false, false, false) => '│',
+        (true, true, false, true) => '├',
+        (true, true, true, false) => '┤',
+        (true, true, true, true) => '┼',
+        (true, true, false, false) => '│',
+    }
 }
 
 /// Compute the visible (non-ANSI) length of a string.
@@ -194,43 +309,6 @@ fn render_agent_box(agent: &Agent, is_orchestrator: bool) -> Vec<String> {
     lines
 }
 
-/// Render the arrow rows connecting orchestrator to a row of workers.
-fn render_arrow_row(worker_boxes: &[&Vec<String>], gap: usize) -> Vec<String> {
-    // Compute the x-offset midpoint for each box within the combined row
-    let mut midpoints: Vec<usize> = Vec::new();
-    let mut x_offset = 0;
-    for box_lines in worker_boxes {
-        let box_width = box_lines.first().map(|l| visible_len(l)).unwrap_or(0);
-        midpoints.push(x_offset + box_width / 2);
-        x_offset += box_width + gap;
-    }
-
-    let total_width = x_offset.saturating_sub(gap);
-
-    // Line 1: │ at each midpoint
-    let mut line1 = vec![b' '; total_width];
-    // Line 2: ▼ at each midpoint
-    let mut line2 = vec![b' '; total_width];
-
-    for &mid in &midpoints {
-        if mid < line1.len() {
-            line1[mid] = b'|';
-            line2[mid] = b'V';
-        }
-    }
-
-    // Convert to strings with Unicode chars substituted
-    let s1: String = line1
-        .iter()
-        .map(|&c| if c == b'|' { '│' } else { ' ' })
-        .collect();
-    let s2: String = line2
-        .iter()
-        .map(|&c| if c == b'V' { '▼' } else { ' ' })
-        .collect();
-
-    vec![s1, s2]
-}
 
 #[cfg(test)]
 mod tests {
@@ -363,5 +441,20 @@ mod tests {
         ];
         let output = render_diagram(&agents);
         assert!(output.contains("model: claude-sonnet"), "Expected 'model: claude-sonnet' in output");
+    }
+
+    #[test]
+    fn test_render_diagram_multirow_visual() {
+        let agents = vec![
+            make_agent("orch", "claude", "orchestrator", None, "idle"),
+            make_agent("w1", "claude", "worker", None, "idle"),
+            make_agent("w2", "claude", "worker", None, "dead"),
+            make_agent("w3", "gemini", "worker", None, "idle"),
+            make_agent("w4-long-name", "claude", "worker", None, "busy"),
+            make_agent("w5", "gemini", "worker", None, "dead"),
+        ];
+        let output = render_diagram(&agents);
+        println!("{}", output);
+        assert!(output.contains("ORCHESTRATOR"));
     }
 }

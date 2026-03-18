@@ -3,6 +3,7 @@ use owo_colors::Stream;
 
 use std::time::{Duration, Instant};
 use crossterm::{
+    cursor::SetCursorStyle,
     event::{self, KeyCode, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -47,7 +48,7 @@ pub enum WelcomePage {
 /// Returns None if the key should be ignored (countdown continues).
 pub fn routing_action(key: KeyCode, has_config: bool) -> Option<WelcomeAction> {
     match key {
-        KeyCode::Enter => {
+        KeyCode::Enter | KeyCode::Char('y') => {
             if has_config {
                 Some(WelcomeAction::LaunchDashboard)
             } else {
@@ -74,12 +75,12 @@ pub fn guide_routing_action(key: KeyCode) -> Option<WelcomeAction> {
 // Pure helper functions (unit-testable without a terminal)
 // ---------------------------------------------------------------------------
 
-pub fn hint_bar_text(has_config: bool, remaining_secs: u64) -> String {
-    if has_config {
-        format!("\u{25cf} \u{25cb}  Enter: Open dashboard  Tab: Guide  Q: Quit  auto-exit {}s", remaining_secs)
-    } else {
-        format!("\u{25cf} \u{25cb}  Enter: Set up  Tab: Guide  Q: Quit  auto-exit {}s", remaining_secs)
-    }
+pub fn hint_bar_text(_has_config: bool, remaining_secs: u64) -> String {
+    format!("\u{25cf} \u{25cb}  Tab: Guide  Q: Quit  {}s", remaining_secs)
+}
+
+pub fn proceed_prompt_text() -> &'static str {
+    "  Ok to proceed? (y) "
 }
 
 /// Hint bar text for the guide page (dot indicator shows second page active).
@@ -128,7 +129,7 @@ fn commands_list() -> String {
 
 fn setup_terminal() -> anyhow::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
     enable_raw_mode()?;
-    execute!(std::io::stdout(), EnterAlternateScreen)?;
+    execute!(std::io::stdout(), EnterAlternateScreen, SetCursorStyle::BlinkingBlock)?;
     Terminal::new(CrosstermBackend::new(std::io::stdout())).map_err(Into::into)
 }
 
@@ -136,7 +137,7 @@ fn restore_terminal(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
 ) -> anyhow::Result<()> {
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, SetCursorStyle::DefaultUserShape)?;
     terminal.show_cursor()?;
     Ok(())
 }
@@ -145,28 +146,51 @@ fn restore_terminal(
 // Rendering
 // ---------------------------------------------------------------------------
 
-fn draw_welcome(frame: &mut Frame, remaining_secs: u64, has_config: bool) {
+fn draw_welcome(frame: &mut Frame, remaining_secs: u64, has_config: bool, cursor_visible: bool) {
+    // "SQUAD-STATION" = 13 chars × 8px font
+    // HalfHeight: ~104 cols wide, 4 rows tall
+    // Quadrant:    ~52 cols wide, 4 rows tall
+    // Plain text:   any width,    1 row tall
+    let width = frame.area().width;
+    let (title_height, pixel_size) = if width >= 105 {
+        (4, Some(PixelSize::HalfHeight))
+    } else if width >= 55 {
+        (4, Some(PixelSize::Quadrant))
+    } else {
+        (1, None)
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4), // BigText title (HalfHeight)
-            Constraint::Length(1), // version
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // tagline
-            Constraint::Length(1), // spacer
-            Constraint::Min(0),    // commands table
-            Constraint::Length(1), // hint bar
+            Constraint::Length(title_height), // title (scalable)
+            Constraint::Length(1),  // version
+            Constraint::Length(1),  // spacer
+            Constraint::Length(1),  // tagline
+            Constraint::Length(1),  // spacer
+            Constraint::Length(12), // commands table (fixed — 12 lines)
+            Constraint::Length(1),  // spacer between commands and prompt
+            Constraint::Length(1),  // proceed prompt
+            Constraint::Min(0),     // flexible spacer
+            Constraint::Length(1),  // hint bar (nav)
         ])
         .split(frame.area());
 
-    // Chunk 0: BigText pixel-font title
-    let title = BigText::builder()
-        .pixel_size(PixelSize::HalfHeight)
-        .style(Style::default().fg(Color::Red))
-        .lines(vec![Line::from("SQUAD-STATION")])
-        .centered()
-        .build();
-    frame.render_widget(title, chunks[0]);
+    // Chunk 0: title — scales with terminal width
+    if let Some(ps) = pixel_size {
+        let title = BigText::builder()
+            .pixel_size(ps)
+            .style(Style::default().fg(Color::Red))
+            .lines(vec![Line::from("SQUAD-STATION")])
+            .centered()
+            .build();
+        frame.render_widget(title, chunks[0]);
+    } else {
+        let title = Paragraph::new("SQUAD-STATION")
+            .style(Style::default().fg(Color::Red))
+            .alignment(Alignment::Center);
+        frame.render_widget(title, chunks[0]);
+    }
 
     // Chunk 1: version
     let version = Paragraph::new(format!("v{}", env!("CARGO_PKG_VERSION")))
@@ -187,10 +211,25 @@ fn draw_welcome(frame: &mut Frame, remaining_secs: u64, has_config: bool) {
         .style(Style::default().add_modifier(Modifier::BOLD));
     frame.render_widget(cmds, chunks[5]);
 
-    // Chunk 6: hint bar
+    // Chunk 6: spacer — no widget
+
+    // Chunk 7: proceed prompt with software-blink cursor
+    let prompt = Paragraph::new(proceed_prompt_text())
+        .style(Style::default().add_modifier(Modifier::BOLD));
+    frame.render_widget(prompt, chunks[7]);
+    if cursor_visible {
+        frame.set_cursor_position((
+            chunks[7].x + proceed_prompt_text().len() as u16,
+            chunks[7].y,
+        ));
+    }
+
+    // Chunk 8: flexible spacer — no widget
+
+    // Chunk 9: hint bar (navigation)
     let hint = Paragraph::new(hint_bar_text(has_config, remaining_secs))
         .style(Style::default().add_modifier(Modifier::DIM));
-    frame.render_widget(hint, chunks[6]);
+    frame.render_widget(hint, chunks[9]);
 }
 
 fn draw_guide(frame: &mut Frame) {
@@ -236,9 +275,11 @@ pub async fn run_welcome_tui(has_config: bool) -> anyhow::Result<Option<WelcomeA
 
     let mut terminal = setup_terminal()?;
 
-    let mut deadline = Instant::now() + Duration::from_secs(5);
+    let mut deadline = Instant::now() + Duration::from_secs(25);
     let mut action: Option<WelcomeAction> = None;
     let mut page = WelcomePage::Title;
+    let mut cursor_visible = true;
+    let mut blink_deadline = Instant::now() + Duration::from_millis(500);
 
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -247,11 +288,15 @@ pub async fn run_welcome_tui(has_config: bool) -> anyhow::Result<Option<WelcomeA
         }
         let remaining_secs = remaining.as_secs().max(1); // show at least "1s"
         terminal.draw(|f| match page {
-            WelcomePage::Title => draw_welcome(f, remaining_secs, has_config),
+            WelcomePage::Title => draw_welcome(f, remaining_secs, has_config, cursor_visible),
             WelcomePage::Guide => draw_guide(f),
         })?;
 
-        if event::poll(remaining.min(Duration::from_secs(1)))? {
+        // Poll for the shorter of: time-to-next-blink or 1s countdown tick
+        let blink_remaining = blink_deadline.saturating_duration_since(Instant::now());
+        let poll_timeout = remaining.min(blink_remaining).min(Duration::from_millis(500));
+
+        if event::poll(poll_timeout)? {
             if let event::Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     let act = match page {
@@ -262,7 +307,7 @@ pub async fn run_welcome_tui(has_config: bool) -> anyhow::Result<Option<WelcomeA
                         match a {
                             WelcomeAction::ShowGuide => {
                                 page = WelcomePage::Guide;
-                                deadline = Instant::now() + Duration::from_secs(5);
+                                deadline = Instant::now() + Duration::from_secs(25);
                             }
                             WelcomeAction::ShowTitle => {
                                 page = WelcomePage::Title;
@@ -280,6 +325,12 @@ pub async fn run_welcome_tui(has_config: bool) -> anyhow::Result<Option<WelcomeA
                     }
                 }
             }
+        }
+
+        // Toggle cursor every 500ms (software blink)
+        if Instant::now() >= blink_deadline {
+            cursor_visible = !cursor_visible;
+            blink_deadline = Instant::now() + Duration::from_millis(500);
         }
     }
 
@@ -450,24 +501,28 @@ mod tests {
     fn test_hint_bar_text_no_config() {
         let text = hint_bar_text(false, 5);
         assert!(text.contains("Tab: Guide"), "Expected 'Tab: Guide' in hint bar");
-        assert!(text.contains("Enter: Set up"), "Expected 'Enter: Set up' in hint bar");
-        assert!(text.contains("auto-exit 5s"), "Expected 'auto-exit 5s' in hint bar");
+        assert!(text.contains("5s"), "Expected '5s' in hint bar");
     }
 
     #[test]
     fn test_hint_bar_text_with_config() {
         let text = hint_bar_text(true, 3);
         assert!(text.contains("Tab: Guide"), "Expected 'Tab: Guide' in hint bar");
-        assert!(text.contains("Enter: Open dashboard"), "Expected 'Enter: Open dashboard' in hint bar");
-        assert!(text.contains("auto-exit 3s"), "Expected 'auto-exit 3s' in hint bar");
+        assert!(text.contains("3s"), "Expected '3s' in hint bar");
     }
 
     #[test]
     fn test_hint_bar_text_one_second() {
         let text = hint_bar_text(false, 1);
         assert!(text.contains("Tab: Guide"), "Expected 'Tab: Guide' in hint bar");
-        assert!(text.contains("Enter: Set up"), "Expected 'Enter: Set up' in hint bar");
-        assert!(text.contains("auto-exit 1s"), "Expected 'auto-exit 1s' in hint bar");
+        assert!(text.contains("1s"), "Expected '1s' in hint bar");
+    }
+
+    #[test]
+    fn test_proceed_prompt_text() {
+        let text = proceed_prompt_text();
+        assert!(text.contains("Ok to proceed?"), "Expected 'Ok to proceed?' in prompt");
+        assert!(text.contains("y"), "Expected 'y' in prompt");
     }
 
     #[test]
@@ -577,5 +632,28 @@ mod tests {
     fn test_hint_bar_text_includes_tab_guide() {
         let text = hint_bar_text(false, 5);
         assert!(text.contains("Tab: Guide"), "Expected 'Tab: Guide' in hint bar text");
+    }
+
+    #[test]
+    fn test_hint_bar_text_no_proceed_prompt() {
+        // proceed prompt is rendered separately — not in hint_bar_text
+        let text = hint_bar_text(false, 5);
+        assert!(!text.contains("Ok to proceed?"), "Proceed prompt should be in separate widget");
+    }
+
+    #[test]
+    fn test_routing_action_y_no_config() {
+        assert_eq!(
+            routing_action(KeyCode::Char('y'), false),
+            Some(WelcomeAction::LaunchInit)
+        );
+    }
+
+    #[test]
+    fn test_routing_action_y_with_config() {
+        assert_eq!(
+            routing_action(KeyCode::Char('y'), true),
+            Some(WelcomeAction::LaunchDashboard)
+        );
     }
 }

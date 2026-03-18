@@ -58,8 +58,21 @@ impl SddWorkflow {
     pub fn as_str(self) -> &'static str {
         match self {
             SddWorkflow::Bmad => "bmad",
-            SddWorkflow::GetShitDone => "get-shit-done",
+            SddWorkflow::GetShitDone => "gsd",
             SddWorkflow::Superpower => "superpower",
+        }
+    }
+
+    /// Returns the embedded playbook content for this workflow.
+    pub fn playbook_content(self) -> &'static str {
+        match self {
+            SddWorkflow::Bmad => include_str!("../../npm-package/.squad/sdd/bmad-playbook.md"),
+            SddWorkflow::GetShitDone => {
+                include_str!("../../npm-package/.squad/sdd/gsd-playbook.md")
+            }
+            SddWorkflow::Superpower => {
+                include_str!("../../npm-package/.squad/sdd/superpowers-playbook.md")
+            }
         }
     }
 
@@ -409,6 +422,9 @@ struct WizardState {
     worker_count: usize,
     workers: Vec<AgentDraft>,
     worker_only: bool, // true when launched via run_worker_only — skips Project + Orchestrator pages
+    // Existing agents passed in during add-agents flow, shown on review page
+    existing_orchestrator: Option<String>, // "name (provider)" label
+    existing_workers: Vec<String>,         // "name (provider)" labels
 }
 
 impl WizardState {
@@ -423,6 +439,8 @@ impl WizardState {
             worker_count: 0,
             workers: Vec::new(),
             worker_only: false,
+            existing_orchestrator: None,
+            existing_workers: Vec::new(),
         }
     }
 
@@ -434,6 +452,7 @@ impl WizardState {
             agents: self
                 .workers
                 .into_iter()
+                .take(self.worker_count)
                 .map(|d| draft_to_agent_input(d, "worker"))
                 .collect(),
         }
@@ -580,6 +599,7 @@ fn handle_key(state: &mut WizardState, key: KeyCode) -> KeyAction {
                         while state.workers.len() < n {
                             state.workers.push(AgentDraft::new());
                         }
+                        state.workers.truncate(n);
                         state.page = WizardPage::WorkerConfig { index: 0 };
                     }
                     Err(msg) => state.worker_count_input.error = Some(msg),
@@ -1058,32 +1078,144 @@ fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
         ])
         .split(area);
 
-    let mut items: Vec<ListItem> = vec![
-        ListItem::new(format!("Project : {}", state.project_input.value.trim())),
-        ListItem::new(format!("SDD     : {}", state.sdd.as_str())),
-        ListItem::new(""),
-        ListItem::new(Span::styled(
+    // Build agent fleet diagram lines
+    // Collect all worker labels: existing (unmarked) + new (tagged [new])
+    let orch_label: String = if state.worker_only {
+        state.existing_orchestrator.clone().unwrap_or_else(|| "orchestrator".to_string())
+    } else {
+        let name = state.orchestrator.name.value.trim();
+        if name.is_empty() {
+            format!("orchestrator ({})", state.orchestrator.provider.as_str())
+        } else {
+            format!("{} ({})", name, state.orchestrator.provider.as_str())
+        }
+    };
+
+    let mut all_workers: Vec<(String, bool)> = state.existing_workers
+        .iter()
+        .map(|s| (s.clone(), false))
+        .collect();
+    for d in state.workers.iter().take(state.worker_count) {
+        let name = d.name.value.trim();
+        let label = if name.is_empty() {
+            format!("worker ({})", d.provider.as_str())
+        } else {
+            format!("{} ({})", name, d.provider.as_str())
+        };
+        all_workers.push((label, true));
+    }
+
+    // Build the fleet diagram as text lines.
+    // Layout:
+    //   ┌────────────────────────┐
+    //   │  orchestrator (claude) │
+    //   └────────────┬───────────┘
+    //                │
+    //                ├──▶ worker1 (gemini)
+    //                └──▶ worker2 (claude) [new]
+    let mut diagram_lines: Vec<Line> = Vec::new();
+    let inner_label = format!("  {}  ", orch_label);
+    let box_inner = inner_label.len().max(24);
+    let top    = format!("  ┌{}┐", "─".repeat(box_inner));
+    let mid    = format!("  │{:<width$}│", inner_label, width = box_inner);
+    // stem exits from the middle of the bottom border
+    let stem_col = 2 + box_inner / 2; // column of the ┬ / │
+    let bottom = {
+        let left_dashes  = stem_col.saturating_sub(3);   // "  └" is 3 chars
+        let right_dashes = box_inner.saturating_sub(left_dashes + 1);
+        format!("  └{}┬{}┘", "─".repeat(left_dashes), "─".repeat(right_dashes))
+    };
+    let indent = " ".repeat(stem_col);
+
+    let cyan = Style::default().fg(Color::Cyan);
+    diagram_lines.push(Line::from(Span::styled(top, cyan)));
+    diagram_lines.push(Line::from(Span::styled(mid, cyan)));
+    diagram_lines.push(Line::from(Span::styled(bottom, cyan)));
+
+    if all_workers.is_empty() {
+        diagram_lines.push(Line::from(Span::styled(
+            format!("{}│", indent),
+            cyan,
+        )));
+        diagram_lines.push(Line::from(Span::styled(
+            format!("{}└──▶ (no workers)", indent),
+            cyan,
+        )));
+    } else {
+        diagram_lines.push(Line::from(Span::styled(format!("{}│", indent), cyan)));
+        for (i, (label, is_new)) in all_workers.iter().enumerate() {
+            let is_last = i == all_workers.len() - 1;
+            let branch = if is_last { "└──▶ " } else { "├──▶ " };
+            let tag = if *is_new { " [new]" } else { "" };
+            let worker_style = if *is_new {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default().fg(Color::Yellow)
+            };
+            diagram_lines.push(Line::from(vec![
+                Span::styled(format!("{}{}", indent, branch), cyan),
+                Span::styled(format!("{}{}", label, tag), worker_style),
+            ]));
+        }
+    }
+
+    // Build summary list
+    let mut items: Vec<ListItem> = Vec::new();
+
+    if !state.worker_only {
+        items.push(ListItem::new(format!("Project : {}", state.project_input.value.trim())));
+        items.push(ListItem::new(format!("SDD     : {}", state.sdd.as_str())));
+        items.push(ListItem::new(""));
+        items.push(ListItem::new(Span::styled(
             "Orchestrator",
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        )),
-        ListItem::new(format!("  {}", draft_summary_line("orchestrator", &state.orchestrator))),
-        ListItem::new(""),
-        ListItem::new(Span::styled(
+        )));
+        items.push(ListItem::new(format!("  {}", draft_summary_line("orchestrator", &state.orchestrator))));
+        items.push(ListItem::new(""));
+        items.push(ListItem::new(Span::styled(
             format!("Workers ({})", state.worker_count),
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        )),
-    ];
-    for (i, d) in state.workers.iter().enumerate() {
-        items.push(ListItem::new(format!(
-            "  {}",
-            draft_summary_line(&format!("Worker {}", i + 1), d)
         )));
+        for (i, d) in state.workers.iter().take(state.worker_count).enumerate() {
+            items.push(ListItem::new(format!(
+                "  {}",
+                draft_summary_line(&format!("Worker {}", i + 1), d)
+            )));
+        }
+    } else {
+        // Add-agents mode: show existing workers, then new ones
+        items.push(ListItem::new(Span::styled(
+            format!("Workers — {} existing + {} new", state.existing_workers.len(), state.worker_count),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )));
+        for label in &state.existing_workers {
+            items.push(ListItem::new(format!("  {} (existing)", label)));
+        }
+        for (i, d) in state.workers.iter().take(state.worker_count).enumerate() {
+            items.push(ListItem::new(format!(
+                "  {}  [new]",
+                draft_summary_line(&format!("Worker {}", state.existing_workers.len() + i + 1), d)
+            )));
+        }
     }
+
+    // Fleet diagram + summary list share the top chunk
+    let inner_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length((diagram_lines.len() + 2) as u16), // diagram
+            Constraint::Min(3),                                    // list
+        ])
+        .split(summary_chunks[0]);
+
+    let diagram_widget = Paragraph::new(diagram_lines)
+        .block(Block::default().borders(Borders::ALL).title(" Agent Fleet "));
+    frame.render_widget(diagram_widget, inner_chunks[0]);
 
     let list_widget = List::new(items).block(
         Block::default().borders(Borders::ALL).title(" Review "),
     );
-    frame.render_widget(list_widget, summary_chunks[0]);
+    frame.render_widget(list_widget, inner_chunks[1]);
 
     let confirm_hint = Paragraph::new("Press Enter to confirm, Esc to go back")
         .style(Style::default().add_modifier(Modifier::DIM));
@@ -1139,7 +1271,11 @@ pub async fn run() -> anyhow::Result<Option<WizardResult>> {
 /// Run the wizard starting at the WorkerCount page, skipping Project and OrchestratorConfig.
 /// Used by the `init --add-agents` path (Plan 02) to add new workers to an existing project.
 /// Returns `Some(Vec<AgentInput>)` on completion, `None` if the user cancels.
-pub async fn run_worker_only() -> anyhow::Result<Option<Vec<AgentInput>>> {
+/// `existing_orchestrator` and `existing_workers` are display labels shown on the Review page.
+pub async fn run_worker_only(
+    existing_orchestrator: Option<String>,
+    existing_workers: Vec<String>,
+) -> anyhow::Result<Option<Vec<AgentInput>>> {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
@@ -1149,6 +1285,8 @@ pub async fn run_worker_only() -> anyhow::Result<Option<Vec<AgentInput>>> {
 
     let mut terminal = setup_terminal()?;
     let mut state = WizardState::new();
+    state.existing_orchestrator = existing_orchestrator;
+    state.existing_workers = existing_workers;
     state.page = WizardPage::WorkerCount; // Start at worker count, skip Project + Orchestrator
     state.worker_only = true;
 
@@ -1175,9 +1313,11 @@ pub async fn run_worker_only() -> anyhow::Result<Option<Vec<AgentInput>>> {
                         KeyAction::Complete => {
                             restore_terminal(&mut terminal)?;
                             // Extract only the workers (no project/orchestrator)
+                            let worker_count = state.worker_count;
                             let agents: Vec<AgentInput> = state
                                 .workers
                                 .into_iter()
+                                .take(worker_count)
                                 .map(|d| draft_to_agent_input(d, "worker"))
                                 .collect();
                             return Ok(Some(agents));

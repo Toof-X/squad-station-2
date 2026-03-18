@@ -86,12 +86,15 @@ fn append_workers_to_yaml(
 }
 
 pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
+    let mut purge_db_on_init = false;
+
     // Check if squad.yml exists; if not, run the interactive wizard
     if !config_path.exists() {
         match crate::commands::wizard::run().await? {
             Some(result) => {
                 let yaml = generate_squad_yml(&result);
                 std::fs::write(&config_path, &yaml)?;
+                create_sdd_playbook(&config_path, &result);
                 println!("Generated squad.yml for project '{}'", result.project);
                 // Fall through to load_config below
             }
@@ -104,10 +107,16 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
         // Re-init: squad.yml exists and we have an interactive terminal — prompt user
         match prompt_reinit()? {
             ReinitChoice::Overwrite => {
+                // Kill existing sessions from the old config before overwriting
+                if let Ok(old_cfg) = crate::config::load_config(&config_path) {
+                    kill_config_sessions(&old_cfg);
+                }
+                purge_db_on_init = true;
                 match crate::commands::wizard::run().await? {
                     Some(result) => {
                         let yaml = generate_squad_yml(&result);
                         std::fs::write(&config_path, &yaml)?;
+                        create_sdd_playbook(&config_path, &result);
                         println!("Replaced squad.yml for project '{}'", result.project);
                         // Fall through to load_config below
                     }
@@ -118,9 +127,25 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
                 }
             }
             ReinitChoice::AddAgents => {
-                match crate::commands::wizard::run_worker_only().await? {
+                // Parse existing config so the wizard can show old agents on the Review page
+                let existing = std::fs::read_to_string(&config_path)?;
+                let (existing_orchestrator, existing_workers) =
+                    match crate::config::load_config(&config_path) {
+                        Ok(cfg) => {
+                            let orch = {
+                                let n = cfg.orchestrator.name.as_deref().unwrap_or("orchestrator");
+                                format!("{} ({})", n, cfg.orchestrator.provider)
+                            };
+                            let workers = cfg.agents.iter().map(|a| {
+                                let n = a.name.as_deref().unwrap_or("worker");
+                                format!("{} ({})", n, a.provider)
+                            }).collect();
+                            (Some(orch), workers)
+                        }
+                        Err(_) => (None, vec![]),
+                    };
+                match crate::commands::wizard::run_worker_only(existing_orchestrator, existing_workers).await? {
                     Some(new_workers) => {
-                        let existing = std::fs::read_to_string(&config_path)?;
                         let updated = append_workers_to_yaml(&existing, &new_workers);
                         std::fs::write(&config_path, &updated)?;
                         println!("Added {} worker(s) to squad.yml", new_workers.len());
@@ -147,6 +172,11 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
 
     // 3. Connect to DB (creates file + runs migrations)
     let pool = db::connect(&db_path).await?;
+
+    // On overwrite: purge stale agents so the DB matches the new config exactly
+    if purge_db_on_init {
+        let _ = db::agents::delete_all_agents(&pool).await;
+    }
 
     // 4. Register orchestrator with hardcoded role="orchestrator"
     let orch_role = config
@@ -369,6 +399,45 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Kill all tmux sessions (orchestrator + workers + monitor) for a given config.
+/// Used before overwriting squad.yml so stale sessions don't persist.
+fn kill_config_sessions(cfg: &config::SquadConfig) {
+    let orch_role = cfg.orchestrator.name.as_deref().unwrap_or("orchestrator");
+    let orch_name = config::sanitize_session_name(&format!("{}-{}", cfg.project, orch_role));
+    let monitor_name = config::sanitize_session_name(&format!("{}-monitor", cfg.project));
+
+    let _ = tmux::kill_session(&orch_name);
+    let _ = tmux::kill_session(&monitor_name);
+
+    for agent in &cfg.agents {
+        let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
+        let session_name = config::sanitize_session_name(&format!("{}-{}", cfg.project, role_suffix));
+        let _ = tmux::kill_session(&session_name);
+    }
+}
+
+/// Write the SDD playbook file to `.squad/sdd/<name>-playbook.md`.
+/// Creates the directory if it doesn't exist. Skips silently if the file already exists.
+fn create_sdd_playbook(
+    config_path: &std::path::Path,
+    result: &crate::commands::wizard::WizardResult,
+) {
+    let project_dir = config_path.parent().unwrap_or(std::path::Path::new("."));
+    let sdd_dir = project_dir.join(".squad").join("sdd");
+    if let Err(e) = std::fs::create_dir_all(&sdd_dir) {
+        eprintln!("Warning: could not create .squad/sdd/: {}", e);
+        return;
+    }
+    let filename = format!("{}-playbook.md", result.sdd.as_str());
+    let playbook_path = sdd_dir.join(&filename);
+    if playbook_path.exists() {
+        return; // already present — don't overwrite user edits
+    }
+    if let Err(e) = std::fs::write(&playbook_path, result.sdd.playbook_content()) {
+        eprintln!("Warning: could not write {}: {}", playbook_path.display(), e);
+    }
 }
 
 /// Generate a squad.yml YAML string from a completed WizardResult.
@@ -668,7 +737,7 @@ mod tests {
         let result = make_wizard_result();
         let yaml = generate_squad_yml(&result);
         assert!(
-            yaml.contains("playbook: \".squad/sdd/get-shit-done-playbook.md\""),
+            yaml.contains("playbook: \".squad/sdd/gsd-playbook.md\""),
             "SDD playbook path must be correct, got:\n{}",
             yaml
         );

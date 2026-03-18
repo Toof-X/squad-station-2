@@ -88,3 +88,9 @@ pub async fn update_agent_status(
         .await?;
     Ok(())
 }
+
+/// Delete all agents from the DB. Used before re-registering on overwrite.
+pub async fn delete_all_agents(pool: &SqlitePool) -> anyhow::Result<()> {
+    sqlx::query("DELETE FROM agents").execute(pool).await?;
+    Ok(())
+}
