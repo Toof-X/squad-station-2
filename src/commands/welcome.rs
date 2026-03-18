@@ -193,6 +193,34 @@ fn draw_welcome(frame: &mut Frame, remaining_secs: u64, has_config: bool) {
     frame.render_widget(hint, chunks[6]);
 }
 
+fn draw_guide(frame: &mut Frame) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // header "Quick Guide"
+            Constraint::Length(1), // blank
+            Constraint::Min(0),    // guide content (steps + footer)
+            Constraint::Length(1), // hint bar
+        ])
+        .split(frame.area());
+
+    // Chunk 0: centered header
+    let header = Paragraph::new("Quick Guide")
+        .alignment(Alignment::Center);
+    frame.render_widget(header, chunks[0]);
+
+    // Chunk 1: blank — no widget
+
+    // Chunk 2: guide content (concept + steps + footer)
+    let content = Paragraph::new(guide_content());
+    frame.render_widget(content, chunks[2]);
+
+    // Chunk 3: hint bar
+    let hint = Paragraph::new(guide_hint_bar_text())
+        .style(Style::default().add_modifier(Modifier::DIM));
+    frame.render_widget(hint, chunks[3]);
+}
+
 // ---------------------------------------------------------------------------
 // TUI event loop
 // ---------------------------------------------------------------------------
@@ -208,8 +236,9 @@ pub async fn run_welcome_tui(has_config: bool) -> anyhow::Result<Option<WelcomeA
 
     let mut terminal = setup_terminal()?;
 
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut deadline = Instant::now() + Duration::from_secs(5);
     let mut action: Option<WelcomeAction> = None;
+    let mut page = WelcomePage::Title;
 
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -217,17 +246,37 @@ pub async fn run_welcome_tui(has_config: bool) -> anyhow::Result<Option<WelcomeA
             break; // timeout = silent exit
         }
         let remaining_secs = remaining.as_secs().max(1); // show at least "1s"
-        terminal.draw(|f| draw_welcome(f, remaining_secs, has_config))?;
+        terminal.draw(|f| match page {
+            WelcomePage::Title => draw_welcome(f, remaining_secs, has_config),
+            WelcomePage::Guide => draw_guide(f),
+        })?;
 
         if event::poll(remaining.min(Duration::from_secs(1)))? {
             if let event::Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    if let Some(act) = routing_action(key.code, has_config) {
-                        action = match act {
-                            WelcomeAction::Quit => None,
-                            other => Some(other),
-                        };
-                        break;
+                    let act = match page {
+                        WelcomePage::Title => routing_action(key.code, has_config),
+                        WelcomePage::Guide => guide_routing_action(key.code),
+                    };
+                    if let Some(a) = act {
+                        match a {
+                            WelcomeAction::ShowGuide => {
+                                page = WelcomePage::Guide;
+                                deadline = Instant::now() + Duration::from_secs(5);
+                            }
+                            WelcomeAction::ShowTitle => {
+                                page = WelcomePage::Title;
+                                // Keep remaining time — do not reset on return to title
+                            }
+                            WelcomeAction::Quit => {
+                                action = None;
+                                break;
+                            }
+                            other => {
+                                action = Some(other);
+                                break;
+                            }
+                        }
                     }
                 }
             }
