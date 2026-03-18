@@ -65,3 +65,8 @@ echo "Run: squad-station --version"
 if [ "$FALLBACK" -eq 1 ]; then
   echo "Add ~/.local/bin to your PATH if not already present."
 fi
+
+# Auto-launch welcome TUI in interactive terminals
+if [ -t 1 ]; then
+  exec "${INSTALL_DIR}/squad-station"
+fi

@@ -28,7 +28,7 @@ function install() {
   console.log('\x1b[32m══════════════════════════════════\x1b[0m\n');
 
   // Step 1: Install binary
-  installBinary();
+  var destPath = installBinary();
 
   // Step 2: Scaffold project files
   scaffoldProject(force);
@@ -39,6 +39,11 @@ function install() {
   console.log('     \x1b[36mcp .squad/examples/orchestrator-claude.yml squad.yml\x1b[0m');
   console.log('  2. Edit \x1b[36msquad.yml\x1b[0m — set project name, providers, models');
   console.log('  3. Run  \x1b[36msquad-station init\x1b[0m — launch tmux sessions\n');
+
+  // Auto-launch welcome TUI in interactive terminals
+  if (process.stdout.isTTY) {
+    spawnSync(destPath, [], { stdio: 'inherit' });
+  }
 }
 
 function installBinary() {
@@ -79,7 +84,7 @@ function installBinary() {
       var result = spawnSync(destPath, ['--version'], { encoding: 'utf8' });
       if (result.stdout && result.stdout.includes(VERSION)) {
         console.log('  \x1b[32m✓\x1b[0m squad-station v' + VERSION + ' already installed at ' + destPath);
-        return;
+        return destPath;
       }
     } catch (_) {
       // Can't check version, re-download
@@ -108,6 +113,8 @@ function installBinary() {
   if (fallback) {
     console.log('  \x1b[33m!\x1b[0m Add ~/.local/bin to your PATH if not already present.');
   }
+
+  return destPath;
 }
 
 function scaffoldProject(force) {
