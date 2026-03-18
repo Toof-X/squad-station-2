@@ -1,187 +1,216 @@
 # Project Research Summary
 
-**Project:** Squad Station v1.7 — First-Run Onboarding TUI + Post-Install Auto-Launch
-**Domain:** Rust CLI — interactive ratatui welcome screen additive to an existing stable binary
-**Researched:** 2026-03-17
+**Project:** squad-station v1.8 — Install Subcommand, Folder-Name Default, Orchestrator Processing State
+**Domain:** Rust CLI — stateless AI agent fleet orchestration with embedded SQLite, ratatui TUI, and tmux integration
+**Researched:** 2026-03-18
 **Confidence:** HIGH
 
 ## Executive Summary
 
-Squad Station v1.7 upgrades the bare-invocation path (`squad-station` with no arguments) from a static `println!`-based welcome screen to an interactive ratatui TUI, and wires both distribution paths (npm postinstall and curl installer) to surface the binary to the user immediately after install. This is an additive change to a well-structured existing codebase: the infrastructure — ratatui terminal management, TTY guards, the multi-page wizard TUI, and both distribution scripts — already exists and is validated. The v1.7 work is primarily about connecting existing pieces correctly and guarding the TTY boundary at every entry point.
+Squad Station v1.8 is a focused feature increment on top of a stable, well-tested v1.7 foundation. The three additions — a Rust `install` subcommand, folder-name-as-project-name defaulting, and orchestrator "processing" state detection via tmux pane polling — all share a key characteristic: zero new Cargo dependencies. The existing stack (clap 4.5, ratatui 0.30, tokio 1.37, sqlx 0.8, crossterm 0.29, and Rust stdlib) is fully sufficient. The recommended approach treats these three features as independent work streams with a clear build order dictated by shared file ownership rather than logical dependencies.
 
-The recommended approach is narrow in scope: modify only `welcome.rs` (new `run_welcome_tui()` ratatui event loop with AlternateScreen + panic hook), `main.rs` (swap `print_welcome()` call for `run_welcome().await?`), `install.sh` (TTY-guarded hint or exec at end), and `run.js` (TTY-guarded spawnSync or hint at end). The ratatui upgrade path is ratatui 0.29 + crossterm 0.28 + tui-big-text 0.7.x — all version-pinned with HIGH-confidence rationale derived from official release notes and the crossterm incompatibility advisory. No new architectural patterns are introduced; the welcome TUI reuses the exact AlternateScreen + panic hook + restore sequence already proven in `wizard.rs` and `ui.rs`.
+The recommended implementation sequence is: (1) lay the tmux `capture_pane` foundation and processing-state display infrastructure, (2) wire the pane polling into the TUI refresh loop with the correct DB write pattern, (3) inject folder-name defaults into the wizard and dashboard, then (4) add the `install` subcommand and update distribution files. This order minimizes rebase conflicts on `ui.rs` and `tmux.rs`, which are the most heavily touched files. All three features can be reviewed in isolation once landed.
 
-The primary risk is the TTY boundary: CI environments, piped invocations, and install scripts must never enter crossterm raw mode. All six critical pitfalls identified in research are Phase 1 concerns, all preventable with the TTY guard pattern already established in `init.rs`. A secondary risk is an unresolved design conflict: STACK.md and FEATURES.md recommend TTY-guarded auto-launch from install scripts, but PITFALLS.md demonstrates that `curl | sh` stdin and npm postinstall stdio are not reliably TTY contexts — the safe design is print-hint-only from install scripts, letting the user invoke `squad-station` manually. This conflict must be resolved as an explicit roadmap decision before Phase 1 implementation begins.
+The highest-risk area is orchestrator pane-state detection. Scraping terminal UI output for semantic state is inherently heuristic — false positives (always showing "processing") and blocked async executor threads are the two most dangerous failure modes. Both are preventable by design: isolate the classification logic in a pure testable function, poll only the orchestrator (not all agents), use a separate slower interval (10–15s) for pane polling vs. the existing 3s DB refresh, and treat the detected state as a TUI-only overlay rather than a DB status value. The `install` subcommand carries its own secondary risk: a JS/Rust version mismatch during release can break `npx squad-station install` with a clap parse error. The safest mitigation is to keep the npm auto-launch as a bare binary call and document `install --tui` as the explicit user-facing form.
+
+---
 
 ## Key Findings
 
 ### Recommended Stack
 
-The existing dependency tree needs two version upgrades and one new dependency. Ratatui must move from 0.26 to 0.29 to gain `frame.area()` stabilization and enable tui-big-text 0.7.x compatibility. Crossterm must move from 0.27 to 0.28 because ratatui 0.28+ re-exports crossterm internally — mixing versions causes type incompatibilities that prevent pattern-matching on crossterm events (confirmed in the ratatui/ratatui GitHub issue #1298 advisory). tui-big-text 0.7.x is the only net-new dependency, providing a ratatui-native pixel-font title widget. All three changes are a single Cargo.toml edit; application code changes are limited to the `frame.size()` → `frame.area()` rename in `ui.rs` and `wizard.rs`. Ratatui 0.30 is explicitly out of scope: it introduces a workspace split and removes `frame.size()` outright, requiring broader migration with no v1.7 feature benefit.
+No new Rust crates are needed for v1.8. All three features are implementable with the existing dependency set and Rust stdlib primitives. The only external-surface change is in the npm layer: adding a `"scripts"` block to `package.json` and a one-line change to `install.sh`.
 
-**Core technologies:**
-- **ratatui 0.29**: Interactive TUI framework — latest stable below the 0.30 workspace split; picks up `frame.area()` stabilization; minimum required by tui-big-text 0.7.x
-- **crossterm 0.28**: Terminal backend — must match ratatui's internal crossterm version; mixing 0.27 and 0.28 causes two incompatible crossterm type trees
-- **tui-big-text 0.7.x**: Pixel-font title widget — renders "SQUAD STATION" as block letters via `font8x8`; 0.8.x requires ratatui 0.30 and is excluded
-- **std::io::IsTerminal** (stdlib, Rust 1.70+): TTY detection — preferred over `atty` (unmaintained) and `crossterm::tty::IsTty` (adds unnecessary coupling); project MSRV is already 1.86
-- **Node.js `process.stdout.isTTY`** (stdlib): TTY detection in npm scripts — no additional npm dependency needed
-- **POSIX `[ -t 1 ]`**: TTY detection in shell installers — universally available on macOS and Linux; guards install.sh binary launch
+**Core technologies (unchanged from v1.7):**
+- **clap 4.5.60** — CLI subcommand dispatch — add `Install { tui: bool }` variant; no version change, no new dep
+- **ratatui 0.30 + crossterm 0.29** — TUI rendering and TTY detection — extend existing patterns, no change
+- **tokio 1.37** — async runtime — `tokio::time::interval` already available; `tokio::process::Command` recommended for non-blocking capture-pane calls in the TUI loop
+- **sqlx 0.8 + SQLite WAL** — persistence — no schema migration needed; `processing` is TUI-only (not written to DB)
+- **std::env::current_dir() + Path::file_name()** — zero-cost folder-name derivation — no crate needed
+
+**Rejected alternatives:** `reqwest` (+1.5 MB binary size, musl TLS complications — use `curl` via subprocess instead), `dirs` crate (removed in v1.4 — stdlib suffices), `regex` (start with `str::contains`; promote only if classification complexity grows), `notify` filesystem watcher (pane polling via `capture-pane` is the correct tmux-native pattern).
 
 ### Expected Features
 
-The v1.7 feature set is well-defined and bounded. All P1 features are low-to-medium complexity with clear precedents in the existing codebase. The research provides an important anti-feature finding: persistent interactive TUI on every bare invocation for returning users (squad.yml exists) is wrong — returning users should see a static reference guide, not be re-onboarded. The feature dependency chain is simple: TTY guard unlocks TUI; TUI unlocks conditional routing; conditional routing unlocks CTA-to-wizard handoff.
+**Must have (table stakes — P1):**
+- `squad-station install [--tui]` — bare = one-line silent confirmation + exit 0; `--tui` = launch welcome TUI with TTY guard; every serious CLI has a discrete install command
+- Update npm postinstall and curl installer to call `install --tui` — required for the install subcommand to be the canonical path rather than dead code
+- Folder name pre-filled in wizard project name field — universal scaffolding convention (`cargo init`, `npm create vite`, `create-next-app` all do this)
+- Folder name fallback in `generate_squad_yml()` — prevents broken YAML with empty `project:` field, which breaks agent auto-naming (`<project>-<tool>-<role>`)
+- Dashboard title shows project name from config — makes TUI feel scoped to the current project rather than a generic debug tool
 
-**Must have (table stakes):**
-- **Interactive ratatui welcome TUI** — replaces static `print_welcome()` when stdout is a TTY; large ASCII title + version; alternate screen; Enter/q/Esc navigation; key hint bar at bottom
-- **TTY guard on welcome dispatch** — non-TTY (CI, pipes, scripts) falls back to existing `print_welcome()`; preserves all 211 existing passing tests with zero changes
-- **Conditional routing on squad.yml presence** — no config: first-run CTA ("Press Enter to set up your first squad") → hands off to existing `wizard::run()`; config exists: returning-user reference guide, no wizard prompt
-- **Key hint bar** — always-visible `[Enter] continue  [q] quit` at bottom of every TUI page; prevents users getting stuck
-- **Post-install messaging** — print next-steps hint from both install paths (see pitfall conflict note; auto-launch is optional if design decision resolves in its favor)
+**Should have (differentiators — P2):**
+- Orchestrator "processing" state indicator in TUI dashboard — no competing tool (tmuxcc, NTM, Ralph TUI, TUICommander) distinguishes orchestrator-idle vs. orchestrator-mid-response; reduces unnecessary interrupts from human observers
 
-**Should have (differentiators):**
-- **Quick guide page** — second TUI page (state machine: Title → QuickGuide) showing 3-4 line mental model; deferred to v1.7.x pending Phase 1 validation
-- **State-aware returning-user view** — subcommand reference table + "Run squad-station ui" hint when squad.yml exists; distinct from first-run CTA; can iterate without touching Phase 1 logic
+**Defer (post-v1.8):**
+- Richer orchestrator state: distinguish "thinking" vs. "waiting for approval" vs. "idle at shell" — requires provider-specific content patterns beyond basic prompt regex
+- `--silent` flag as explicit synonym for bare install
+- Install subcommand with version pinning (`--version x.y.z`)
+- TUI project switcher (significant `ui.rs` refactor)
 
-**Defer (v2+):**
-- Fleet status summary on welcome (requires DB read at startup; high complexity vs value for a bare invocation)
-- Animated title / ratatui-splash-screen integration (purely aesthetic; defer until core experience is stable)
-
-**Critical conflict — post-install auto-launch:**
-STACK.md and FEATURES.md list TTY-guarded auto-launch (exec in install.sh, spawnSync in run.js) as P1. PITFALLS.md Pitfalls 2 and 3 override this recommendation: `curl | sh` sets bash stdin to the curl pipe making `[ -t 1 ]` unreliable in orchestrated environments; npm postinstall runs with stdio as pipe and `process.stdout.isTTY` is undefined. The safe design is print-hint-only from install scripts; auto-launch is triggered only when the user invokes `squad-station` manually. The roadmapper must resolve this conflict explicitly as a named decision before Phase 1 scope is locked.
+**Anti-features (do not build):**
+- Buffer-diff typing detection — tmux capture-pane returns a static rendered screen, not a keystroke stream; diff noise creates false positives
+- Block `send` when orchestrator is "processing" — violates stateless design, introduces race conditions
+- Auto-detect project name from git remote URL — brittle, adds git subprocess dependency; folder name is universally available
 
 ### Architecture Approach
 
-The architecture is minimal-change: four files modified, zero new files, zero new modules. `welcome.rs` gains a `run_welcome_tui()` private function implementing the ratatui event loop using the AlternateScreen + panic hook + restore pattern copy-verified from `ui.rs` lines 284–338. The welcome TUI must call `restore_terminal()` and exit AlternateScreen before delegating to `commands::init::run()` on Enter — nested alternate buffers corrupt terminal state on exit (Pitfall 3 in ARCHITECTURE.md). The build order is strictly: (1) ratatui skeleton with terminal lifecycle, (2) squad.yml detection and branched display, (3) Enter-to-init wiring with AlternateScreen exit first, (4) TTY guard public API, (5) main.rs call-site swap, (6-7) install scripts in parallel with Rust work.
+The v1.8 changes are additive layers on a stable layered architecture: CLI dispatch → command handlers → tmux abstraction + DB layer. All new code follows three established patterns: command-per-file (`pub async fn run(...)` in a new `install.rs`), connect-per-refresh for writable pools in the TUI (open a writable `db::connect()` only when a status write is needed; drop immediately after), and argument-builder functions in `tmux.rs` (private `_args()` for unit testability, public function calls `Command::new("tmux")`).
 
-**Major components:**
-1. **`src/commands/welcome.rs` (MODIFY)** — add `run_welcome()` public async fn with TTY guard; add private `run_welcome_tui()` ratatui event loop; keep `print_welcome()` as non-TTY fallback; `welcome_content()` unchanged for tests
-2. **`src/main.rs` (MODIFY)** — swap `commands::welcome::print_welcome()` for `commands::welcome::run_welcome().await?` in the `None` arm; one-line change
-3. **`npm-package/bin/run.js` (MODIFY)** — append TTY-guarded next-steps hint (or spawnSync per design decision) at end of `install()`
-4. **`install.sh` (MODIFY)** — append TTY-guarded next-steps echo (or exec per design decision) before final exit
-5. **`src/commands/wizard.rs`, `init.rs`, `cli.rs` (NO CHANGE)** — welcome TUI delegates to `init::run()` on Enter; no logic is duplicated in welcome.rs
+**Files changed across all three features:**
+
+| File | Change | Feature |
+|------|--------|---------|
+| `src/cli.rs` | Add `Install { tui: bool }` variant | install |
+| `src/commands/install.rs` | NEW — `run(tui: bool)` handler | install |
+| `src/commands/mod.rs` | Add `pub mod install;` | install |
+| `src/main.rs` | Add `Install { tui }` match arm | install |
+| `src/commands/wizard.rs` | Pre-populate `project_input` with folder name | folder default |
+| `src/commands/ui.rs` | Add `project: String` to `App`; title bar; `processing` color; capture-pane poll | folder default + processing |
+| `src/tmux.rs` | Add `capture_pane_args()` + `capture_pane()` | processing |
+| `src/commands/helpers.rs` | Add `"processing"` arm to `colorize_agent_status()` | processing |
+| `npm-package/bin/run.js` | Update auto-launch call | install |
+| `install.sh` | Update exec target | install |
+
+**Key architectural decision — processing state storage:** Treat `processing` as a TUI-only overlay, not a DB status value. DB status tracks hook-driven lifecycle (`idle`/`busy`/`dead`). The TUI optionally overlays a `processing` indicator from pane polling displayed alongside (not replacing) the DB status. This avoids a migration, keeps the DB contract stable, and prevents `squad-station status` and `agents --json` from breaking.
 
 ### Critical Pitfalls
 
-1. **Missing TTY guard on welcome TUI** — `enable_raw_mode()` called with stdout as a pipe returns `ENOTTY` ("Inappropriate ioctl for device"); apply `std::io::stdout().is_terminal()` check as the first gate in the bare-invocation path; non-TTY falls back to `print_welcome()`; this guard is the prerequisite for all TUI code
+1. **npm/Rust `install` command boundary confusion** — `npx squad-station install` is intercepted by `run.js` (JS download path) before reaching the binary. The Rust `install` subcommand is the post-binary-install welcome UX path. These must stay separate. Prevention: keep `run.js` auto-launch as a bare binary call; `install --tui` is the explicitly user-invoked form. Document the JS/Rust boundary in code comments.
 
-2. **npm postinstall auto-launch hangs in CI** — npm postinstall runs with `stdio: pipe`; `process.stdout.isTTY` is `undefined`; even a TTY-guarded `spawnSync` is problematic in container CI; design decision required: postinstall should print a hint and never launch the binary
+2. **`current_dir()` edge cases corrupt tmux session names** — `file_name()` returns `None` at filesystem root; `to_string_lossy()` introduces replacement characters for non-UTF-8 paths; directory names with spaces break tmux session creation. Prevention: apply an extended sanitizer at derivation time (`[a-z0-9A-Z_-]` allowlist), handle `None` gracefully with empty-string fallback, and extract derivation to a pure function accepting `&Path` for testability.
 
-3. **curl | sh auto-launch breaks when stdin is the pipe** — bash stdin is connected to curl output, not the terminal; `[ -t 1 ]` may return false in devcontainer and Docker build contexts; install.sh should end with an echo hint, not a binary launch
+3. **`capture-pane` called on non-existent session floods TUI with errors** — orchestrators with `tool = "antigravity"` have no tmux session; dead sessions no longer exist after `squad-station close`. Prevention: explicit guard chain — check `agent.tool != "antigravity"`, then `tmux::session_exists()`, then return `None` on any error; never surface capture-pane failures as user-visible errors.
 
-4. **Terminal not restored on panic or early return** — welcome TUI must install the same panic hook (`take_hook` / `set_hook` / `disable_raw_mode` / `LeaveAlternateScreen`) as `wizard.rs` and `ui.rs`; calling `restore_terminal()` on every exit path (normal, Esc/q, `?` error propagation) is mandatory; consider extracting a shared `tui_guard` module to eliminate three diverging copies of the pattern
+4. **False positive "processing" detection creates a permanent "processing" state** — idle prompt lines (`>`, `$`) look like activity; stale pane content from completed tasks triggers the heuristic. Prevention: conservative provider-specific patterns, prefer DB state when ambiguous, implement `classify_pane_output()` as a pure testable function with no I/O.
 
-5. **Alternate screen swallows welcome content from scrollback** — `LeaveAlternateScreen` removes all TUI content; user sees nothing after dismissing; evaluate using main-buffer raw-mode-only pattern for the welcome screen specifically (content persists in scrollback); this architectural decision must be made before writing the event loop to avoid a rendering rewrite
+5. **Blocking `std::process::Command` for capture-pane blocks the tokio executor** — the existing tmux functions use blocking subprocess calls; adding capture-pane to the 3s TUI refresh loop creates visible UI lag and drops key events under load. Prevention: use `tokio::process::Command` for capture-pane, poll on a separate 10–15s interval (not the 3s DB interval), cache last pane content so slow calls don't freeze the render cycle.
 
-6. **Cargo test suite broken by TUI in tests** — `cargo test` on macOS in iTerm2 runs with stdout connected to a TTY; if any test calls `enable_raw_mode()` the terminal enters raw mode and test output is invisible; the `welcome_content()` pattern (pure-string function, tested separately from render) is already the correct model; never call TUI render functions from tests
+6. **Version mismatch breaks `npx squad-station install` during partial release** — if the npm package is published with `spawnSync(destPath, ['install', '--tui'])` before the new binary is released, users on old binaries get a clap parse error. Prevention: keep auto-launch as bare `spawnSync(destPath, [])` in v1.8; or add version detection in JS before using the subcommand form.
+
+---
 
 ## Implications for Roadmap
 
-Based on combined research, two phases are sufficient for v1.7. All P1 features and all critical pitfalls map to Phase 1. Phase 2 covers polish and deferred differentiators. The phase ordering is driven by the safety-before-features principle: TTY contract and terminal-restore contract must be established before any TUI code merges.
+All three features are mutually independent and can be developed in any order. The recommended sequence below is driven by shared file ownership (minimizing merge conflicts on `ui.rs`) and by the principle of laying stable foundations before wiring up polling logic.
 
-### Phase 1: TTY-Safe Welcome TUI Core
+### Phase 1: `capture_pane` Foundation and Processing Display Infrastructure
 
-**Rationale:** All six critical pitfalls must be addressed before any TUI code is wired into the bare-invocation path. The TTY guard, terminal-restore panic hook, test-isolation contract, minimum terminal size fallback, and auto-exit timeout are prerequisites — not afterthoughts. The ratatui/crossterm/tui-big-text version upgrade must happen at the start of Phase 1 because all subsequent TUI code targets the new API. The post-install auto-launch design decision (hint vs. exec) must be resolved before either install script is modified. The alternate-screen-vs-main-buffer decision must be resolved before the event loop is written.
+**Rationale:** Pure additions to `tmux.rs` and `helpers.rs` with no side effects. Landing the arg-builder function and colorize arm first makes Phase 2's TUI wiring a clean, focused change. These foundational modules should be stable before the event loop changes land.
 
-**Delivers:**
-- ratatui 0.29 + crossterm 0.28 + tui-big-text 0.7.x Cargo.toml upgrade with `frame.size()` → `frame.area()` migration in `ui.rs` and `wizard.rs`
-- `run_welcome_tui()` ratatui event loop: AlternateScreen (or main-buffer per design decision), panic hook, restore on all exit paths
-- TTY guard in `run_welcome()` routing to static `print_welcome()` fallback
-- squad.yml detection: first-run CTA vs. returning-user reference guide
-- Enter key → `restore_terminal()` → `commands::init::run()` handoff (no nested AlternateScreen)
-- Key hint bar at bottom of every TUI page
-- Minimum terminal size check (< 10 rows or < 40 cols → fall back to `print_welcome()`)
-- Auto-exit timeout in event loop (no indefinite blocking on keypress)
-- main.rs call-site swap: `print_welcome()` → `run_welcome().await?`
-- Post-install messaging in install.sh and run.js (hint or exec per design decision)
+**Delivers:** `tmux::capture_pane()` (unit-testable via arg-builder pattern), `"processing"` color arm in `helpers.rs` and `ui.rs::status_color()`, `classify_pane_output(output: &str) -> bool` pure function
 
-**Addresses:** All P1 features from FEATURES.md
-**Avoids:** Pitfalls 1, 2, 3, 4, 5, 6, 7, 8, 10 from PITFALLS.md (all critical and all blocking moderate pitfalls)
-**Stack used:** ratatui 0.29, crossterm 0.28, tui-big-text 0.7.x, std::io::IsTerminal, existing wizard.rs/ui.rs patterns
-**Design decisions to resolve before implementation:**
-- Alternate screen vs. main-buffer-raw-mode for welcome TUI (Pitfall 8)
-- Auto-launch vs. print-hint-only for install scripts (Pitfalls 2 and 3)
+**Addresses features:** Orchestrator processing state (display infrastructure only)
 
-### Phase 2: Quick Guide and UX Polish
+**Avoids pitfalls:** Arg-builder pattern and pure classification function enforced from the start, before any polling code is written
 
-**Rationale:** Deferred until Phase 1 is validated in real installs. The quick guide page adds a second TUI state machine frame and is fully independent of Phase 1 event loop logic. State-aware returning-user refinements can be iterated without touching the Phase 1 guard contract. Any UX issues surfaced by Phase 1 dogfooding (scrollback visibility, key navigation feel, title sizing) are addressed here.
+**Research flag:** Standard patterns — follows established `tmux.rs` arg-builder pattern exactly; no deeper research needed
 
-**Delivers:**
-- Quick guide page (second TUI state: Title → QuickGuide state machine; 3-4 lines of mental model; wizard CTA at end)
-- Post-install "installed successfully" plain-text confirmation printed before TUI launches in both install paths
-- UX refinements from Phase 1 dogfooding (layout, typography, key navigation feel)
-- Returning-user reference guide refinements (richer subcommand table, hints)
+---
 
-**Uses:** ratatui multi-page state machine (same two-page pattern as wizard.rs)
-**Implements:** P2 differentiator features from FEATURES.md
+### Phase 2: Processing State Detection in TUI Refresh Loop
+
+**Rationale:** Requires Phase 1 `capture_pane()` to exist. Contains the most risk (heuristic accuracy, async blocking, DB write pattern) and should be validated early while research findings are fresh.
+
+**Delivers:** Live orchestrator status polling in the TUI dashboard with guard chain (antigravity check, dead session check, error fallback), separate 10–15s poll interval, TUI-only overlay using `classify_pane_output()`, `tokio::process::Command` for non-blocking subprocess
+
+**Addresses features:** Orchestrator "processing" state (P2 differentiator — fully shipped)
+
+**Avoids pitfalls:** Pitfall 3 (guard chain), Pitfall 4 (conservative heuristic, pure function), Pitfall 5 (async-safe subprocess, separate interval), Pitfall 9 (TUI-only — no DB contract change)
+
+**Research flag:** Needs attention during implementation — the provider-specific heuristic patterns for `classify_pane_output()` (Claude Code vs. Gemini CLI) require manual testing against real sessions before the patterns are finalized. The DB-vs-TUI-only decision must be explicitly locked before code is written.
+
+---
+
+### Phase 3: Folder Name as Project Name Default
+
+**Rationale:** Fully independent of Phases 1 and 2. Zero risk to existing functionality. Batching the `ui.rs` title bar change after Phase 2's larger `ui.rs` changes reduces merge noise.
+
+**Delivers:** Pre-populated project name field in wizard (sanitized, with cursor at end), project name in dashboard title bar, folder-name fallback in `generate_squad_yml()`, pure derivation function accepting `&Path` for testability
+
+**Addresses features:** Folder name pre-fill (P1), dashboard title (P1), squad.yml fallback (P1)
+
+**Avoids pitfalls:** Pitfall 2 (sanitization and `None` guard built in from the start), Pitfall 7 (wizard validation reviewed alongside the default introduction), Pitfall 8 (pure function accepting `&Path` for testability — no direct `current_dir()` call inside unit-tested code)
+
+**Research flag:** Standard patterns — `cargo init` convention is universal; sanitization approach is straightforward; no deeper research needed
+
+---
+
+### Phase 4: `install` Subcommand and Distribution Updates
+
+**Rationale:** Most review surface area (new file + CLI enum + distribution files). Independent of Phases 1–3, but benefits from landing after core binary changes are stable. The JS/Rust boundary decision must be settled before writing code.
+
+**Delivers:** `Commands::Install { tui: bool }`, `src/commands/install.rs` config-free handler, updated `npm-package/bin/run.js` and `install.sh`, documented JS/Rust ownership boundary in code comments
+
+**Addresses features:** `install` subcommand (P1 table stakes), unified install path (P1 differentiator)
+
+**Avoids pitfalls:** Pitfall 1 (clean JS/Rust boundary documented), Pitfall 6 (keep npm auto-launch as bare call to avoid version coupling), Pitfall 10 (install handler explicitly config-free — no `load_config()` before `squad.yml` exists)
+
+**Research flag:** Standard patterns for CLI subcommand structure. The npm/Rust ownership boundary is a documented design decision (not a research gap) that must be written into the implementation plan before coding starts.
+
+---
 
 ### Phase Ordering Rationale
 
-- **Safety before features:** The TTY guard and terminal-restore contract must be committed before any TUI event loop code merges. A TUI without the guard ships a binary that hangs CI pipelines or corrupts user terminals.
-- **Version upgrade at the start of Phase 1:** The ratatui 0.29 bump must precede all TUI code because tui-big-text 0.7.x requires it. Upgrading mid-phase forces rewriting already-merged code.
-- **Design decisions before implementation:** The alternate-screen and auto-launch decisions are architectural — making them after the event loop is written forces a rewrite. Lock them as the first deliverable of Phase 1.
-- **Install scripts last in Phase 1:** The install script changes are two-line additions that depend on stable binary behavior. They belong at the end of Phase 1, not the beginning, so they can be validated against the final binary behavior.
-- **Phase 2 after validation:** The quick guide page adds complexity to the state machine. It should only be built after Phase 1 is confirmed to work correctly in real install flows.
+- **Phases 1 and 2 are sequenced together** because they share `tmux.rs` and `ui.rs`. Landing the pure foundation (Phase 1) before wiring the polling loop (Phase 2) avoids a single large diff that combines display infrastructure with event loop logic.
+- **Phase 3 is independent** of all other phases and could be Phase 1. It is placed third only to avoid a second `ui.rs` PR conflicting with Phase 2's larger changes.
+- **Phase 4 is last** because it has the most distribution touchpoints and the longest review cycle. The core binary features (Phases 1–3) should be stable before the CLI surface and distribution files change.
+- **All three features can be parallelized** by separate developers. The only coordination point is `ui.rs`: Phase 2 (processing color + poll) and Phase 3 (title bar + project field) both modify `ui.rs`. Assign these to the same developer or coordinate the merge order explicitly.
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 1 (alternate screen vs. main buffer):** ratatui raw-mode-only without EnterAlternateScreen is less common in the ecosystem; a concrete code prototype is needed to verify the pattern works cleanly with ratatui 0.29 before committing to it as the architecture
-- **Phase 1 (tui-big-text 0.7.x / ratatui 0.29 compatibility):** The 0.7.x compatibility with ratatui 0.29 is inferred from docs.rs (0.8.x requires ratatui ^0.30.0); validate with `cargo add tui-big-text@0.7` immediately after the ratatui upgrade before building the title widget
+Phases needing attention during planning or implementation:
+- **Phase 2 (pane polling):** Provider-specific heuristic patterns for `classify_pane_output()` require manual validation against real Claude Code and Gemini CLI sessions. The DB-vs-TUI-only overlay decision is an architectural choice that must be documented in the implementation plan before any code is written.
 
-Phases with standard patterns (skip research):
-- **Phase 1 (TTY guard):** `init.rs` line 103 is the exact pattern; copy-verify only
-- **Phase 1 (AlternateScreen + panic hook):** `ui.rs` lines 284–338 are the authoritative in-codebase reference; copy-verify only
-- **Phase 1 (squad.yml existence check):** `Path::new("squad.yml").exists()` — trivial; no research needed
-- **Phase 1 (ratatui/crossterm version upgrade):** All breaking changes documented in official BREAKING-CHANGES.md; `frame.size()` → `frame.area()` is the only rename
-- **Phase 2 (multi-page state machine):** wizard.rs multi-page pattern is the reference; no new research needed
+Phases with standard, well-documented patterns:
+- **Phase 1 (capture_pane foundation):** Follows `tmux.rs` arg-builder pattern exactly. No research needed.
+- **Phase 3 (folder name default):** `cargo init` convention is universal; sanitization is straightforward. No research needed.
+- **Phase 4 (install subcommand):** clap subcommand pattern is well-established. JS/Rust boundary is a design decision, not a research gap.
+
+---
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All version decisions verified against official ratatui release notes, docs.rs, and the crossterm incompatibility advisory; tui-big-text 0.7.x compatibility is MEDIUM (inferred, needs `cargo add` validation) |
-| Features | HIGH | Primary sources: direct codebase analysis + clig.dev canonical CLI UX guidance + BMAD-METHOD live documentation; all P1 features verified against existing code patterns in the codebase |
-| Architecture | HIGH | All findings derived from direct source inspection of the live codebase; no inferred patterns; build order validated against actual file dependencies; line-number references to ui.rs provided |
-| Pitfalls | HIGH | All six critical pitfalls verified against crossterm docs, npm lifecycle docs, POSIX shell specification, and ratatui BREAKING-CHANGES.md; recovery strategies provided |
+| Stack | HIGH | All findings derived from direct `Cargo.lock` inspection and codebase review. Zero new dependencies confirmed across all three features. |
+| Features | HIGH | Features are well-defined; ecosystem patterns verified (clig.dev, cargo init, tmuxcc, NTM, TUICommander). Anti-features explicitly identified with justification. |
+| Architecture | HIGH | All findings from direct source inspection of v1.7 codebase. File change matrix is complete and verified against actual module structure. |
+| Pitfalls | HIGH | Based on direct codebase inspection plus patterns from v1.5–v1.7 development history. 10 specific pitfalls with phase-level prevention guidance and recovery costs. |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Auto-launch design decision (unresolved conflict):** STACK.md/FEATURES.md recommend TTY-guarded auto-launch; PITFALLS.md recommends print-hint-only. Recommendation: default to print-hint-only for safety; document the decision explicitly in the roadmap phase scope.
-- **Alternate screen vs. main buffer (unresolved):** The welcome screen UX (content visible in scrollback vs. full-screen immersive) requires an explicit decision before Phase 1 implementation begins. Build a minimal prototype of the main-buffer-raw-mode pattern to validate it works with ratatui 0.29.
-- **tui-big-text 0.7.x compatibility:** Inferred, not confirmed. Validate immediately as step 0 of Phase 1.
-- **frame.size() scope in ui.rs and wizard.rs:** The exact line count of the `frame.size()` → `frame.area()` rename across both files was not audited in research. Confirm scope before estimating Phase 1 effort; may affect whether wizard.rs needs review.
+- **Pane content heuristic patterns:** The specific string patterns for detecting "processing" vs. "idle" in Claude Code and Gemini CLI panes cannot be finalized without manual testing against real sessions. The Phase 2 implementation plan should include a validation step (run the heuristic against known-idle and known-active sessions) before the code is merged.
+
+- **npm auto-launch backward compatibility:** The safest approach (keep bare invocation in `run.js`) is documented but not the only option. If the team wants to use `spawnSync(destPath, ['install', '--tui'])` in the auto-launch path, a version-detection guard must be added. This decision should be made explicitly during Phase 4 planning, not left to the implementor.
+
+- **`processing` DB vs. TUI-only decision:** Research recommends TUI-only overlay. If any future feature (e.g., `squad-station status` reporting processing state, external monitoring tools parsing `agents --json`) requires the DB value, a schema migration and complete consumer audit will be needed. Lock this decision at the start of Phase 2.
+
+---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- `src/commands/welcome.rs`, `src/commands/wizard.rs`, `src/commands/ui.rs`, `src/commands/init.rs`, `src/main.rs`, `src/cli.rs` — direct codebase inspection; all pattern references
-- `npm-package/bin/run.js`, `install.sh` — direct codebase inspection; install flow verification
-- [ratatui v0.28.0 highlights](https://ratatui.rs/highlights/v028/) — crossterm 0.28 requirement; frame.area() rename confirmed
-- [ratatui v0.29.0 highlights](https://ratatui.rs/highlights/v029/) — feature set verification
-- [ratatui v0.30.0 highlights](https://ratatui.rs/highlights/v030/) — workspace split confirmed; frame.size() removed (not just deprecated)
-- [Ratatui / Crossterm Version incompatibility advisory](https://github.com/ratatui/ratatui/issues/1298) — semver conflict between crossterm 0.27 and 0.28 confirmed
-- [ratatui panic hooks recipe](https://ratatui.rs/recipes/apps/panic-hooks/) — panic hook pattern verified
-- [ratatui alternate screen concept](https://ratatui.rs/concepts/backends/alternate-screen/) — alternate screen architecture
-- [ratatui terminal and event handler recipe](https://ratatui.rs/recipes/apps/terminal-and-event-handler/) — event loop pattern
-- [std::io::IsTerminal](https://doc.rust-lang.org/std/io/trait.IsTerminal.html) — stable since Rust 1.70 confirmed
-- [Node.js TTY module docs](https://nodejs.org/api/tty.html) — process.stdout.isTTY documented
-- [Command Line Interface Guidelines — clig.dev](https://clig.dev/) — canonical CLI UX patterns; anti-feature rationale
+- Squad Station codebase v1.7 (direct inspection): `src/cli.rs`, `src/main.rs`, `src/commands/ui.rs`, `src/commands/wizard.rs`, `src/commands/init.rs`, `src/commands/helpers.rs`, `src/tmux.rs`, `src/db/agents.rs`, `src/db/migrations/`, `npm-package/bin/run.js`, `install.sh`
+- `Cargo.lock` (local) — confirmed locked versions: clap 4.5.60, ratatui 0.30.0, crossterm 0.29, tokio 1.37
+- Rust stdlib (stable since 1.70): `std::env::current_dir`, `Path::file_name`, `std::io::IsTerminal`, `OsStr::to_str` / `to_string_lossy`
+- [cargo init — The Cargo Book](https://doc.rust-lang.org/cargo/commands/cargo-init.html) — folder-name-as-default convention
+- [Command Line Interface Guidelines (clig.dev)](https://clig.dev/) — interactive/silent modes, flag conventions, TTY guard rationale
 
 ### Secondary (MEDIUM confidence)
-- [tui-big-text docs.rs](https://docs.rs/tui-big-text/latest/tui_big_text/) — version 0.8.2 requires ratatui ^0.30.0; 0.7.x compatibility with 0.29 inferred
-- [BMAD-METHOD interactive installation — DeepWiki](https://deepwiki.com/bmadcode/BMAD-METHOD/2.1-cli-installation) — competitor first-run onboarding pattern analysis
-- [Publishing binaries on npm — Sentry Engineering](https://sentry.engineering/blog/publishing-binaries-on-npm) — spawnSync with stdio:inherit pattern
-- [npm postinstall non-TTY issue #16608](https://github.com/npm/npm/issues/16608) — postinstall stdio behavior confirmed as pipe
-- [curl | sh pitfalls overview](https://www.arp242.net/curl-to-sh.html) — stdin-as-pipe behavior documented
-- [crossterm enable_raw_mode ENOTTY](https://docs.rs/crossterm/latest/crossterm/terminal/fn.enable_raw_mode.html) — non-TTY error behavior
-- [ratatui BREAKING-CHANGES.md](https://github.com/ratatui/ratatui/blob/main/BREAKING-CHANGES.md) — version-by-version API changes
+- [tmuxcc GitHub](https://github.com/nyanko3141592/tmuxcc) — pane content pattern detection for AI agent state
+- [TUICommander](https://tuicommander.com/) — agent status detection patterns, provider-specific regex approach
+- [Ralph TUI](https://ralph-tui.com/) — task execution state visualization in TUI dashboards
+- [tmux man page](https://man7.org/linux/man-pages/man1/tmux.1.html) — `capture-pane`, `display-message`, `pane_current_command`, session name restrictions
+- clap docs — unrecognized subcommand error behavior, `Commands` derive macro
+- tokio `process::Command` docs — non-blocking subprocess calls in async runtimes
 
-### Tertiary (LOW confidence)
-- [ratatui-splash-screen — orhun/ratatui-splash-screen](https://github.com/orhun/ratatui-splash-screen) — animated title option for v2+; web search verified; not evaluated for v1.7
-- [UX patterns for CLI tools — lucasfcosta.com](https://lucasfcosta.com/2022/06/01/ux-patterns-cli-tools.html) — general CLI UX guidance (2022; patterns assumed stable)
+### Tertiary (LOW confidence — validate during implementation)
+- Provider-specific pane content patterns for Claude Code and Gemini CLI — documented from community observation; must be validated against real sessions before finalizing `classify_pane_output()`
 
 ---
-*Research completed: 2026-03-17*
+
+*Research completed: 2026-03-18*
 *Ready for roadmap: yes*

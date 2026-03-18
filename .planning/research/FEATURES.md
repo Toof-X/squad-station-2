@@ -1,28 +1,20 @@
 # Feature Research
 
-**Domain:** CLI first-run onboarding TUI — interactive welcome screen + post-install auto-launch
-**Researched:** 2026-03-17
-**Confidence:** HIGH (primary patterns from existing codebase analysis + BMAD-METHOD installation flow + clig.dev canonical guidance + ratatui ecosystem)
+**Domain:** Rust CLI — AI agent fleet orchestration (squad-station v1.8)
+**Researched:** 2026-03-18
+**Confidence:** HIGH (features are well-defined, ecosystem patterns verified, existing code reviewed directly)
 
 ---
 
-## Context: What Already Exists (Do Not Re-Build)
+## Context: What v1.8 Adds
 
-Before mapping new features, the following are confirmed shipped and must not be duplicated:
+Three features layered on top of v1.7 (which already ships: init wizard, TUI dashboard, welcome TUI, npm + curl install, welcome auto-launch on TTY detection).
 
-| Component | Status | Location |
-|-----------|--------|----------|
-| Static welcome screen (`squad-station` bare) | DONE v1.6 | `src/commands/welcome.rs` |
-| ASCII title art + version + subcommand list | DONE v1.6 | `welcome.rs::print_welcome()` |
-| `squad-station init` hint line | DONE v1.6 | `welcome.rs` |
-| Multi-page ratatui wizard (init flow) | DONE v1.5 | `src/commands/wizard.rs` |
-| Post-init ASCII agent diagram | DONE v1.6 | `src/commands/diagram.rs` |
-| Alternate screen setup/teardown pattern | DONE v1.5 | `wizard.rs` + `ui.rs` |
-| TTY guard (`is_terminal()`) for non-interactive contexts | DONE v1.5 | `init.rs` |
-| npm binary distribution | DONE v1.2 | npm postinstall |
-| curl installer (`install.sh`) | DONE v1.2 | `install.sh` |
+The three v1.8 features:
 
-The v1.7 milestone replaces `print_welcome()` with an interactive ratatui TUI and adds post-install auto-launch to both distribution paths.
+1. `squad-station install [--tui]` — new Rust subcommand; bare = silent confirmation; `--tui` = launch welcome TUI. npm postinstall and curl installer call this instead of launching the binary directly.
+2. Folder name as default project name — pre-fill in wizard page 1, dashboard title bar, squad.yml generation fallback.
+3. Orchestrator "processing" state — TUI polls orchestrator tmux pane via `tmux capture-pane -p`, detects mid-input activity, renders a status indicator in the dashboard.
 
 ---
 
@@ -30,107 +22,103 @@ The v1.7 milestone replaces `print_welcome()` with an interactive ratatui TUI an
 
 ### Table Stakes (Users Expect These)
 
-Features a CLI first-run onboarding experience must have. Missing any of these makes the tool feel incomplete or untrustworthy compared to tools like BMAD-METHOD, OpenCode, and gh.
+Features users assume exist. Missing these = product feels incomplete or broken.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Large branded ASCII title in alternate screen | Establishes tool identity; BMAD, gh, fly all show branding upfront; alternatescreen = professional TUI tool feel | LOW | ASCII art already exists; wrap in `ratatui::widgets::Paragraph` inside alternate screen; same `setup_terminal()` pattern from `wizard.rs` |
-| Version number displayed prominently | Users must immediately confirm they have the right version; especially important after `npm install -g` | LOW | `env!("CARGO_PKG_VERSION")` macro — already done in `welcome_content()`; move to TUI Paragraph |
-| One-liner product description | First-time users need "what is this?" answered before they hit a subcommand wall | LOW | Currently absent from welcome screen; add 1-2 lines below title: "AI agent fleet dispatcher via tmux — route tasks, track completion, monitor agents." |
-| Clear CTA: what to do next | Users must see the single next action without reading docs; BMAD ends every onboarding page with "now run X" | LOW | "Press [Enter] to set up your squad" (no config) or "Your squad is configured — run squad-station ui" (config exists) |
-| Keyboard navigation: Enter / q / Esc | Ratatui TUI convention; every TUI tool in the ecosystem requires key-driven navigation | LOW | `KeyCode::Enter` advances; `KeyCode::Char('q')` and `KeyCode::Esc` exit — same pattern as `wizard.rs` and `ui.rs` |
-| Conditional routing: no `squad.yml` vs `squad.yml` exists | First-run should route to setup; returning users should see reference guide, not setup prompt — prevents re-onboarding frustration | MEDIUM | Check `Path::new("squad.yml").exists()` at startup; two distinct render modes |
-| TTY guard — fall back to static output in non-interactive contexts | CI pipelines, pipes, and scripts must not hang on TUI input; npm install in CI must not fail due to binary launching TUI | LOW | `std::io::stdout().is_terminal()` — already in `init.rs`; apply same guard to `print_welcome()` dispatch |
-| Graceful TUI exit with terminal restore | Exiting with `q` must restore terminal state; raw mode left active = broken shell for user | LOW | Same `restore_terminal()` / panic hook pattern from `wizard.rs` and `ui.rs` |
-| Post-install auto-launch from curl installer | After `curl | sh`, user should immediately see the tool — eliminates "now what?" moment | LOW | Add TTY-guarded `squad-station` call at end of `install.sh`; `[ -t 1 ] && squad-station` |
-| Post-install auto-launch from npm postinstall | Same expectation for `npm install -g squad-station` path; reduces friction to first wow moment | MEDIUM | Add TTY check in JS postinstall script: `if (process.stdout.isTTY) { execSync('squad-station') }`; must be guarded to avoid CI failures |
-| Key hint bar at bottom of TUI | Users must know how to exit / advance without guessing; clig.dev and ratatui conventions both emphasize discoverability | LOW | Fixed-height bottom row: `[Enter] continue  [q] quit`; ratatui `Layout::Constraint::Length(1)` row |
+| `install` subcommand with silent mode | Every serious CLI has a discrete install command; bare invocation = quiet/scriptable is assumed (git, npm, cargo init all follow this). Users running install in CI expect zero interactivity unless they explicitly opt in. | LOW | Bare `squad-station install` must produce one-line confirmation and exit 0. The JS layer in run.js already has an `install` handler — this moves the post-binary-install UX ownership to Rust. No scaffold logic moves; that stays in JS. |
+| `--tui` flag for opt-in interactive path | Standard flag pattern for opt-in interactivity. clig.dev: "Only use prompts or interactive elements if stdin is a TTY. Never require a prompt — always provide a way of passing input with flags." | LOW | `--tui` must be guarded with the same `is_terminal()` check already used in welcome.rs. Non-TTY with `--tui` falls back silently — does not error. |
+| Folder name pre-filled in wizard | `cargo init`, `npm create vite`, `create-next-app`, and virtually all scaffolding tools use `basename $PWD` as the default project name. Users expect to press Enter and get a sensible default. | LOW | `std::env::current_dir()` + `.file_name()` + `to_string_lossy()` for UTF-8 safety. This is a UI default only — user can still override in the input field. |
+| Dashboard title reflects project name | TUI dashboards (Ralph TUI, TUICommander, tmuxcc) all show a project/session label. A dashboard without a title reads as a debug tool, not a product. | LOW | Read `project` field from squad.yml via existing `config::load()`. Folder name fallback when config is absent or field is empty. |
+| squad.yml generation uses folder name fallback | When the user blanks the project name field in the wizard, the generated YAML must be valid. An empty `project:` field breaks agent auto-naming (`<project>-<tool>-<role>` convention). | LOW | Safety net for the programmatic path. The wizard already enforces non-empty input with inline error feedback (v1.5); the fallback covers edge cases in `generate_squad_yml()`. |
+| npm + curl installers call `install --tui` | These are the actual install entry points for end users. If they still bypass the Rust `install` subcommand after v1.8, the install subcommand is a dead letter. | LOW | One-line change each: run.js replaces `spawnSync(destPath, [])` with `spawnSync(destPath, ['install', '--tui'])`; install.sh replaces `exec "${INSTALL_DIR}/squad-station"` with `exec "${INSTALL_DIR}/squad-station" install --tui`. |
 
 ### Differentiators (Competitive Advantage)
 
-Features that set the first-run experience apart from comparable tools. Not strictly required, but high-value additions.
+Features that set the product apart. Not required, but valued.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Quick guide page (multi-page welcome TUI) | New users see the mental model — "orchestrator sends tasks, workers complete them, hooks signal done" — in under 30 seconds before being routed to wizard; BMAD does 8 prompts, OpenCode just launches TUI | MEDIUM | Second TUI "page" after title screen; `[Enter]` or `[→]` to advance; 3-4 lines of plain-text explanation; state machine with two frames: `Title` and `QuickGuide` |
-| State-aware welcome: reference guide for returning users | If `squad.yml` exists, show key commands instead of setup CTA; power users invoke bare `squad-station` to see command list, not to be re-onboarded | LOW | Second render path: title + subcommand reference table + "Run squad-station ui to monitor" hint; no Enter-to-wizard CTA |
-| Skip animation on any keypress | If a logo animation is added, any key skips it immediately — respects power user time | LOW | Condition draw loop: `if frame_count < MAX_FRAMES && !any_key_pressed { advance_frame }` |
-| Post-install "you're ready" message before TUI | After curl or npm install, print one plain-text line before launching TUI so the user knows install succeeded | LOW | Insert `println!("squad-station installed successfully!")` or equivalent in install scripts, then launch TUI |
+| Orchestrator "processing" state in TUI | No competing tool (tmuxcc, NTM, Ralph TUI, TUICommander) distinguishes between "orchestrator idle at shell prompt" and "orchestrator mid-response composing a task." This lets agents and human observers see whether the orchestrator is actively working — reduces unnecessary interrupts. | MEDIUM | `tmux capture-pane -p -t <orchestrator_session>`, parse last non-empty line, match against AI prompt/spinner patterns. Standard approach across ecosystem (tmuxcc, NTM use identical pattern-matching strategy). |
+| Install subcommand centralizes post-install UX in Rust | Currently npm postinstall (JS) and curl installer (sh) each independently contain TUI launch logic. Moving to `install --tui` means one canonical path — easier to test, no JS/sh divergence, version-stable behavior. | LOW | All terminal interaction already lives in Rust. The install subcommand becomes the single authoritative welcome entry point. |
+| Context-aware install confirmation | `squad-station install` (bare) prints a single confirmation line to stdout and exits. Clean for CI, piped environments, and postinstall log capture. Consistent with `--json` global flag already in the CLI. | LOW | Distinct from current npm `install` which prints a multi-line banner. Silent mode = one line. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Mandatory animated splash with minimum display time | Looks impressive, establishes brand | Punishes power users who run `squad-station` to check a command; adds latency to every bare invocation | If animation is added, make it instant-skip on any keypress; cap at 0.5s max |
-| Auto-launch wizard without keypress confirmation | Zero friction | Violates clig.dev principle: actions with side effects must require explicit confirmation; a user who ran `squad-station` expecting info would instead trigger squad.yml creation | Always gate wizard entry behind explicit `[Enter]` press; show intent ("Press Enter to set up") before acting |
-| Block postinstall until TUI interaction completes | Ensures onboarding | Breaks `npm install` in CI and scripted environments; users with `--ignore-scripts` or `npm ci` would get different behavior | TTY-gate all interactive behavior; non-interactive install always completes silently |
-| Browser auto-open for documentation | Reduces friction to docs | Squad Station is local-only; no web service, no auth; browser launch is alarming in a security-conscious context | Print URL as plain text: "Docs: https://github.com/..." |
-| Telemetry / "how did you hear about us?" prompt | Growth data | Breaks trust in a developer security tool; no telemetry infrastructure exists | Skip entirely |
-| Persistent interactive TUI on every bare invocation for returning users | Consistent branding | Annoying for power users; `squad-station | grep send` type usage breaks with TUI in alternate screen | Interactive TUI only for first-run (no squad.yml); static text output for returning users |
-| Full setup wizard within the welcome TUI | Single flow | The wizard already exists in `wizard.rs`; duplicating it in the welcome TUI creates two code paths to maintain | Welcome TUI hands off to existing wizard via CTA; no wizard logic in welcome |
+| "User is typing" detection via pane buffer diff | Seems logical: diff two capture-pane snapshots between polls and conclude typing happened | tmux capture-pane returns the static rendered screen, not a keystroke stream. AI tool animations (spinners, streaming response output) produce diff noise that creates false positives. Buffer content resets between visible screen refreshes — diffs are not stable indicators. | Heuristic pattern-match on last-line content: shell prompt regex = idle; AI tool response marker = processing. Combine with `pane_current_command` check to confirm the AI process is actually running. |
+| Block `send` when orchestrator is "processing" | Sounds safe — don't interrupt a busy orchestrator | Stateless CLI model means `send` has no live visibility into orchestrator state. Adding a blocking check couples a write path to a read-only TUI heuristic. Race conditions guaranteed. Violates the "stateless, event-driven" design principle. | Surface processing state only in TUI dashboard as a visual indicator. Let `send` proceed normally. The orchestrator AI handles interruptions. |
+| Auto-detect project name from git remote URL | Seems more authoritative than folder name | git remote URL parsing is brittle (SSH vs HTTPS, monorepos, forks, detached HEAD). Adds `git` subprocess dependency. Folder name is sufficient and universally available. | Use folder name as default; let user override in wizard. |
+| Persist install state to `.squad/` | Track installed version in `.squad/station.db` or a lockfile | `squad-station install` is a one-shot binary operation, not a project-scoped command. Writing to `.squad/` implies the user is in a project directory, which is not guaranteed during binary install. | Binary install writes to system PATH only. Project-scoped `.squad/` writes belong to `init`. |
+| Show orchestrator processing state in `send` output | Would give feedback to orchestrator when dispatching a task | `send` is called by the orchestrator AI itself, which already knows it is processing. Adding tmux pane polling to `send` adds latency to every task dispatch. | Processing state is a monitoring feature for the human observer in the TUI dashboard, not a feedback mechanism for the orchestrator. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Post-install auto-launch (curl)]
-    └──requires──> [TTY guard in install.sh: [ -t 1 ] check]
-    └──requires──> [Binary installed to PATH]
+[install subcommand (Rust)]
+    └──replaces──> [npm postinstall direct TUI launch (JS)]
+    └──replaces──> [curl installer direct TUI launch (sh)]
+    └──calls (--tui path)──> [welcome.rs run_welcome_tui()] (already exists)
+    └──depends on──> [is_terminal() TTY guard] (already in welcome.rs)
+    └──requires──> [new Commands::Install variant in cli.rs]
+    └──requires──> [new src/commands/install.rs handler]
 
-[Post-install auto-launch (npm postinstall)]
-    └──requires──> [TTY guard in JS: process.stdout.isTTY check]
-    └──requires──> [Binary downloaded and executable]
+[folder name as default]
+    └──feeds──> [wizard.rs ProjectPage: pre-fill project name input]
+    └──feeds──> [ui.rs App: title bar display]
+    └──feeds──> [init.rs generate_squad_yml(): fallback when project is empty]
+    └──depends on──> [std::env::current_dir()] (stdlib, no new deps)
 
-[Interactive ratatui welcome TUI]
-    └──requires──> [TTY guard (is_terminal()) — already in codebase]
-    └──requires──> [Alternate screen setup/teardown — already in wizard.rs]
-    └──fallback──> [Static print_welcome() for non-TTY]
+[orchestrator "processing" state]
+    └──depends on──> [tmux capture-pane] (already called in tmux.rs)
+    └──depends on──> [config::load() to resolve orchestrator session name]
+    └──feeds──> [ui.rs App render: orchestrator row status indicator]
+    └──depends on──> [TUI polling loop in ui.rs] (already polls agents + messages)
+    └──requires no new DB schema changes]
 
-[Conditional routing (first-run vs returning)]
-    └──requires──> [squad.yml existence check — trivial Path::exists()]
-    └──requires──> [Interactive ratatui welcome TUI]
-
-[Quick guide page]
-    └──requires──> [Interactive ratatui welcome TUI]
-    └──enhances──> [Conditional routing — shown only on first-run path]
-    └──hands-off-to──> [Existing wizard.rs (no duplication)]
-
-[State-aware welcome for returning users]
-    └──requires──> [squad.yml existence check]
-    └──conflicts──> [Auto-wizard launch without keypress]
+[install subcommand] ──independent of──> [folder name default]
+[install subcommand] ──independent of──> [orchestrator processing state]
+[folder name default] ──independent of──> [orchestrator processing state]
 ```
 
 ### Dependency Notes
 
-- **Auto-launch requires TTY detection in install scripts:** npm postinstall runs in non-TTY context during `npm install` in CI. The TTY check in the JS postinstall must use `process.stdout.isTTY` (Node.js built-in); no additional npm dependency needed. Failure to guard this blocks CI pipelines.
-- **Welcome TUI reuses existing infrastructure:** `setup_terminal()`, `restore_terminal()`, and the crossterm raw-mode panic hook are already implemented in `wizard.rs` and `ui.rs`. The welcome TUI is a new event loop using the same building blocks — not new infrastructure.
-- **Conditional routing is a 3-line check:** `Path::new("squad.yml").exists()` decides which render path. No DB read required. No async. Runs at the top of the welcome handler.
-- **Quick guide page does NOT replace wizard:** The quick guide ends with a CTA that calls `commands::wizard::run()` — the same call already in `commands::init::run()`. No wizard logic lives in the welcome module.
-- **Static fallback preserves existing behavior for CI/scripts:** All 211 existing tests pass without change because the TTY guard routes non-TTY contexts to `print_welcome()` — the same behavior as today.
+- **install subcommand requires a new cli.rs Commands variant:** Currently `Install` does not exist in the `Commands` enum. The JS run.js handles `install` before it reaches the binary. Adding the Rust subcommand means adding `Commands::Install { tui: bool }` to cli.rs and a matching `src/commands/install.rs`. The JS and sh files then delegate to `squad-station install [--tui]` instead of launching the binary bare.
+- **install subcommand does not duplicate scaffold logic:** The JS install function in run.js still handles binary download and `.squad/` scaffold. The new Rust `install` subcommand handles only the post-install confirmation/welcome UX. No Rust code downloads or copies files.
+- **folder name default requires no new crate dependencies:** `std::env::current_dir()` is stdlib. The three injection points (wizard pre-fill, dashboard title, squad.yml fallback) are already in the correct modules — minimal diff in each.
+- **orchestrator processing state requires adding a capture-pane call to ui.rs polling:** ui.rs currently polls DB only. This adds one `tmux capture-pane -p -t <orchestrator_session>` call per refresh cycle for the orchestrator pane. The orchestrator session name comes from config (already loaded). This is the only architectural addition — no new crate, no schema change, no new tmux abstraction layer needed.
+- **all three features are independent of each other:** They can be developed in parallel or sequentially in any order. No feature blocks another.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v1.7)
+### This Milestone (v1.8)
 
-- [ ] **Interactive ratatui welcome TUI** — replaces static `print_welcome()` when stdout is a TTY; large ASCII title, version, one-liner product description; rendered in alternate screen; exits on `q`/`Esc`, advances to wizard entry on `Enter` (no squad.yml) or exits on `Enter` (squad.yml exists)
-- [ ] **TTY guard on welcome dispatch** — if stdout is not a TTY (CI, pipe, redirect), fall back to existing static `print_welcome()` text; zero behavior change for automated contexts; all existing tests continue passing
-- [ ] **Conditional routing based on squad.yml presence** — no config: show "Press [Enter] to set up your squad" CTA that calls existing `wizard::run()`; config exists: show subcommand quick reference, no wizard prompt
-- [ ] **Key hint bar at bottom of TUI** — always-visible `[Enter] continue  [q] quit` or similar; prevents users getting stuck on welcome screen
-- [ ] **Post-install auto-launch from curl installer** — append `[ -t 1 ] && squad-station` to `install.sh` so interactive installs drop directly into the welcome TUI
-- [ ] **Post-install auto-launch from npm postinstall** — add `if (process.stdout.isTTY) { execSync('squad-station') }` (or equivalent) to npm postinstall JS
+Minimum set to ship v1.8 as a coherent release.
 
-### Add After Validation (v1.7.x)
+- [ ] `Commands::Install { tui: bool }` added to cli.rs — new clap variant with `--tui` flag
+- [ ] `src/commands/install.rs` — bare path: print one-line "squad-station installed" confirmation + exit 0; `--tui` path: call `run_welcome_tui()` from welcome.rs with TTY guard
+- [ ] Update run.js postinstall: replace `spawnSync(destPath, [])` with `spawnSync(destPath, ['install', '--tui'])` when `process.stdout.isTTY`
+- [ ] Update install.sh: replace `exec "${INSTALL_DIR}/squad-station"` with `exec "${INSTALL_DIR}/squad-station" install --tui`
+- [ ] Folder name default in wizard.rs ProjectPage: `current_dir()` basename set as initial value of project name text field
+- [ ] Folder name fallback in init.rs `generate_squad_yml()`: use folder name when project name is empty or whitespace-only
+- [ ] Dashboard title in ui.rs: display `project` from loaded config; fall back to folder name when config absent or project field empty
+- [ ] Orchestrator pane capture in ui.rs polling loop: call `tmux capture-pane -p -t <orchestrator_session>`, pattern-match last non-empty line, derive `OrchestratorState::Idle | Processing`
+- [ ] Render orchestrator processing state in TUI agent list — visual indicator (e.g., status tag or row highlight for the orchestrator entry)
 
-- [ ] **Quick guide page** — second TUI page showing 3-4 lines of "how Squad Station works" explanation, advancing to wizard CTA; trigger: user research or issue reports showing confusion after install
-- [ ] **Post-install "installed successfully" message** — print plain-text confirmation before launching TUI in both install paths; helps users differentiate install output from TUI
+### Add After Validation (post-v1.8)
+
+- [ ] Richer orchestrator state: distinguish "thinking" (streaming response) vs "waiting for approval" vs "idle at shell" — requires provider-specific content keyword patterns beyond the basic prompt regex
+- [ ] `squad-station install --silent` as explicit synonym for bare, for scripts that want clarity without relying on default behavior
 
 ### Future Consideration (v2+)
 
-- [ ] **Fleet status on welcome for returning users** — show agent count + status summary from DB when `squad.yml` exists and DB is accessible; requires DB read at startup; high complexity vs value for a bare invocation
-- [ ] **Animated title (skippable)** — ratatui-splash-screen integration for a brief logo animation on first-run; purely aesthetic; defer until core experience is stable and differentiated value is clear
+- [ ] Install subcommand with version pinning (`squad-station install --version x.y.z`) — relevant only when users need to pin versions across projects
+- [ ] TUI dashboard project switcher — navigate between multiple `squad.yml` projects — requires significant ui.rs refactor
 
 ---
 
@@ -138,45 +126,49 @@ Features that set the first-run experience apart from comparable tools. Not stri
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Interactive ratatui welcome TUI | HIGH — visual identity + first impression | LOW — same ratatui patterns as wizard.rs | P1 |
-| TTY guard on welcome dispatch | HIGH — CI safety; preserves existing test suite | LOW — one `is_terminal()` call, already in codebase | P1 |
-| Conditional routing (no config vs config exists) | HIGH — prevents re-onboarding returning users | LOW — `Path::new("squad.yml").exists()` check | P1 |
-| Key hint bar at bottom of TUI | MEDIUM — discoverability; prevents stuck users | LOW — ratatui `Paragraph` in fixed bottom row | P1 |
-| Post-install auto-launch (curl) | MEDIUM — eliminates "now what?" after install | LOW — two lines in install.sh | P1 |
-| Post-install auto-launch (npm) | MEDIUM — same value for npm install path | MEDIUM — JS TTY check + execSync in postinstall | P1 |
-| Quick guide page (multi-page TUI) | MEDIUM — reduces "what is this?" confusion | MEDIUM — new TUI state + render path | P2 |
-| Post-install "installed successfully" text | LOW-MEDIUM — clarity | LOW — println in install scripts | P2 |
-| Fleet status summary on welcome (returning users) | MEDIUM — power user convenience | HIGH — DB read at startup | P3 |
-| Animated title (skippable) | LOW — aesthetics | LOW-MEDIUM — ratatui-splash-screen | P3 |
+| `install` subcommand (Rust, bare + `--tui`) | HIGH — unifies install UX, removes JS/sh divergence, single canonical path | LOW — new clap variant + thin dispatch to existing welcome.rs | P1 |
+| Update npm + curl installers to call `install --tui` | HIGH — required for install subcommand to replace current auto-launch logic | LOW — one-line change each in run.js and install.sh | P1 |
+| Folder name default in wizard pre-fill | HIGH — reduces friction for the common case (project in its own directory) | LOW — `current_dir().file_name()` + one-line pre-fill in wizard | P1 |
+| Folder name fallback in squad.yml generation | HIGH — prevents broken YAML with empty `project:` field, which breaks agent naming | LOW — guard clause in existing `generate_squad_yml()` | P1 |
+| Dashboard title shows project name | MEDIUM — cosmetic but makes TUI feel complete and scoped | LOW — read existing config field, folder name fallback | P1 |
+| Orchestrator "processing" state in TUI | MEDIUM — useful signal for human observers; differentiator vs competing tools | MEDIUM — new capture-pane call in poll loop, heuristic regex, new UI state in render | P2 |
 
 ---
 
-## Competitor / Reference Tool Analysis
+## Ecosystem Patterns Observed
 
-| Feature | BMAD-METHOD (`npx install`) | OpenCode (bare invocation) | gh auth login | Squad Station v1.7 Target |
-|---------|--------------------------|---------------------------|--------------|--------------------------|
-| First-run detection | Detects `_bmad/` directory; offers quick-update vs full reinstall | No state detection; always launches TUI | Detects existing auth token | `squad.yml` existence check; two render paths |
-| Welcome branding | Logo + greeting from YAML file at top of prompt sequence | Not documented | Minimal | Large ASCII art in ratatui alternate screen |
-| Post-install auto-launch | `npx bmad-method install` is the install command; no separate auto-launch | Binary always launches TUI on bare call | N/A (auth separate from install) | TTY-guarded call at end of `install.sh` + npm postinstall |
-| Returning user handling | 3-choice menu: quick-update / compile-agents / update | Always launches same TUI | No distinction | Show reference guide (not setup CTA) when squad.yml exists |
-| Keyboard navigation | Sequential prompts via @clack/prompts; Enter to advance | Standard TUI navigation | Interactive prompt; Enter to select | Enter to advance/confirm; q/Esc to exit |
-| Cancel/exit without setup | Cancel option at any @clack/prompts step | q to quit TUI | Ctrl+C | q/Esc from welcome TUI; no side effects |
-| TTY guard | @clack/prompts detects non-interactive context automatically | Not documented | Falls back to non-interactive flags | Explicit `is_terminal()` guard routing to static `print_welcome()` |
-| Key hint visibility | Hints embedded in @clack/prompts widgets | Visible in TUI status bar | Not applicable | Fixed bottom bar on every TUI page |
+### `install` Subcommand Conventions (MEDIUM confidence — clig.dev + codebase)
+
+The existing codebase already has a JS-layer `install` subcommand in run.js. The v1.8 feature moves post-install welcome UX to a Rust subcommand. Patterns verified:
+
+- clig.dev: "Only use prompts or interactive elements if stdin is a TTY. Never require a prompt — always provide a way of passing input with flags." — supports bare-silent + `--tui`-opt-in design.
+- Oracle/Git for Windows: silent mode via flag is the established convention for scripted installs.
+- `--tui` flag with TTY guard is consistent with OpenCode CLI (bare invocation = TUI) and with existing squad-station welcome TUI pattern.
+- The split between "download + scaffold" (JS responsibility) and "welcome UX" (Rust responsibility) is clean: no ownership confusion.
+
+### Folder Name as Default (HIGH confidence — cargo init official docs)
+
+`cargo init` uses the directory name as the package name by default (overridable with `--name`). `npm create vite@latest` supports `.` for current directory scaffolding. `create-next-app` prompts with the directory basename pre-filled. This is the universal scaffolding convention — users expect it and are surprised when it is absent.
+
+### Pane Content State Detection (MEDIUM confidence — tmuxcc, NTM, TUICommander)
+
+tmuxcc (Rust) uses agent-specific parsers that scan the last N lines of captured pane content for status markers (`@` = processing, `*` = idle, `!` = awaiting approval). NTM strips ANSI sequences and checks lines against patterns with recency weighting. TUICommander uses provider-specific regex for rate-limit and idle detection. The standard approach across all tools: `capture-pane -p`, strip ANSI, regex-match last non-empty line. No tmux API exists for "user is typing." `pane_current_command` via `tmux display-message` confirms the process is running without parsing content — useful as a secondary check.
+
+For Claude Code and Gemini CLI specifically: the shell prompt regex `\$\s*$` or `%\s*$` signals idle (shell returned control). AI tool activity is signaled by response stream content (`>`, `◆`, `ℹ`, or any non-prompt line on the last visible row). This heuristic is reliable enough for a visual dashboard indicator but should not gate write operations.
 
 ---
 
 ## Sources
 
-- [BMAD-METHOD interactive installation — DeepWiki](https://deepwiki.com/bmadcode/BMAD-METHOD/2.1-cli-installation) — HIGH confidence; live documentation scraped
-- [Command Line Interface Guidelines — clig.dev](https://clig.dev/) — HIGH confidence; canonical reference for CLI UX patterns
-- [ratatui alternate screen concepts](https://ratatui.rs/concepts/backends/alternate-screen/) — HIGH confidence; official ratatui documentation
-- [ratatui-splash-screen — orhun/ratatui-splash-screen](https://github.com/orhun/ratatui-splash-screen) — MEDIUM confidence; web search verified; available as crate
-- [is-interactive npm package documentation](https://www.npmjs.com/package/is-interactive) — MEDIUM confidence; TTY detection pattern reference
-- [UX patterns for CLI tools — lucasfcosta.com](https://lucasfcosta.com/2022/06/01/ux-patterns-cli-tools.html) — MEDIUM confidence (2022; patterns stable)
-- Existing codebase analysis (`welcome.rs`, `wizard.rs`, `ui.rs`, `init.rs`, `install.sh`, `main.rs`) — HIGH confidence; direct code review
+- [Command Line Interface Guidelines (clig.dev)](https://clig.dev/) — interactive/silent modes, flag conventions
+- [cargo init — The Cargo Book](https://doc.rust-lang.org/cargo/commands/cargo-init.html) — folder-name-as-default convention (HIGH confidence)
+- [tmuxcc GitHub](https://github.com/nyanko3141592/tmuxcc) — pane content pattern detection for AI agent state (MEDIUM confidence)
+- [TUICommander](https://tuicommander.com/) — agent status detection patterns (MEDIUM confidence)
+- [Ralph TUI](https://ralph-tui.com/) — task execution state visualization (MEDIUM confidence)
+- [tmux man page](https://man7.org/linux/man-pages/man1/tmux.1.html) — `capture-pane`, `display-message`, `pane_current_command` format variables
+- Codebase (verified directly): `src/commands/welcome.rs`, `src/commands/ui.rs`, `src/commands/wizard.rs`, `src/commands/init.rs`, `src/cli.rs`, `src/tmux.rs`, `npm-package/bin/run.js`, `install.sh`
 
 ---
 
-*Feature research for: Squad Station v1.7 First-Run Onboarding TUI + Post-Install Auto-Launch*
-*Researched: 2026-03-17*
+*Feature research for: squad-station v1.8 — Install subcommand, folder name defaults, orchestrator processing state*
+*Researched: 2026-03-18*

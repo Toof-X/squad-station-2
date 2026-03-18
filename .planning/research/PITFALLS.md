@@ -1,426 +1,350 @@
 # Pitfalls Research
 
-**Domain:** First-Run Onboarding TUI + Post-Install Auto-Launch for Rust CLI (v1.7 milestone)
-**Researched:** 2026-03-17
-**Confidence:** HIGH — verified against crossterm/ratatui docs, npm lifecycle docs, Rust stdlib docs, and codebase inspection
+**Domain:** Rust CLI feature additions — `squad-station install` subcommand, folder-name-as-default, orchestrator pane polling (v1.8 milestone)
+**Researched:** 2026-03-18
+**Confidence:** HIGH — based on direct codebase inspection (`cli.rs`, `main.rs`, `init.rs`, `config.rs`, `tmux.rs`, `ui.rs`, `npm-package/bin/run.js`, `install.sh`) plus patterns established in v1.5–v1.7 development
 
 ---
 
 ## Scope of This Document
 
-This file covers pitfalls **specific to v1.7**: adding a ratatui first-run TUI welcome screen and
-post-install auto-launch to an existing, stable Rust CLI. The existing codebase already ships:
+This file covers pitfalls **specific to v1.8**: adding three features to the existing, stable v1.7 codebase.
 
-- `wizard.rs` — ratatui TUI wizard with `setup_terminal()` / `restore_terminal()` + panic hook
-- `init.rs` — TTY guard via `std::io::stdin().is_terminal()` (prevents wizard launch in CI)
-- `welcome.rs` — plain-text welcome screen, content extracted to testable `welcome_content()` fn
-- `npm-package/bin/run.js` — Node.js wrapper that proxies all non-`install` subcommands to binary
-- 211 passing tests (no ratatui render in test suite — all TUI code is untested at unit level)
+**Feature 1 — `squad-station install [--tui]` subcommand:**
+The npm postinstall (run.js) and curl installer (install.sh) currently call the bare binary directly (`spawnSync(destPath, [])` and `exec "$INSTALL_DIR/squad-station"`). v1.8 replaces these bare calls with `squad-station install --tui` so the install path becomes explicit and testable.
 
-The key constraint: the new TUI welcome screen must run when `squad-station` is invoked bare
-(no subcommand), AND post-install scripts in both npm and curl contexts must either auto-launch
-it or explicitly skip it. Both paths cross a TTY boundary that can silently break.
+**Feature 2 — Folder name as project name default:**
+`std::env::current_dir()` basename is used as a fallback value for the project name field in the wizard's first page, the TUI dashboard title, and `squad.yml` generation. Currently the project name field is empty-string by default.
+
+**Feature 3 — Orchestrator "processing" state via pane polling:**
+The TUI dashboard (`ui.rs`) polls `tmux capture-pane -p` on each refresh interval to inspect the content of the orchestrator's tmux pane. If the captured content indicates active work (heuristic pattern match), the orchestrator's status is surfaced as "processing" in the UI — supplementing the existing `idle`/`busy`/`dead` states tracked in the DB.
+
+The v1.7 codebase already has: a working welcome TUI with TTY guards, a multi-page ratatui wizard, npm/curl install auto-launch with `isTTY` / `[ -t 1 ]` checks, and 241 passing tests. The pitfalls below are additive — they do NOT repeat v1.7 pitfalls already documented.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: wizard.rs TTY Guard Pattern Not Applied to Welcome TUI
+### Pitfall 1: `install` Subcommand Name Conflicts With npm `install` Command
 
 **What goes wrong:**
-The existing `wizard.rs::run()` and `run_worker_only()` functions call `setup_terminal()` directly
-without checking `std::io::stdout().is_terminal()` first. The callers in `init.rs` provide the
-guard (`std::io::stdin().is_terminal()` at line 103), but `welcome.rs::print_welcome()` (the
-bare-invocation path in `main.rs`) currently prints plain text and does NOT call any TUI code.
+Adding `Install` to the `Commands` enum in `cli.rs` means `squad-station install` now parses as a Rust subcommand. However, `npm-package/bin/run.js` currently intercepts `install` at the Node level before any binary call: `if (subcommand === 'install') { install(); }`. This means `npx squad-station install` routes to the JavaScript install function — it never reaches the Rust binary.
 
-When v1.7 upgrades `print_welcome()` to launch a ratatui TUI, if the developer forgets to add
-the same TTY guard, `enable_raw_mode()` will be called with stdout connected to a pipe (during
-`npx squad-station` or `squad-station | cat`). Crossterm returns an `ENOTTY` `io::Error` from
-`enable_raw_mode()` in non-TTY contexts — but only if the error is propagated. If `setup_terminal()`
-is called via `?` inside an `async fn run()` that returns `anyhow::Result<()>`, the error will
-propagate to `main.rs` and print "Error: Inappropriate ioctl for device" — a confusing message
-that gives the user no actionable guidance.
+After v1.8, the intent is for `npx squad-station install` to eventually call the Rust `install` subcommand (or a variant of it). If `run.js` is updated to pass `install` through to the binary while also keeping the JS install logic, the two code paths conflict. The JS `install()` function downloads the binary; the Rust `install --tui` subcommand launches the welcome TUI. Calling the Rust binary before it exists (pre-download) causes a crash.
+
+More immediately: changing `run.js` to pass `install` arguments through to the binary changes the contract for any user who currently runs `npx squad-station install`. This is a breaking change to a shipped, documented command.
 
 **Why it happens:**
-The wizard is always called from `init.rs` which already holds the TTY guard. The new welcome
-TUI has no such parent guard. Developers porting the TUI launch pattern from `wizard.rs` copy
-the terminal setup code without copying the guard that belongs one level up.
+The `install` word is overloaded: it means "download binary + scaffold files" in npm context and "finish setup + show TUI" in Rust context. The two meanings are at the same subcommand level without a clear boundary.
 
 **How to avoid:**
-Check TTY before any `enable_raw_mode()` call in the welcome path:
+Keep the split clean. The Rust subcommand should be named `install` but its purpose is narrowly defined as "first-run setup assistant that can be called post-binary-install." The JS `install()` in run.js remains the binary download step and explicitly calls `squad-station install --tui` (the Rust subcommand) as its last step, gated on `isTTY`. This means `npx squad-station install` follows the JS path (download + scaffold + optionally call binary), while `squad-station install` (binary already present) runs the Rust setup flow. These are two different invocation contexts.
+
+Document this split explicitly in code comments so future maintainers do not merge the two paths. The Rust subcommand should fail gracefully if called before `squad.yml` context is available (do not assume a project directory).
+
+**Warning signs:**
+- `npx squad-station install` silently skips the TUI because run.js intercepts it and the binary call never happens
+- Users who already have the binary and run `squad-station install` hit a "command not found" error because `install` was not in the enum prior to v1.8
+- `cargo test` must include a test for `Commands::Install` parsing to prevent regression
+
+**Phase to address:** Phase 1 of v1.8 — the subcommand boundary between JS and Rust must be decided before any code is written.
+
+---
+
+### Pitfall 2: `std::env::current_dir()` Returns an Unusable Basename in Edge Cases
+
+**What goes wrong:**
+`std::env::current_dir()` can return a path whose `file_name()` component is:
+
+1. **Empty or `"."`** — when the process is launched from the filesystem root (`/`) or a path that ends in `/`. `Path::file_name()` returns `None` for paths ending in `/` or for the root `/`.
+2. **Non-UTF-8 bytes** — Linux allows directory names with arbitrary byte sequences. `OsStr::to_str()` returns `None` for non-UTF-8 directory names. `to_string_lossy()` replaces invalid bytes with `U+FFFD` (replacement character), producing a name like `my-proj???backend` which is accepted by the wizard but generates an ugly `squad.yml` and broken tmux session names.
+3. **tmux-unsafe characters** — directory names can contain spaces, parentheses, brackets, slashes, and other characters that `sanitize_session_name()` does not currently handle. The existing sanitizer only replaces `.`, `:`, and `"` with `-`. A directory named `my project (v2)` would become `my project (v2)-orchestrator` as a tmux session name, which tmux rejects because spaces are not valid session name characters.
+4. **Very long names** — tmux has a session name length limit (typically 127 characters on most systems, but the actual limit varies). A deeply nested directory with a long basename can exceed this limit, causing `tmux new-session` to fail silently or with a confusing error.
+5. **Unicode names** — directory names like `我的项目` are valid UTF-8 and `to_str()` succeeds, but `sanitize_session_name()` passes them through unchanged. tmux on macOS handles Unicode session names in many cases, but the behavior is not guaranteed across versions and platforms.
+
+**Why it happens:**
+The wizard's project name field is user-editable, so developers test the happy path (user types a clean ASCII name). The auto-populated default is never tested with adversarial directory names because test environments use clean temp directories.
+
+**How to avoid:**
+Apply a two-stage defense:
+
+1. **Derive the default safely:** Use `std::env::current_dir()?.file_name()?.to_string_lossy().into_owned()` but immediately sanitize the result with an extended sanitizer that also strips or replaces spaces, parentheses, brackets, and any character not in `[a-z0-9A-Z_-]`. This sanitized value is the default, not the raw basename.
+
+2. **Let the user see and edit it:** The wizard pre-populates the field with the sanitized default but requires the user to confirm (or the field is already editable, which it is). A bad default does not corrupt `squad.yml` because the wizard is interactive.
+
+3. **Handle the `None` case explicitly:** If `current_dir()` fails or `file_name()` is `None`, fall back to an empty string (existing behavior) or the string `"my-project"`. Do not panic or propagate the error — a missing default is a cosmetic issue, not a fatal one.
+
+**Warning signs:**
+- `squad-station init` crashes with "panicked at 'called `Option::unwrap()` on a `None` value'" when run from `/`
+- tmux session names with spaces cause `tmux new-session` to fail with "invalid session name"
+- Generated `squad.yml` contains `project: my project (v2)` which is valid YAML but breaks agent naming
+
+**Phase to address:** Phase 1 of v1.8 (folder name default) — the sanitization and None handling must be part of the initial implementation. Do not add the default without the guards.
+
+---
+
+### Pitfall 3: `capture-pane` Polling Breaks When Orchestrator Is Not in a tmux Session
+
+**What goes wrong:**
+`tmux capture-pane -p -t <session-name>` requires that a tmux session with that name exists in the current tmux server. Three conditions cause it to fail:
+
+1. **Orchestrator has `antigravity` provider:** The DB-only orchestrator never has a tmux session. `session_exists()` returns false, but the TUI polling logic needs to know NOT to attempt capture-pane for this agent. If the polling code looks up the orchestrator by role from the DB and issues capture-pane without checking `is_db_only()`, every poll cycle produces a tmux error.
+
+2. **Orchestrator session was killed (status = `dead`):** The squad was `close`d or crashed. The orchestrator agent row still exists in the DB with status `dead`. If polling is based on the DB row's name (which it must be, since that's how the TUI gets agent data), the capture-pane call targets a non-existent session and fails. The TUI must handle `tmux capture-pane` failures gracefully without surfacing an error to the user.
+
+3. **TUI is launched outside of tmux:** `squad-station ui` can be run directly in a terminal, not inside a tmux session. In this case, calling `Command::new("tmux").args(["capture-pane", ...])` spawns a tmux client that connects to the default server, which may or may not have the orchestrator's session. This works if tmux is running; it fails (with exit code 1) if tmux is not available at all, which is a recoverable situation the TUI already handles for session listing.
+
+**Why it happens:**
+The existing TUI data path (`fetch_snapshot`) only reads from SQLite. Adding a `tmux capture-pane` call introduces a new external dependency on tmux availability inside the data refresh loop. Developers who test with a running tmux server never see the failure case.
+
+**How to avoid:**
+Wrap capture-pane in an explicit guard chain before any call:
 
 ```rust
-// In welcome.rs or main.rs bare-invocation arm:
-if std::io::stdout().is_terminal() {
-    run_welcome_tui().await?;
-} else {
-    print_welcome();  // fall back to existing plain-text output
-}
+// 1. Skip if orchestrator is DB-only (antigravity)
+if agent.tool == "antigravity" { return None; }
+
+// 2. Skip if session does not exist
+if !tmux::session_exists(&agent.name) { return None; }
+
+// 3. Run capture-pane; treat any error as "unknown" (not "processing")
+let output = Command::new("tmux")
+    .args(["capture-pane", "-p", "-t", &agent.name])
+    .output()
+    .ok()?;
+if !output.status.success() { return None; }
 ```
 
-The non-TTY fallback must be the existing `print_welcome()` so that `squad-station | grep init`
-and similar pipelines continue to work correctly.
+The return value of `None` means "could not determine processing state" — the TUI shows the existing DB-derived status (`idle`/`busy`/`dead`), not an error state. Never surface capture-pane failures as user-visible errors.
 
 **Warning signs:**
-- Running `squad-station | head` prints `Error: Inappropriate ioctl for device` instead of help text
-- `npx squad-station` (before binary is installed) triggers the error in the npm postinstall context
-- CI jobs that call `squad-station` for scripted setup fail with the ENOTTY error
+- TUI shows error messages for every refresh cycle when using antigravity provider
+- TUI shows spurious error messages after `squad-station close` kills sessions
+- `squad-station ui` panics when tmux is not running at all
 
-**Phase to address:** Phase 1 of v1.7 — the TTY guard must exist before the TUI is wired into
-the bare-invocation arm. The guard is the prerequisite, not the TUI itself.
+**Phase to address:** Phase 2 of v1.8 (pane polling) — guard chain must be written first, before pattern matching on captured content.
 
 ---
 
-### Pitfall 2: npm postinstall Auto-Launch Hangs in Non-Interactive Contexts
+### Pitfall 4: False Positive "Processing" Detection From Pane Content
 
 **What goes wrong:**
-The v1.7 goal is "post-install auto-launch" of the welcome TUI. If the npm `postinstall` script
-(or `bin/run.js`'s install command) calls `squad-station` bare (no subcommand) expecting the user
-to see the welcome TUI, it will **block** in CI environments. npm postinstall runs with stdin
-connected to `/dev/null` (or a closed pipe) and stdout/stderr connected to the npm install log
-stream — not a TTY. If the binary enters an `event::poll()` loop waiting for keyboard input, the
-process never receives any input events and hangs indefinitely.
+`tmux capture-pane -p` returns the visible text content of the pane — up to the terminal scroll buffer limit. Determining whether the orchestrator is "actively processing" from this raw text is inherently heuristic. Common false positive sources:
 
-The current `run.js` install command does NOT call `squad-station` at the end. If v1.7 adds a
-postinstall call, the hang risk is introduced.
+1. **Idle prompt lines that look like activity:** Claude Code's idle prompt shows `>` and a cursor. Gemini CLI's idle prompt shows `$` or a spinner that pauses. A naive heuristic like "content is non-empty" or "last line is not empty" always returns true because both tools show persistent prompt lines.
+
+2. **Captured content includes old output:** `capture-pane` by default returns the last N lines of the pane. If the orchestrator finished a task 10 minutes ago and the pane shows the completed task output, a naive "contains active-looking text" heuristic returns true for a session that is actually idle.
+
+3. **Tool-version-dependent patterns:** Claude Code's active state indicator (spinner, "Thinking...", etc.) changes between tool versions. A regex written against one version silently fails against another, causing the "processing" state to never appear for users on a different version.
+
+4. **Multiple tool simultaneous output patterns:** Gemini CLI, Claude Code, and potentially future providers each have different UI text patterns for "thinking" vs. "idle." A single heuristic that works for one provider misclassifies the other.
 
 **Why it happens:**
-npm spawns lifecycle scripts in a non-interactive subprocess. `process.stdout.isTTY` is `undefined`
-in postinstall. The npm docs explicitly state: "postinstall scripts run with stdio configured as
-`pipe`." Any attempt to interact with the terminal from a postinstall script will hang or error.
+Scraping terminal UI output for semantic state is fundamentally unreliable. The tmux pane content is designed for human consumption, not machine parsing. Developers prototype the heuristic with their own active session and it "looks good" in testing, but real-world patterns are more varied.
 
 **How to avoid:**
-Do NOT auto-launch `squad-station` from `postinstall`. The correct pattern is:
+Use a conservative, provider-aware approach:
 
-1. `postinstall` installs the binary (already done in `run.js`)
-2. `postinstall` prints: "Run `squad-station` to get started"
-3. User runs `squad-station` manually — the TTY check in Pitfall 1 then determines whether to
-   show the TUI or plain text
+1. **Prefer the DB state over pane content.** If the DB says `idle` and pane content is ambiguous, show `idle`. Only override to `processing` if a high-confidence signal is present.
 
-If auto-launch from install is required, gate it on `process.stdout.isTTY` in `run.js`:
+2. **Use provider-specific patterns, not a universal heuristic.** For `claude-code`, look for the "Thinking" or spinner ANSI sequences specific to that version. For `gemini-cli`, look for the running indicators. For unknown providers, do not attempt classification — show the DB state.
+
+3. **Add a "last changed" timestamp check.** If `status_updated_at` changed in the last N seconds (e.g., 30 seconds), the DB state is fresh and trustworthy. Pane polling adds value mainly when the DB state has been `idle` for a long time but visual activity suggests the agent is running something not yet reflected in the DB.
+
+4. **Expose the heuristic as a labeled annotation, not a status replacement.** Instead of changing the agent's `status` field to `processing`, add a separate TUI annotation: `[idle + active in pane]`. This prevents the display from overriding the authoritative DB state.
+
+**Warning signs:**
+- Orchestrator always shows "processing" even when idle (false positive loop)
+- Orchestrator never shows "processing" even during active task execution (heuristic mismatch)
+- Different behavior for Claude Code vs. Gemini CLI users (provider-specific pattern failure)
+- After `squad-station close`, "processing" state persists in the TUI because the old pane content is cached
+
+**Phase to address:** Phase 2 of v1.8 (pane polling) — the heuristic approach must be decided and documented before implementation. The decision whether to replace or annotate the DB status is an architectural choice, not an implementation detail.
+
+---
+
+### Pitfall 5: Pane Polling Adds tmux Subprocess Overhead to Every TUI Refresh Cycle
+
+**What goes wrong:**
+The existing TUI refresh loop in `ui.rs` has a 3-second interval. Each refresh calls `fetch_snapshot()` which opens a SQLite connection, reads two tables, and drops the connection. This is a purely local I/O operation with predictable latency (typically <10ms).
+
+Adding `tmux capture-pane -p -t <session>` per refresh cycle spawns a child process for every agent that needs polling. For a squad with 5 agents, this is 5 `Command::new("tmux")` spawns every 3 seconds. Each spawn:
+
+- Forks a process
+- Connects to the tmux server socket
+- Captures pane content (which can be several kilobytes)
+- Exits
+
+On macOS with tmux, this is approximately 20-40ms per call. Five calls = 100-200ms overhead per refresh cycle. At a 3-second interval, this is tolerable but visible as UI lag. If the polling target is only the orchestrator (not all agents), the overhead is one subprocess per refresh — acceptable.
+
+A more serious issue: if tmux is slow to respond (under load, server busy), `capture-pane` can block for several hundred milliseconds. The TUI event loop is async, but `Command::output()` is a blocking call on the thread. In the current architecture (`fetch_snapshot` is `async fn` but uses `Command::new("tmux")` blocking calls), this blocks the async executor thread for the duration of the subprocess call.
+
+**Why it happens:**
+The existing `tmux::session_exists()` and related functions in `tmux.rs` all use `Command::new("tmux").output()` — blocking subprocess calls. The pattern is established and consistent. Adding capture-pane follows the same pattern without thinking about cumulative latency.
+
+**How to avoid:**
+1. **Poll only the orchestrator, not all agents.** The "processing" state is specifically for the orchestrator's pane. Workers' completion is detected via the hook-driven `signal` command, which is already authoritative. No worker pane polling is needed.
+
+2. **Use a longer polling interval for pane content than for DB state.** DB state refreshes every 3 seconds (already implemented). Pane content can refresh every 10-15 seconds — the processing state is not time-critical at sub-10-second granularity. Separate the two refresh timers.
+
+3. **Use `tokio::process::Command` instead of `std::process::Command` for the capture-pane call.** The codebase currently uses blocking `std::process::Command` for all tmux calls. This is acceptable for fast operations but risky for operations that might block. Using `tokio::process::Command::output().await` keeps the async executor unblocked.
+
+4. **Cache the last captured pane content.** If the capture fails or is slow, use the previous captured content. Do not block the render cycle waiting for fresh pane content — stale data is better than a frozen TUI.
+
+**Warning signs:**
+- TUI refresh visibly lags (>500ms) after adding pane polling
+- `squad-station ui` CPU usage spikes when tmux is under load
+- TUI event loop drops key presses during refresh (key events handled after long blocking call)
+
+**Phase to address:** Phase 2 of v1.8 (pane polling) — performance constraints must be specified before implementation. The two-timer approach (DB at 3s, pane at 10-15s) is a design decision that affects the App state struct and event loop structure.
+
+---
+
+### Pitfall 6: Backward Compatibility Break When npm/curl Call `install --tui` on Old Binary
+
+**What goes wrong:**
+After v1.8, `install.sh` and `run.js` will call `squad-station install --tui` instead of `squad-station` (bare). Users who have an older binary (pre-v1.8) installed at the same path will get a clap parse error:
+
+```
+error: unrecognized subcommand 'install'
+```
+
+This breaks the install flow for users upgrading from v1.7 via `npx squad-station install` because:
+1. `run.js` downloads the new v1.8 binary to `destPath`
+2. `run.js` calls `spawnSync(destPath, ['install', '--tui'], ...)` — this calls the NEW binary, which does support `install`
+
+So actually the forward direction is fine — the new binary is downloaded first, then called. The backward direction — running old `install.sh` or old `run.js` with a new binary — is also fine.
+
+The problematic case is: **the auto-launch call in the EXISTING run.js (v1.7)** runs `spawnSync(destPath, [])` (bare, no subcommand). If a user has already downloaded the new v1.8 binary (e.g., via curl) but still has the old npm package, the old run.js calls the new binary bare, which still works (bare invocation routes to the welcome TUI). No issue.
+
+The actual risk is in the OTHER direction: if run.js is updated to call `squad-station install --tui` but is published BEFORE the binary binary is published (npm and GitHub Releases get out of sync), users who `npm install squad-station` get the new run.js, download the old binary, then run.js tries `squad-station install --tui` on the old binary — and gets a clap parse error.
+
+**Why it happens:**
+npm package versions and GitHub Release binary versions can diverge during the release process. The npm package is published via `npm publish` (manual or CI), and the binary is published via `softprops/action-gh-release` on tag push. If only one of the two is published (partial release), users hit version mismatches.
+
+**How to avoid:**
+In run.js, make the `install --tui` call conditional on the binary version supporting it:
 
 ```javascript
-// In run.js install() — only launch TUI if stdout is a TTY
+// Check if the binary supports the install subcommand
+var versionResult = spawnSync(destPath, ['--version'], { encoding: 'utf8' });
+var supportsInstall = /* parse major version >= 1.8 */;
+var launchArgs = supportsInstall ? ['install', '--tui'] : [];
 if (process.stdout.isTTY) {
-    spawnSync(binaryPath, [], { stdio: 'inherit' });
+    spawnSync(destPath, launchArgs, { stdio: 'inherit' });
 }
-// Otherwise: just print the next-steps hint
 ```
 
-**Warning signs:**
-- `npm install squad-station` hangs indefinitely in CI
-- GitHub Actions or other CI systems time out on the install step
-- Users report `npm install` taking minutes instead of seconds
-
-**Phase to address:** Phase 1 of v1.7 — before any postinstall modification. The rule is explicit:
-postinstall must never block. Enforce this with a CI test that runs `npm install` with stdin closed.
-
----
-
-### Pitfall 3: curl | sh Auto-Launch Breaks When stdin Is the Pipe
-
-**What goes wrong:**
-When a user runs `curl -fsSL https://... | sh`, bash's stdin is connected to the output of curl —
-not to the terminal. Any command in the install script that reads from stdin (including spawning
-a process that calls `crossterm::event::read()` to wait for keypresses) will immediately receive
-EOF, hang waiting for pipe data that never arrives, or error with "read: Input/output error."
-
-`install.sh` currently ends with `echo "Run: squad-station --version"` and exits cleanly. If
-v1.7 adds `squad-station` at the end of `install.sh` to auto-launch the welcome TUI, the same
-hang risk from Pitfall 2 applies. Additionally, bash scripts running via curl pipe cannot use
-`/dev/tty` reliably on all systems because the terminal may not have a controlling TTY in some
-orchestrated install environments (Docker build, devcontainer setup).
-
-**Why it happens:**
-`curl | sh` is a pipe — bash's stdin is the curl output stream, not the terminal. The install
-script runs to completion reading from curl's output. Any child process that tries to read
-keyboard input blocks forever or gets EOF immediately. The `[ -t 0 ]` test (stdin is TTY) returns
-false in this context.
-
-**How to avoid:**
-Do NOT call `squad-station` from `install.sh`. The install script's job is installation only.
-End `install.sh` with a print message, not with a binary launch. The TTY guard in the binary
-itself (`is_terminal()`) provides defense-in-depth, but the correct fix is at the install script
-level: never launch interactive programs from a piped shell script.
+Or: keep the bare call (`spawnSync(destPath, [], ...)`) in run.js and let the Rust binary route bare invocation to the correct flow (which it already does in v1.7+). The `install --tui` subcommand is then only called from documented manual usage, not from the auto-launch path. This eliminates the version coupling risk entirely.
 
 **Warning signs:**
-- `curl -fsSL https://... | sh` hangs at the last step
-- The install step in a devcontainer or Dockerfile never completes
-- Users running install in a tmux pane that lacks a controlling terminal report hangs
+- `npx squad-station install` fails with "error: unrecognized subcommand 'install'" after an npm-only release
+- CI reports a mismatch between npm package version and GitHub Release binary version
+- Users on partial upgrades see clap errors instead of the welcome TUI
 
-**Phase to address:** Phase 1 of v1.7 — specifically the "post-install auto-launch" design
-decision. The decision must be: "auto-launch is only user-initiated, not script-initiated."
-
----
-
-### Pitfall 4: Terminal Not Restored After Early Return / Error in Welcome TUI
-
-**What goes wrong:**
-The welcome TUI enters alternate screen mode and raw mode. If an error occurs mid-render
-(e.g., terminal resize event triggers a panicking unwrap, or a `?` in the event loop returns
-early), `restore_terminal()` is never called. The user's terminal is left in raw mode with the
-alternate screen visible. They see a blank screen. `Ctrl+C` does not work normally. They must
-type `reset` blindly to recover.
-
-The existing `wizard.rs::run()` installs a panic hook that calls `disable_raw_mode()` and
-`execute!(LeaveAlternateScreen)`. The welcome TUI needs the same pattern. If it is written as
-a new function without copying the panic hook, the panic recovery is missing.
-
-Additionally: `ui.rs::run()` installs a panic hook via `std::panic::take_hook()` and
-`std::panic::set_hook()`, but restores `let _ = std::panic::take_hook()` at the end (which drops
-the hook). If the welcome TUI is added as another TUI entry point without coordination, two
-take_hook/set_hook pairs can interfere: one TUI's cleanup hook is accidentally dropped when a
-different TUI sets a new hook.
-
-**Why it happens:**
-Multiple TUI modules each manage their own panic hook lifecycle independently. When multiple TUI
-entrypoints exist in the same binary (welcome TUI, wizard TUI, ui.rs dashboard), the
-take_hook/set_hook pattern becomes fragile. Each module saves and restores the hook, but if
-they are ever called in sequence in the same process (unlikely now, possible in tests or future
-features), the hook chain gets corrupted.
-
-**How to avoid:**
-- Extract `setup_terminal()` / `restore_terminal()` / panic-hook installation into a shared
-  module (`src/tui.rs` or `src/commands/tui_guard.rs`) used by wizard.rs, ui.rs, and the new
-  welcome TUI. This guarantees consistent behavior.
-- Alternatively, adopt `ratatui::init()` / `ratatui::restore()` introduced in ratatui 0.28.1,
-  which handles panic hook setup automatically. The current codebase uses ratatui 0.26 (per
-  PROJECT.md), so this requires a version bump — evaluate the breaking-change surface before
-  adopting.
-- At minimum: every new TUI entrypoint must install the panic hook and call `restore_terminal()`
-  on every code path that exits the loop (normal exit, Ctrl+C, error propagation via `?`).
-
-**Warning signs:**
-- After dismissing the welcome TUI with Ctrl+C, subsequent terminal output appears garbled
-- Running `squad-station` twice in sequence leaves the terminal in raw mode after the second run
-- Tests that call TUI functions leave the test runner in raw mode, breaking subsequent test output
-
-**Phase to address:** Phase 1 of v1.7 — terminal cleanup contract must be established before
-any TUI code is added to the welcome path.
-
----
-
-### Pitfall 5: Cargo Test Suite Breaks When TUI Code Touches Real Terminal
-
-**What goes wrong:**
-`cargo test` runs tests in parallel. Tests share the same process's stdout/stderr. If any test
-calls a function that calls `enable_raw_mode()` or `EnterAlternateScreen` on real stdout, it
-corrupts the terminal state for all other tests running concurrently. The effect is:
-- Test output becomes garbled
-- Some tests produce no output at all (alternate screen hides it)
-- The terminal is left in raw mode after the test suite exits
-
-The current test suite avoids this by the `welcome_content()` pattern: the testable pure-string
-function is separate from `print_welcome()` which touches the terminal. The wizard tests only
-test pure-logic functions (`generate_squad_yml`, `append_workers_to_yaml`, etc.) — they never
-call `wizard::run()` which enters the TUI.
-
-If v1.7 adds a `welcome_tui::run()` function and tests inadvertently call it (e.g., an
-integration test that calls `commands::welcome::run_tui()` without a TTY guard), the entire
-test suite output becomes unreadable.
-
-**Why it happens:**
-Developers write an integration test that exercises the full code path through `main.rs` with
-`None` command. The test passes because the TTY check returns false (test runner has no TTY),
-but if the check is missing or the test somehow provides a TTY (e.g., via `pty` or when run
-interactively), the TUI launches and corrupts output.
-
-Additionally: `cargo test` on macOS in iTerm2 or Terminal.app runs with stdout connected to a
-TTY. If a developer runs `cargo test` interactively and any test calls `enable_raw_mode()`, the
-terminal enters raw mode and the test runner output is invisible.
-
-**How to avoid:**
-- Never call `enable_raw_mode()` or terminal-manipulating functions from test code
-- Design TUI entry points to accept a TTY availability parameter or check it internally:
-  `fn run_tui_if_interactive() -> bool` that returns false and does nothing when not a TTY
-- The pattern already in `welcome_content()` is correct: extract pure content, test content,
-  never test render
-- Add a `#[cfg(not(test))]` guard or `is_terminal()` check inside `run_welcome_tui()` so it
-  is a no-op during `cargo test`
-- Document in `CLAUDE.md`: "Never call TUI run() functions from unit or integration tests"
-
-**Warning signs:**
-- `cargo test` leaves terminal in raw mode after completion
-- Test output shows garbled characters or blank lines where test names should be
-- Tests pass individually but fail or produce no output when run in parallel
-
-**Phase to address:** Phase 1 of v1.7 — test isolation contract must be established as the
-first thing, before any TUI code is merged. Every TUI PR should be reviewed for test isolation.
-
----
-
-### Pitfall 6: Welcome TUI Blocks When Terminal Is Too Small to Render
-
-**What goes wrong:**
-ratatui renders into the actual terminal dimensions. If the terminal is very small (e.g., 20x5
-characters — common in CI terminals, embedded terminals, or split tmux panes), the layout
-constraints may produce zero-height widgets, causing ratatui to panic in debug builds or silently
-render nothing in release builds. The welcome TUI then appears blank or crashes.
-
-Additionally: `frame.size()` returns the terminal dimensions at render time. If the terminal is
-resized to zero dimensions (possible in some CI virtual terminals), `Layout::split()` with
-`Constraint::Length(3)` on a 0-height area produces a Rect with height 0, and subsequent widget
-rendering into that Rect may overflow.
-
-The existing wizard uses `Constraint::Length(3)` for the header area. A terminal with fewer than
-3 rows will cause the layout to saturate and produce overlapping zero-size areas.
-
-**Why it happens:**
-Developers test the TUI in their normal development terminal (80x24 or larger). They never test
-in a small terminal or a non-human-interactive context where the terminal is reported as having
-minimal dimensions (e.g., 0x0 or 1x1 in some pty-less contexts).
-
-**How to avoid:**
-- Add a minimum terminal size check before entering the TUI event loop:
-  ```rust
-  let size = terminal.size()?;
-  if size.height < 10 || size.width < 40 {
-      restore_terminal(&mut terminal)?;
-      print_welcome();  // fall back to plain text
-      return Ok(());
-  }
-  ```
-- This minimum size check should match the actual layout requirements of the welcome TUI design
-- The existing `welcome_content()` plain-text fallback is the correct target for the small-terminal path
-
-**Warning signs:**
-- Welcome TUI appears blank in tmux split panes
-- `squad-station` crashes with a layout panic when terminal window is tiny
-- Users in tmux with many splits (small pane width) cannot use the welcome TUI
-
-**Phase to address:** Phase 1 of v1.7 — minimum size guard should be part of the initial TUI
-implementation, not added later as a fix.
+**Phase to address:** Phase 1 of v1.8 — release coordination must be planned before changing the auto-launch call in run.js. The simplest mitigation (keep bare invocation) should be the default unless there is a clear reason to use the subcommand form.
 
 ---
 
 ## Moderate Pitfalls
 
-### Pitfall 7: "Press Enter to Continue" Pattern Blocks Orchestrators and Scripts
+### Pitfall 7: Wizard Project Name Field With Pre-Populated Default Bypasses Validation
 
 **What goes wrong:**
-The v1.7 design includes: "no squad.yml → Press Enter to set up → wizard." If the welcome TUI
-enters a blocking wait for keypress (`event::read()` with no timeout) on the welcome screen,
-any script or orchestrator that calls `squad-station` expecting it to exit immediately will block.
+Currently, the project name field in the wizard starts empty and the user must type something. Validation runs when the user attempts to proceed: empty string is rejected.
 
-This is especially problematic for:
-- The Gemini CLI `@squad-station` or MCP-style invocations that call the binary in a subprocess
-- The npm `bin/run.js` proxy that calls the binary with `spawnSync` — this blocks the Node process
-- CI scripts that call `squad-station` to check version or status before setup
+With v1.8, the field is pre-populated with the sanitized folder basename. A user can simply press Enter on the first page without reviewing the pre-populated value. If the sanitized default produces a project name that is technically valid (non-empty) but semantically bad — e.g., a temp directory like `tmp` or `a` — the user proceeds without noticing.
 
-The existing plain-text `print_welcome()` exits immediately. The TUI version must not hang
-indefinitely.
+More critically: if the pre-populated default has NOT been properly sanitized (due to a sanitizer gap — see Pitfall 2), the wizard accepts it at the UI level but it later breaks tmux session creation.
 
 **How to avoid:**
-- Use `event::poll(timeout)` with a defined timeout (e.g., 30 seconds) rather than blocking `event::read()`
-- Or: display the welcome TUI with a visible countdown: "Press any key or wait 10 seconds..."
-- Or: add an `--no-wait` flag that skips the interactive welcome and falls through to plain text
-- The best approach for orchestrator safety: the welcome TUI exits automatically after a short
-  timeout and falls back to printing the plain-text welcome to stdout
+- Show the pre-populated value highlighted (distinct color or `[default: <value>]` label) so users notice and consciously accept it
+- Run the tmux session name validation (not just "non-empty" check) at wizard submit time, before writing `squad.yml`. The `sanitize_session_name()` function exists in `config.rs`; use it to pre-validate the default.
+- Consider adding a minimum length check (project name ≥ 3 characters) to prevent single-character project names from passing.
 
 **Warning signs:**
-- `spawnSync('squad-station', [], { timeout: 5000 })` times out in `run.js`
-- Orchestrator AI tools that call `squad-station` as a tool call appear to hang
-- Shell scripts with `squad-station && next-command` never reach `next-command`
+- Users create squads named `tmp`, `a`, or `1` because the default was from a temp directory
+- tmux session creation fails after wizard completes successfully because the project name has unsafe characters
 
-**Phase to address:** Phase 1 of v1.7 — the event loop design must include auto-exit timeout.
+**Phase to address:** Phase 1 of v1.8 (folder name default) — validation must be reviewed when the default is introduced.
 
 ---
 
-### Pitfall 8: Alternate Screen Swallows Welcome Output in Scripts
+### Pitfall 8: `current_dir()` Returns Different Values in Test vs. Production Context
 
 **What goes wrong:**
-`EnterAlternateScreen` switches to a secondary buffer. When the TUI exits and calls
-`LeaveAlternateScreen`, everything rendered in the TUI disappears. The user's terminal shows
-their previous content with no trace of the welcome TUI.
+In `cargo test`, `std::env::current_dir()` returns the crate root (the directory containing `Cargo.toml`). Tests that exercise the folder-name-as-default logic will pick up `squad-station` (the repo name) as the default project name, not a test-specific name. This can produce:
 
-For an informational welcome screen, this is the WRONG UX: the user sees a flash of content
-and it vanishes. They cannot scroll back to see the version number or command hints.
+1. Tests that appear to pass but are testing the wrong default
+2. Tests that fail when run from a different directory (e.g., CI checks out to a different path)
+3. Tests that write files to the real project directory instead of a temp directory, polluting the workspace
 
-The existing `print_welcome()` writes to the main screen buffer (stdout), where it persists in
-the scrollback. The new TUI should evaluate whether alternate screen is appropriate for a
-one-time welcome message that the user needs to remember.
+The existing wizard tests in `init.rs` use hardcoded `WizardResult` values (`make_wizard_result()`), so they are isolated. But any new test that exercises the "derive default from current_dir" code path must explicitly set the current directory or mock the call.
 
 **How to avoid:**
-- For the welcome screen specifically: consider NOT using alternate screen. Render in the main
-  buffer with raw mode only for keypress detection, then restore normal mode after the keypress.
-  The content remains visible in scrollback.
-- If alternate screen IS used, print a brief "Run `squad-station init` to set up" message to
-  regular stdout AFTER `LeaveAlternateScreen`, so there is persistent text in the scrollback.
-- The wizard uses alternate screen correctly (full-screen form), but the welcome screen is more
-  like a splash screen — different UX requirements.
+- Extract the "derive project name default" logic to a pure function that accepts a `&Path` argument instead of calling `current_dir()` internally. Tests pass a controlled path; production code passes `std::env::current_dir()`.
+- Never call `std::env::current_dir()` from inside a function that is tested in the unit test suite. Keep the current_dir call at the call site in the wizard's page initialization, and pass the result as a parameter.
 
 **Warning signs:**
-- User dismisses welcome screen and the terminal is blank with no memory of what was shown
-- Users ask "how do I see the version again?" — the answer should not be "run it again"
+- Tests for folder-name-default pass locally but fail in CI (different working directory)
+- `generate_squad_yml` tests produce different output depending on where `cargo test` is run
+- Files are created in the repo root during tests (test wrote to `cwd` instead of a temp dir)
 
-**Phase to address:** Phase 2 of v1.7 (UX polish), but the architectural decision (alt screen vs
-main buffer) should be made in Phase 1 to avoid a rendering rewrite.
+**Phase to address:** Phase 1 of v1.8 (folder name default) — the pure-function extraction must be done before tests are written, not as a refactor afterward.
 
 ---
 
-### Pitfall 9: Stale Binary After npm install with Version Mismatch
+### Pitfall 9: Pane Polling Introduces "Processing" State Into DB Status Contract
 
 **What goes wrong:**
-`run.js` checks if the installed binary matches the npm package version:
+The current DB-level agent statuses are `idle`, `busy`, and `dead`. These are authoritative and written by the `signal` command (via `update_agent_status`). The `reconcile_agent_statuses` helper also updates them by checking tmux session liveness.
 
-```javascript
-var result = spawnSync(destPath, ['--version'], { encoding: 'utf8' });
-if (result.stdout && result.stdout.includes(VERSION)) {
-    console.log('  ✓ squad-station v' + VERSION + ' already installed');
-    return;
-}
-```
+If `processing` becomes a fourth status string written to the DB (instead of just a TUI display label), it must be:
+- Validated by `status_color()` in ui.rs (currently only handles `idle`, `busy`, and the default `dead`/unknown case)
+- Handled by `colorize_agent_status` in helpers.rs
+- Handled by the `status` command output
+- Handled by the `agents` command JSON output (which external consumers might parse)
+- Covered by migration if the DB schema adds a constraint on status values
 
-If the binary at `destPath` is from a different install path (e.g., installed via curl to
-`~/.local/bin` but npm checks `/usr/local/bin`), and the old binary is on PATH before the new
-location, `squad-station` resolves to the old binary. The version check passes on the wrong file.
-
-For v1.7: if the old binary does not have the welcome TUI (v1.6 binary) but the npm package is
-v1.7, the user runs `squad-station` and gets the old plain-text welcome. They see no indication
-that their install is stale.
+If `processing` is only a TUI display annotation and is never written to the DB, none of the above applies — but this must be an explicit design decision, not an accident.
 
 **How to avoid:**
-This is pre-existing behavior, but v1.7 should not make it worse. Ensure the version string
-reported by `--version` matches `CARGO_PKG_VERSION` and is unique per release. The version check
-in `run.js` is sufficient for npm-installed paths; document that mixing install methods can lead
-to stale binaries.
+Decide explicitly: is `processing` a DB status or a TUI-only overlay?
+
+The recommended approach: **TUI-only overlay**. The DB status tracks hook-driven lifecycle (`idle`/`busy`/`dead`). The TUI optionally overlays a `processing` indicator from pane polling, displayed alongside but not replacing the DB status. This keeps the DB contract clean and avoids migration.
+
+If `processing` must be in the DB (e.g., for the `status` command to report it), add it as a distinct DB status with a migration, update all status-handling code paths, and update the JSON output schema. Do this in a single change, not incrementally.
 
 **Warning signs:**
-- User upgrades npm package but `squad-station` behavior looks unchanged
-- `squad-station --version` reports a different version than `npm list squad-station`
+- `squad-station status` shows a blank or `[unknown]` for agents in `processing` state because `status_color()` does not handle it
+- External tools parsing `squad-station agents --json` fail to handle the new status string
+- The TUI shows `processing` after the task completes because the DB was written with this value and `reconcile_agent_statuses` does not know how to transition out of it
 
-**Phase to address:** Not introduced by v1.7, but review during integration testing.
+**Phase to address:** Phase 2 of v1.8 (pane polling) — the DB status contract decision must be made before writing any pane polling code.
 
 ---
 
-### Pitfall 10: ratatui 0.26 API Differences From Current Docs
+### Pitfall 10: `install` Subcommand Without a `squad.yml` Context May Hit DB Errors
 
 **What goes wrong:**
-The project uses ratatui 0.26 (per PROJECT.md Cargo context). The current ratatui documentation
-at ratatui.rs and docs.rs describes ratatui 0.29+ (latest stable). Key differences:
+Most existing subcommands (e.g., `ui`, `agents`, `status`) call `config::load_config()` to find `squad.yml` and then `config::resolve_db_path()` to get the SQLite path. If no `squad.yml` exists, these fail with "squad.yml not found."
 
-- `ratatui::init()` / `ratatui::restore()` were introduced in 0.28.1. They are NOT available in 0.26.
-- `frame.size()` was deprecated in favor of `frame.area()` in newer versions. Code written against
-  new docs will not compile against 0.26.
-- The `Constraint` API, `Layout::default()` pattern, and widget constructors are stable across
-  0.26-0.29, but subtle deprecations cause compiler warnings that can be mistaken for bugs.
+The new `install` subcommand is designed to run in a project directory that does NOT yet have `squad.yml` — it is a pre-init step. If the implementation accidentally calls any code path that requires the config (e.g., if `install --tui` routes to the welcome TUI which then checks `std::path::Path::new("squad.yml").exists()`), it must handle the `None`/missing-config case gracefully, not panic or propagate an error.
 
-If a developer follows current ratatui tutorials or docs.rs snippets to build the welcome TUI,
-they may write code that does not compile against the pinned 0.26 version.
+The current welcome TUI flow in `main.rs` already handles this: `let has_config = std::path::Path::new("squad.yml").exists();` — it does not call `load_config()`. Any code in the `install` subcommand handler must follow the same pattern.
+
+**Why it happens:**
+Developers copy the `init` subcommand's handler as a starting point for `install`. `init` calls `config::load_config()` (after wizard generates the file). If the copy-paste is incomplete, `install` inherits the config-loading call before the file exists.
 
 **How to avoid:**
-- Check `Cargo.toml` for the pinned ratatui version before writing any TUI code
-- Use `docs.rs/ratatui/0.26.x/ratatui/` (with version pin in URL) for API reference
-- Or: bump ratatui to latest (0.29+) as part of v1.7 and update the single API usage change
-  (`frame.size()` → `frame.area()` if applicable)
-- Review BREAKING-CHANGES.md in the ratatui repository before bumping
+The `install` handler must explicitly NOT call `config::load_config()` or any function that transitively calls it. The only DB operations allowed in the install flow are those that come AFTER the wizard generates `squad.yml` — which is the same flow as `init`. If `install` delegates to `init` internally (e.g., `commands::init::run()` is called from `commands::install::run()`), this is safe. If `install` tries to do something before calling init, it must stay config-free.
 
 **Warning signs:**
-- `cargo build` fails with "method `init` not found in type `ratatui`"
-- Clippy warns about deprecated `frame.size()` usage
-- Documentation examples don't match actual compiler behavior
+- `squad-station install` in a fresh directory fails with "squad.yml not found"
+- `squad-station install --tui` shows an error before the TUI appears
+- Integration test for install fails when run in a temp directory with no squad.yml
 
-**Phase to address:** Phase 1 of v1.7 — check version compatibility before writing TUI code.
+**Phase to address:** Phase 1 of v1.8 (install subcommand) — the install handler must be designed config-free from the start.
 
 ---
 
@@ -428,12 +352,12 @@ they may write code that does not compile against the pinned 0.26 version.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Copy-paste `setup_terminal()` into welcome.rs | Quick to implement | Three copies of the same pattern; inconsistent panic hook handling | Never — extract to shared module |
-| Skip alternate-screen decision, default to EnterAlternateScreen | Matches wizard pattern | Welcome content disappears from scrollback; confusing UX | Never for a one-time welcome message |
-| Inline TTY check in welcome.rs only | Minimal change | TTY check not enforced in future TUI entry points | Acceptable MVP if documented as pattern |
-| No minimum terminal size check | Simpler code | Crashes or blank screen in small terminals | Never — add minimum check |
-| Auto-exit timeout omitted (block on keypress forever) | Simpler event loop | Hangs any script or orchestrator that calls bare `squad-station` | Never — always include timeout |
-| Skip non-TTY fallback (just return Ok if not terminal) | Simpler code | Breaks `squad-station --help` in piped contexts (no help text) | Never — fallback to print_welcome() |
+| Use raw `current_dir().file_name()` without sanitization for the default | Simpler code | Spaces and tmux-unsafe chars break session creation silently | Never — sanitize at derivation time |
+| Write `processing` to the DB without updating all status-handling code | Quick TUI label | Breaks status command, agents command JSON, and any external consumer | Never without a complete audit of all status consumers |
+| Poll all agent panes, not just the orchestrator | Feature parity | 5x subprocess overhead per refresh; blocks async executor | Never — scope to orchestrator only |
+| Use blocking `std::process::Command` for capture-pane in async TUI loop | Consistent with existing tmux.rs patterns | Blocks tokio executor thread during slow tmux calls | Acceptable only with a separate, longer poll interval (>10s) |
+| Pre-populate project name from current_dir AND keep "non-empty" as the only validation | Quick feature | Users proceed with bad defaults like `tmp`, `1`, or names with unsafe chars | Never — add tmux-safe validation alongside the default |
+| Call bare `squad-station` from run.js/install.sh instead of `squad-station install --tui` | Backward compatible auto-launch | Loose coupling — install path does not benefit from future install subcommand improvements | Acceptable as a conservative v1.8 approach |
 
 ---
 
@@ -441,12 +365,12 @@ they may write code that does not compile against the pinned 0.26 version.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| npm postinstall | Add `spawnSync(binaryPath, [])` at end of `install()` in `run.js` | Never call the binary from postinstall; print next-steps hint only |
-| curl \| sh install.sh | Append `$INSTALL_DIR/squad-station` at end of script | Never call the binary from install.sh; `stdin` is the curl pipe |
-| npm proxy in `run.js` | `proxyToBinary()` calls binary with `stdio: 'inherit'` — TUI works when user runs `npx squad-station` | This is correct; `npx squad-station` in a real terminal has TTY — TTY check passes |
-| cargo test parallel | Call `run_welcome_tui()` in integration tests | Only test `welcome_content()` (pure string); never call TUI render functions from tests |
-| GitHub Actions CI job that calls `squad-station` | Binary auto-launches TUI, CI hangs | TTY guard must be the first thing in the bare-invocation path; CI has no TTY |
-| tmux-based usage (existing squad users) | Welcome TUI renders inside a tmux pane — this works fine | tmux panes ARE TTYs; `is_terminal()` returns true; TUI renders correctly |
+| npm run.js install + new `install` subcommand | Change `spawnSync(destPath, [])` to `spawnSync(destPath, ['install', '--tui'])` before verifying binary version support | Gate the subcommand call on version detection OR keep bare invocation |
+| curl install.sh + new `install` subcommand | Append `exec "$INSTALL_DIR/squad-station" install --tui` at end of install.sh | If binary may be pre-v1.8 (cached download), keep bare exec; only use subcommand form if version check passes |
+| `tmux capture-pane` in async TUI loop | Call `std::process::Command::output()` (blocking) inside an async fn | Use `tokio::process::Command` or ensure the call is on a separate timer with longer interval |
+| Antigravity orchestrator + pane polling | Attempt capture-pane on orchestrator that has no tmux session | Check `agent.tool == "antigravity"` before any capture-pane call |
+| `current_dir()` in unit tests | Test code calls the default-derivation function directly | Extract to pure fn accepting `&Path`; tests pass a controlled temp path |
+| `processing` status in DB | Add status value without updating `status_color()`, `colorize_agent_status()`, JSON output | Treat `processing` as TUI-only OR update all status consumers atomically |
 
 ---
 
@@ -454,23 +378,24 @@ they may write code that does not compile against the pinned 0.26 version.
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Polling too aggressively in welcome TUI event loop | High CPU on idle welcome screen | Use `event::poll(250ms)` timeout, same as wizard.rs and ui.rs | Immediately on launch |
-| Loading DB or config in welcome TUI before squad.yml exists | "squad.yml not found" error on bare invocation | Welcome TUI must not read DB or config; it is pre-setup | First time user runs `squad-station` |
-| Spawning external processes from welcome TUI (e.g., checking for updates) | Slow TUI startup | Welcome TUI is display-only; no network calls, no subprocess spawns | Every invocation |
+| Polling all agents via capture-pane every 3 seconds | TUI refresh lag >200ms; CPU spike on refresh | Scope polling to orchestrator only; use 10–15s interval for pane content | Immediately with >3 agents |
+| Blocking `std::process::Command` for capture-pane in tokio async fn | Key press events dropped during long tmux calls | Use tokio::process::Command or a dedicated OS thread via tokio::task::spawn_blocking | When tmux is under load (>100ms response) |
+| Calling `session_exists()` before capture-pane when session list is stale | Extra subprocess overhead; no actual safety benefit if list was cached | Session existence check is cheap; keep it as first guard | Not a performance trap — keep the check |
+| Caching pane content in App state without expiry | "Processing" state persists after session is killed | Include a capture timestamp; invalidate cache on session death | After `squad-station close` |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **TTY guard on welcome TUI:** Verify `squad-station | cat` still prints plain-text welcome, not an error
-- [ ] **npm postinstall safety:** Verify `npm install` completes in under 30 seconds with stdin closed: `npm install squad-station < /dev/null`
-- [ ] **curl install safety:** Verify `curl -fsSL <url> | sh` completes without hanging
-- [ ] **Terminal restored on Ctrl+C:** After pressing Ctrl+C to dismiss welcome TUI, run `echo test` — it should appear normally
-- [ ] **Terminal restored on error:** Trigger an error inside the TUI event loop (resize to 0x0), verify terminal is restored
-- [ ] **Existing 211 tests still pass:** Run `cargo test` after adding TUI welcome — no test should enter raw mode
-- [ ] **Minimum size fallback:** Resize terminal to 20 columns wide, run `squad-station` — should show plain text, not crash
-- [ ] **Auto-exit timeout:** Run `squad-station` and do not press any key — verify it exits after the configured timeout
-- [ ] **Non-interactive CI:** Run `squad-station` in a GitHub Actions step — must exit 0 without hanging
+- [ ] **`install` subcommand in cli.rs:** Verify `squad-station install --help` works; verify `squad-station install` in a directory with no squad.yml does not panic or error on config load
+- [ ] **Folder name default — None safety:** Verify `squad-station init` when run from `/` (root) does not panic; `file_name()` returns `None` for root path
+- [ ] **Folder name default — tmux safety:** Verify project name derived from a directory with spaces (e.g., `/tmp/my project`) produces a valid tmux session name (no spaces in session name after sanitization)
+- [ ] **Folder name default — UTF-8 edge case:** Verify non-UTF-8 directory name falls back gracefully without replacement-character artifacts in squad.yml
+- [ ] **Pane polling — antigravity guard:** Verify TUI does not attempt capture-pane when orchestrator has `tool = "antigravity"`; no error logged during refresh
+- [ ] **Pane polling — dead session guard:** Verify TUI does not attempt capture-pane when orchestrator has `status = "dead"`; no error logged during refresh
+- [ ] **Pane polling — `processing` scope:** Verify `processing` state does not appear in `squad-station agents --json` output unless explicitly designed to do so
+- [ ] **npm install backward compat:** Run `npx squad-station install` with the updated run.js against a v1.7 binary — must not fail with clap parse error
+- [ ] **241 existing tests still pass:** Run `cargo test` after all v1.8 changes; no new test failures; test output is not garbled
 
 ---
 
@@ -478,12 +403,12 @@ they may write code that does not compile against the pinned 0.26 version.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Terminal stuck in raw mode after bad TUI exit | LOW | User types `reset` blindly; terminal recovers immediately |
-| npm install hangs in CI due to auto-launch | MEDIUM | Kill the job, remove the auto-launch call, republish npm package |
-| curl install.sh hangs | MEDIUM | User Ctrl+C out of it; no data loss; remove auto-launch, re-release |
-| Test suite corrupted by raw mode | LOW | `cargo test -- --test-threads=1` to serialize; find which test enters TUI; add TTY guard |
-| Welcome TUI crashes on small terminal | LOW | Add minimum size check in next patch; fall back to print_welcome() |
-| Stale binary after npm upgrade | LOW | User runs `npx squad-station install --force` to re-download |
+| Install subcommand breaks npx auto-launch (clap parse error) | MEDIUM | Revert run.js to bare `spawnSync(destPath, [])` call; republish npm package; binary stays unchanged |
+| Wizard populates bad folder-name default, breaks tmux session | LOW | User edits project name in wizard before proceeding; sanitizer fix in next patch |
+| Pane polling causes TUI lag | LOW | Increase poll interval from 3s to 15s for capture-pane; no DB or API changes needed |
+| `processing` written to DB without updating status consumers | HIGH | DB migration to remove or rename the status; update all consumers; re-release |
+| False positive "processing" confuses users | LOW | Remove or restrict the heuristic patterns; add provider check; no schema changes |
+| current_dir() panic from None file_name | LOW | Add `?` / `.unwrap_or_default()` at derivation; patch release |
 
 ---
 
@@ -491,36 +416,28 @@ they may write code that does not compile against the pinned 0.26 version.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| No TTY guard on welcome TUI | Phase 1: Implement TTY guard before wiring TUI to bare invocation | `squad-station \| cat` outputs plain text; `cargo test` passes |
-| npm postinstall auto-launch | Phase 1: Design decision — never auto-launch from postinstall | `npm install < /dev/null` completes in <30 seconds |
-| curl install.sh auto-launch | Phase 1: Design decision — install.sh ends with echo, not binary call | `curl url \| sh` completes without hang |
-| Terminal not restored on error/panic | Phase 1: Extract shared TUI guard module, add panic hook to welcome TUI | Ctrl+C recovery works; error path restores terminal |
-| Test suite broken by TUI in tests | Phase 1: `is_terminal()` check inside `run_welcome_tui()` as no-op in tests | `cargo test` all 211+ tests pass without terminal corruption |
-| Welcome TUI blocks scripts with no timeout | Phase 1: Implement event loop with auto-exit timeout | `spawnSync('squad-station', [], {timeout: 5000})` completes |
-| Alternate screen swallows welcome content | Phase 1 (design) / Phase 2 (polish): Choose main buffer over alt screen | After TUI exits, scrollback shows version and hints |
-| Terminal too small to render | Phase 1: Add minimum size check with print_welcome() fallback | 20x5 terminal shows plain text, not crash |
-| ratatui 0.26 API mismatch | Phase 1: Check Cargo.toml version before writing TUI code | `cargo build` succeeds without version-related errors |
+| `install` subcommand name conflict with npm `install` | Phase 1: subcommand design — decide JS vs Rust boundary before writing code | `npx squad-station install` and `squad-station install` both work without conflict |
+| `current_dir()` edge cases (None, non-UTF-8, unsafe chars) | Phase 1: folder-name default — sanitizer and None guard at derivation | Tests with `/`, space-in-path, non-UTF-8 path all pass without panic or corrupted output |
+| capture-pane called when no tmux session exists | Phase 2: pane polling — guard chain as first code written | `squad-station ui` with antigravity provider shows no errors; `squad-station ui` after `close` shows no errors |
+| False positive "processing" from pane content | Phase 2: pane polling — heuristic design document before implementation | Manual test: idle orchestrator shows `idle`, not `processing`; active orchestrator shows `processing` within 15s |
+| capture-pane blocking async TUI executor | Phase 2: pane polling — separate interval timer for pane content | TUI refresh lag <100ms during capture-pane call; key press events not dropped |
+| Backward compat break: old binary + new run.js | Phase 1: install subcommand — version check or keep bare invocation | `npm upgrade squad-station` does not produce clap errors; tested with both v1.7 and v1.8 binaries |
+| Wizard project name default bypasses validation | Phase 1: folder-name default — validation review when default is introduced | Wizard rejects names with tmux-unsafe characters even when pre-populated |
+| `processing` status breaks DB contract | Phase 2: pane polling — DB vs TUI-only decision before any code written | `squad-station agents --json` output schema unchanged unless DB approach is chosen |
+| `install` handler calls config::load_config() before squad.yml exists | Phase 1: install subcommand — design handler as config-free | `squad-station install` in empty temp directory exits cleanly or launches TUI |
 
 ---
 
 ## Sources
 
-- [crossterm enable_raw_mode docs — ENOTTY error](https://docs.rs/crossterm/latest/crossterm/terminal/fn.enable_raw_mode.html)
-- [crossterm issue #912 — enable_raw_mode error in WSL](https://github.com/crossterm-rs/crossterm/issues/912)
-- [ratatui panic hooks recipe](https://ratatui.rs/recipes/apps/panic-hooks/)
-- [ratatui alternate screen concept](https://ratatui.rs/concepts/backends/alternate-screen/)
-- [ratatui terminal and event handler recipe](https://ratatui.rs/recipes/apps/terminal-and-event-handler/)
-- [ratatui BREAKING-CHANGES.md](https://github.com/ratatui/ratatui/blob/main/BREAKING-CHANGES.md)
-- [ratatui v0.30 highlights](https://ratatui.rs/highlights/v030/)
-- [npm postinstall non-TTY issue #16608](https://github.com/npm/npm/issues/16608)
-- [npm scripts at scale — CI reliability](https://www.mindfulchase.com/explore/troubleshooting-tips/build-bundling/advanced-troubleshooting-npm-scripts-at-scale—-deterministic-builds,-workspaces,-and-ci-reliability.html)
-- [curl | sh stdin behavior — linuxvox.com](https://linuxvox.com/blog/execute-bash-script-remotely-via-curl/)
-- [curl | sh pitfalls overview](https://www.arp242.net/curl-to-sh.html)
-- [Integration testing TUI in Rust — quantonganh.com](https://quantonganh.com/2024/01/21/integration-testing-tui-app-in-rust.md)
-- [ratatui_testlib crate](https://docs.rs/ratatui-testlib/latest/ratatui_testlib/)
-- [Rust stdin/stdout testing patterns](https://jeffkreeftmeijer.com/rust-stdin-stdout-testing/)
-- Squad Station codebase: `src/commands/wizard.rs`, `src/commands/init.rs`, `src/commands/welcome.rs`, `npm-package/bin/run.js`, `install.sh`
+- Squad Station codebase — direct inspection: `src/cli.rs`, `src/main.rs`, `src/commands/init.rs`, `src/commands/ui.rs`, `src/commands/wizard.rs`, `src/config.rs`, `src/tmux.rs`, `src/db/agents.rs`, `npm-package/bin/run.js`, `install.sh`
+- Rust `std::path::Path::file_name()` docs — returns `None` for root paths and paths ending in `..`
+- Rust `std::ffi::OsStr::to_str()` docs — returns `None` for non-UTF-8 byte sequences
+- tmux man page — session name restrictions: no spaces, limited character set, max length implementation-defined (typically 127 chars)
+- clap docs — unrecognized subcommand error behavior
+- tokio `process::Command` vs `std::process::Command` — blocking behavior in async runtimes
+- Existing v1.7 PITFALLS.md — TTY guard, npm postinstall, and curl stdin pitfalls (do not re-address here)
 
 ---
-*Pitfalls research for: Squad Station v1.7 First-Run Onboarding TUI + Post-Install Auto-Launch*
-*Researched: 2026-03-17*
+*Pitfalls research for: Squad Station v1.8 — install subcommand, folder-name default, orchestrator pane polling*
+*Researched: 2026-03-18*
