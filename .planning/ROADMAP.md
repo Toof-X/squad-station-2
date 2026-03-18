@@ -120,4 +120,4 @@ Plans:
 | 18. Welcome Screen & Wizard Polish | v1.6 | 2/2 | Complete | 2026-03-17 |
 | 19. Agent Diagram | v1.6 | 1/1 | Complete | 2026-03-17 |
 | 20. TTY-Safe Welcome TUI Core | 2/2 | Complete   | 2026-03-17 | - |
-| 21. Quick Guide and Install Flow | v1.7 | 0/2 | Not started | - |
+| 21. Quick Guide and Install Flow | 1/2 | In Progress|  | - |

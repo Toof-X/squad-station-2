@@ -11,7 +11,7 @@
 - [x] **WELCOME-02**: TUI displays large SQUAD-STATION title using pixel-font big text
 - [x] **WELCOME-03**: TUI displays current version below title
 - [x] **WELCOME-04**: TUI shows hint bar at bottom with available keys and auto-exit countdown
-- [ ] **WELCOME-05**: TUI includes quick guide page explaining Squad Station concept and basic workflow
+- [x] **WELCOME-05**: TUI includes quick guide page explaining Squad Station concept and basic workflow
 - [x] **WELCOME-06**: TUI auto-exits after N seconds if no key pressed (countdown shown in hint bar)
 - [x] **WELCOME-07**: Non-TTY fallback — when stdout is not a terminal, print static text instead of TUI
 
@@ -48,7 +48,7 @@
 | WELCOME-02 | Phase 20 | Complete |
 | WELCOME-03 | Phase 20 | Complete |
 | WELCOME-04 | Phase 20 | Complete |
-| WELCOME-05 | Phase 21 | Pending |
+| WELCOME-05 | Phase 21 | Complete |
 | WELCOME-06 | Phase 20 | Complete |
 | WELCOME-07 | Phase 20 | Complete |
 | INIT-01 | Phase 20 | Complete |
