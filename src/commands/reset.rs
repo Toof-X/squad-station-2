@@ -33,7 +33,7 @@ pub async fn run(config_path: PathBuf, no_relaunch: bool, json: bool) -> Result<
             println!();
             println!("  Relaunching squad...");
         }
-        return super::init::run(config_path, json).await;
+        return super::init::run(config_path, json, false).await;
     }
 
     if json {

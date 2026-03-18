@@ -30,7 +30,7 @@ async fn run(cli: cli::Cli) -> Result<()> {
                 let action = commands::welcome::run_welcome_tui(has_config).await?;
                 match action {
                     Some(commands::welcome::WelcomeAction::LaunchInit) => {
-                        commands::init::run(PathBuf::from("squad.yml"), false).await?;
+                        commands::init::run(PathBuf::from("squad.yml"), false, true).await?;
                     }
                     Some(commands::welcome::WelcomeAction::LaunchDashboard) => {
                         commands::ui::run().await?;
@@ -46,7 +46,7 @@ async fn run(cli: cli::Cli) -> Result<()> {
         Some(cmd) => {
             use cli::Commands::*;
             match cmd {
-                Init { config } => commands::init::run(config, cli.json).await,
+                Init { config, tui } => commands::init::run(config, cli.json, tui).await,
                 Send {
                     agent,
                     body,

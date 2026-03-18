@@ -24,6 +24,9 @@ pub enum Commands {
         /// Path to squad config file
         #[arg(default_value = "squad.yml")]
         config: PathBuf,
+        /// Launch interactive TUI wizard instead of using existing squad.yml
+        #[arg(long)]
+        tui: bool,
     },
     /// Send a task to an agent
     Send {

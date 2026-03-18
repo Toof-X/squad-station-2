@@ -85,26 +85,34 @@ fn append_workers_to_yaml(
     result
 }
 
-pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
+pub async fn run(config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<()> {
     let mut purge_db_on_init = false;
 
-    // Check if squad.yml exists; if not, run the interactive wizard
     if !config_path.exists() {
-        match crate::commands::wizard::run().await? {
-            Some(result) => {
-                let yaml = generate_squad_yml(&result);
-                std::fs::write(&config_path, &yaml)?;
-                create_sdd_playbook(&config_path, &result);
-                println!("Generated squad.yml for project '{}'", result.project);
-                // Fall through to load_config below
+        if tui {
+            // --tui: run interactive wizard to generate squad.yml
+            match crate::commands::wizard::run().await? {
+                Some(result) => {
+                    let yaml = generate_squad_yml(&result);
+                    std::fs::write(&config_path, &yaml)?;
+                    create_sdd_playbook(&config_path, &result);
+                    println!("Generated squad.yml for project '{}'", result.project);
+                    // Fall through to load_config below
+                }
+                None => {
+                    println!("Init cancelled.");
+                    return Ok(());
+                }
             }
-            None => {
-                println!("Init cancelled.");
-                return Ok(());
-            }
+        } else {
+            // Non-TUI: notify that squad.yml is missing and exit
+            eprintln!(
+                "No squad.yml found. Run `squad-station init --tui` to create one interactively."
+            );
+            return Ok(());
         }
-    } else if std::io::stdin().is_terminal() {
-        // Re-init: squad.yml exists and we have an interactive terminal — prompt user
+    } else if tui && std::io::stdin().is_terminal() {
+        // --tui + squad.yml exists: show re-init prompt
         match prompt_reinit()? {
             ReinitChoice::Overwrite => {
                 // Kill existing sessions from the old config before overwriting
@@ -163,6 +171,7 @@ pub async fn run(config_path: PathBuf, json: bool) -> anyhow::Result<()> {
             }
         }
     }
+    // Non-TUI + squad.yml exists: fall through directly to load_config
 
     // 1. Parse squad.yml
     let config = config::load_config(&config_path)?;
