@@ -1,5 +1,14 @@
 # Squad Station
 
+## Current Milestone: v1.8 Install & Live Status
+
+**Goal:** Polish the install experience with a proper `install` subcommand, use folder name as project name default throughout the TUI, and add live orchestrator state detection via pane polling.
+
+**Target features:**
+- `squad-station install [--tui]` subcommand replacing bare binary auto-launch
+- Folder name as default project name in wizard, dashboard, and squad.yml generation
+- Orchestrator "processing" state detected via `capture-pane` content polling in TUI
+
 ## What This Is
 
 Squad Station là một stateless CLI binary (Rust + embedded SQLite) hoạt động như trạm trung chuyển messages giữa AI Orchestrator và N agents chạy trong tmux sessions. Provider-agnostic — hỗ trợ bất kỳ AI coding tool nào (Claude Code, Gemini CLI, Codex, Aider...). Người dùng chỉ tương tác với Orchestrator, Station lo việc routing messages, tracking trạng thái agent, và cung cấp fleet monitoring qua TUI dashboard và tmux views.
@@ -170,4 +179,4 @@ Test suite: 241 tests (all green).
 | `exec` in curl / `spawnSync` in npm | exec replaces shell process cleanly; spawnSync blocks until TUI exits | ✓ Good — correct handoff semantics per install path |
 
 ---
-*Last updated: 2026-03-18 after v1.7 milestone*
+*Last updated: 2026-03-18 after v1.8 milestone start*
