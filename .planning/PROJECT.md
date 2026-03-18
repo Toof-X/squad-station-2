@@ -71,16 +71,12 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 - ✓ After `init` completes, ASCII diagram shows all agents (boxes + arrows + status) — v1.6
 - ✓ claude-code wizard model options: sonnet, opus, haiku (no version suffixes) — v1.6
 
-## Current Milestone: v1.7 First-Run Onboarding
-
-**Goal:** Replace static welcome screen with an interactive ratatui TUI that guides new users through setup automatically after install.
-
-**Target features:**
-- Ratatui TUI welcome screen (large SQUAD-STATION title + version + quick guide)
-- Post-install auto-launch (npm postinstall + curl installer run `squad-station`)
-- Conditional flow: no squad.yml → "Press Enter to set up" → wizard; squad.yml exists → guide only
-
-### Active
+- ✓ Bare `squad-station` invocation opens interactive ratatui TUI with BigText pixel-font title, version, auto-exit countdown, and TTY guard — v1.7
+- ✓ WelcomePage state machine: Title and Guide pages navigable via Tab/Right; Tab/Left returns to title — v1.7
+- ✓ WelcomeAction routing: Enter launches init wizard (no squad.yml) or dashboard (squad.yml exists); Q/Esc/timeout exit silently — v1.7
+- ✓ Non-TTY fallback: piped/CI invocation prints static text instead of entering raw mode — v1.7
+- ✓ npm postinstall auto-launches `squad-station` via `spawnSync` when `process.stdout.isTTY` — v1.7
+- ✓ curl installer auto-launches `squad-station` via `exec` when `[ -t 1 ]`; silent in non-interactive environments — v1.7
 
 ### Out of Scope
 
@@ -94,18 +90,18 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ## Context
 
-Shipped v1.6 UX Polish with ~82K LOC Rust (codebase + tests, total project).
-Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.26, crossterm, serde-saphyr, owo-colors 3, uuid (temp file naming).
-Distribution: npm package + curl | sh installer, both download pre-built binaries from GitHub Releases.
+Shipped v1.7 First-Run Onboarding with ~82,700 LOC Rust (codebase + tests, total project).
+Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.30, crossterm 0.29, tui-big-text 0.8, serde-saphyr, owo-colors 3, uuid (temp file naming).
+Distribution: npm package + curl | sh installer, both download pre-built binaries from GitHub Releases. Both install paths auto-launch the welcome TUI in interactive terminals.
 CI/CD: GitHub Actions matrix workflow produces 4 musl/darwin binaries on v* tag push.
 Providers supported: claude-code, gemini-cli, antigravity (DB-only IDE orchestrator).
 Hook registration: inline `squad-station signal $TMUX_PANE` command (scripts in hooks/ deprecated).
 Init flow: TUI wizard (ratatui) generates squad.yml from scratch; re-init prompt handles overwrite/add-agents/abort. Post-init prints ASCII agent fleet diagram.
-Welcome screen: bare `squad-station` invocation prints red ASCII art title, version, init hint, subcommand list.
+Welcome TUI: bare `squad-station` invocation opens ratatui AlternateScreen with BigText title, 5s countdown, Tab-navigable Quick Guide page; Enter routes to init wizard or dashboard.
 Context generation: `.agent/workflows/squad-orchestrator.md` — single unified playbook for IDE orchestrator.
 Safe injection: load-buffer/paste-buffer pattern for multiline task bodies (no shell-injection artifacts).
 Database: `.squad/station.db` in project directory (no home-dir dependency, no `dirs` crate).
-Test suite: 211 tests (all green).
+Test suite: 241 tests (all green).
 
 ## Constraints
 
@@ -167,6 +163,11 @@ Test suite: 211 tests (all green).
 | Short model aliases for ClaudeCode | sonnet/opus/haiku instead of full version strings — decoupled from version churn | ✓ Good — cleaner UX, stored as-is in squad.yml |
 | `render_diagram()` returns String | Enables unit testing without stdout capture; `print_diagram()` calls it | ✓ Good — 10 diagram tests with full assertion coverage |
 | Workers wrap on 80-char boundary | Prevents diagram overflow on standard terminals | ✓ Good — readable layout for typical agent counts |
+| AlternateScreen for welcome TUI | Consistent with existing ui.rs pattern; preserves scrollback buffer | ✓ Good — clean terminal restore on exit |
+| `routing_action()` as pure function | WelcomeAction routing extracted to welcome.rs — unit-testable without TTY | ✓ Good — 5 routing tests pass without spawning a terminal |
+| WelcomePage enum state machine | Title/Guide pages as enum variant; mutable deadline for per-page countdown reset | ✓ Good — clean dispatch in event loop, no nested match |
+| TTY check only for auto-launch | `process.stdout.isTTY` / `[ -t 1 ]` sufficient; no CI env var guards | ✓ Good — correct silent degradation in non-interactive environments |
+| `exec` in curl / `spawnSync` in npm | exec replaces shell process cleanly; spawnSync blocks until TUI exits | ✓ Good — correct handoff semantics per install path |
 
 ---
-*Last updated: 2026-03-17 after v1.7 milestone started*
+*Last updated: 2026-03-18 after v1.7 milestone*

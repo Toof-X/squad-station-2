@@ -320,6 +320,50 @@
 
 ---
 
+## Milestone: v1.7 — First-Run Onboarding
+
+**Shipped:** 2026-03-18
+**Phases:** 2 (20-21) | **Plans:** 4 | **Files changed:** 16 (+2,489 / -47)
+
+### What Was Built
+- ratatui 0.30 + tui-big-text 0.8 upgrade — BigText pixel-font SQUAD-STATION title in AlternateScreen TUI
+- 5-second auto-exit countdown with TTY guard (non-TTY → static text fallback)
+- WelcomeAction routing wired: Enter → init wizard (no squad.yml) or dashboard; Q/Esc/timeout → silent exit
+- WelcomePage enum state machine — Title and Guide pages navigable via Tab/Right with dot indicator
+- Quick Guide page with concept summary + 3-step workflow, 5s countdown reset on entry
+- TTY-guarded auto-launch from both install paths: npm (spawnSync via destPath), curl (exec via INSTALL_DIR)
+
+### What Worked
+- Pure function extraction for TUI logic (`routing_action`, `guide_routing_action`, `hint_bar_text`, `guide_content`) — all testable without a terminal; 24 welcome module tests with no stdout capture needed
+- WelcomePage enum as state machine in event loop — clean dispatch, no nested match, easy to extend
+- `installBinary()` returning `destPath` explicitly — avoids PATH uncertainty at auto-launch time
+- Phase 20 → Phase 21 dependency was clean: Phase 20 provided the WelcomeAction enum that Phase 21 extended
+- 168-second Phase 21-01 execution: TDD green within 3 minutes, draw_guide() wired in same session
+
+### What Was Inefficient
+- No milestone audit run (7 milestones in a row without audit)
+- SUMMARY `one_liner` frontmatter still not auto-extracted by gsd-tools (tasks=0, accomplishments empty in CLI output)
+- STATE.md `percent` stuck at 5% throughout v1.7 despite completing all phases — progress tracking not updated during execution
+
+### Patterns Established
+- AlternateScreen + raw mode + panic hook: canonical pattern from ui.rs; welcome.rs matches exactly
+- Per-page deadline reset: mutable `deadline` in event loop — enter guide resets to `Instant::now() + 5s`
+- `exec` vs `spawnSync` handoff semantics: exec for shell (process replacement), spawnSync for Node (blocking wait)
+- `isTTY` / `[ -t 1 ]` as sole TTY guard — no CI env var detection needed; simpler and sufficient
+
+### Key Lessons
+1. Extracting TUI action routing to pure functions before wiring main.rs prevents "can't test this without a terminal" problems
+2. `exec` in shell scripts is the right auto-launch handoff — it cleanly replaces the install process rather than spawning a subshell
+3. `installBinary()` returning its result (vs side effects only) made the auto-launch wiring trivial — single-purpose functions compose
+4. `WelcomePage` state machine in the event loop is more readable than nested conditionals — enum dispatch scales to N pages
+
+### Cost Observations
+- Model mix: ~100% sonnet
+- Sessions: ~2 execution sessions
+- Notable: Phase 21-01 completed in 168 seconds (2.8 minutes) — TDD + pure function pattern enabled rapid green
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -333,6 +377,7 @@
 | v1.4 | 2 | 4 | 164 | Unified playbook, local DB, smallest milestone — focused scope |
 | v1.5 | 2 | 4 | 201 | TUI wizard for init, squad.yml generation, re-init prompt, crossterm UX |
 | v1.6 | 2 | 3 | 211 | Welcome screen, agent fleet diagram, simplified model names — pure UX polish |
+| v1.7 | 2 | 4 | 241 | Interactive welcome TUI, Quick Guide page, auto-launch from both install paths |
 
 ### Cumulative Quality
 
@@ -345,14 +390,16 @@
 | v1.4 | 164 | 0 | 0 (clean close, audit skipped) |
 | v1.5 | 201 | 0 | 0 (clean close, audit skipped) |
 | v1.6 | 211 | 0 | 0 (clean close, audit skipped) |
+| v1.7 | 241 | 0 | 0 (clean close, audit skipped) |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. Safety-first architecture: wire all safety primitives in the foundation phase
 2. Stateless CLI + SQLite WAL = simple, testable, concurrent-safe
 3. Atomic schema migrations with clear before/after states — clean upgrade path, no data loss
-4. Fill SUMMARY one_liner during execution — milestone tooling depends on it (6 milestones in a row with empty field)
+4. Fill SUMMARY one_liner during execution — milestone tooling depends on it (7 milestones in a row with empty field)
 5. Run milestone audit before completion — v1.3 first and last to do this; should be default
 6. Small focused milestones (2 phases) execute efficiently — minimal overhead, clear scope
 7. TDD for TUI code works — type-level tests catch design issues before rendering implementation begins
 8. Non-interactive guard (`is_terminal()`) must be added upfront for crossterm raw-mode code — not as a bugfix after tests break
+9. Pure function extraction for TUI action routing — unit-testable without spawning a terminal, enables fast TDD cycles

@@ -1,5 +1,20 @@
 # Milestones
 
+## v1.7 First-Run Onboarding (Shipped: 2026-03-18)
+
+**Phases:** 20-21 | **Plans:** 4 | **Files changed:** 16 (+2,489 / -47) | **Timeline:** 2 days (2026-03-17 → 2026-03-18)
+**Git range:** feat(20-01) welcome TUI → feat(21-02) TTY-guarded auto-launch
+
+**Key accomplishments:**
+- ratatui 0.30 + tui-big-text 0.8 upgrade — BigText pixel-font SQUAD-STATION title with 5-second auto-exit countdown and TTY guard (non-TTY falls back to static text)
+- WelcomeAction routing wired in main.rs: Enter launches init wizard (no squad.yml) or dashboard (squad.yml exists); Q/Esc/timeout exit silently — complete first-run onboarding flow
+- Quick Guide second TUI page (WelcomePage enum state machine) reachable via Tab/Right with dot indicator navigation, guide content, and 5s countdown reset on entry
+- TTY-guarded auto-launch after both install paths: npm (spawnSync via destPath) and curl (exec via INSTALL_DIR) — new users see the TUI immediately after install in interactive terminals
+
+**Archives:** [v1.7-ROADMAP.md](milestones/v1.7-ROADMAP.md) | [v1.7-REQUIREMENTS.md](milestones/v1.7-REQUIREMENTS.md)
+
+---
+
 ## v1.6 UX Polish (Shipped: 2026-03-17)
 
 **Phases completed:** 2 phases, 3 plans, 0 tasks

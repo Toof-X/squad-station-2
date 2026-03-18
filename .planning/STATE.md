@@ -1,36 +1,35 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.7
-milestone_name: First-Run Onboarding
-status: executing
-stopped_at: Completed 21-02-PLAN.md
-last_updated: "2026-03-18T02:32:32.679Z"
-last_activity: 2026-03-17 — Phase 20, Plan 01 complete (welcome TUI + ratatui 0.30 upgrade)
+milestone: v1.8
+milestone_name: TBD
+status: milestone_complete
+stopped_at: v1.7 milestone archived
+last_updated: "2026-03-18"
+last_activity: 2026-03-18 — v1.7 milestone complete (First-Run Onboarding shipped)
 progress:
   total_phases: 2
   completed_phases: 2
   total_plans: 4
   completed_plans: 4
-  percent: 5
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-17)
+See: .planning/PROJECT.md (updated 2026-03-18)
 
 **Core value:** Routing messages reliably between Orchestrator and agents — stateless CLI, no daemon
-**Current focus:** Phase 20 — TTY-Safe Welcome TUI Core
+**Current focus:** Planning next milestone (v1.8)
 
 ## Current Position
 
-Phase: 20 of 21 (TTY-Safe Welcome TUI Core)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-03-17 — Phase 20, Plan 01 complete (welcome TUI + ratatui 0.30 upgrade)
+Phase: All v1.7 phases complete (20-21)
+Status: Milestone shipped — ready for next milestone planning
+Last activity: 2026-03-18 — v1.7 First-Run Onboarding complete
 
-Progress: [█░░░░░░░░░] 5% (v1.7 milestone)
+Progress: [██████████] 100% (v1.7 milestone)
 
 ## Accumulated Context
 
