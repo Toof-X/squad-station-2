@@ -111,3 +111,7 @@ Requires: tmux, macOS or Linux (Windows not supported — tmux unavailable).
 ## License
 
 MIT License
+
+---
+
+Based on [thientranhung/squad-station](https://github.com/thientranhung/squad-station).
