@@ -38,6 +38,9 @@ vi squad.yml
 
 # 3. Launch the squad
 squad-station init
+
+# Or: generate squad.yml interactively with the TUI wizard
+squad-station init --tui
 ```
 
 ## Example `squad.yml`
@@ -74,6 +77,7 @@ agents:
 | Command | Description |
 |---|---|
 | `squad-station init` | Launch squad from `squad.yml` — creates DB, tmux sessions, hooks |
+| `squad-station init --tui` | Interactive TUI wizard — generate `squad.yml`, then launch |
 | `squad-station send <agent> --body "<task>"` | Send a task to an agent |
 | `squad-station signal <agent>` | Signal agent completed its task |
 | `squad-station list` | List messages |

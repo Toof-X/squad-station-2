@@ -57,27 +57,40 @@ The title scales with terminal width: full pixel font on wide terminals, compact
 
 ## Quickstart
 
-**Step 1 — Run the init wizard:**
+**Step 1 — Create `squad.yml`:**
+
+Copy an example config and edit it, or use the interactive wizard:
+
+```bash
+# Option A — copy and edit an example
+cp .squad/examples/orchestrator-claude.yml squad.yml
+vi squad.yml
+
+# Option B — interactive TUI wizard (generates squad.yml for you)
+squad-station init --tui
+```
+
+**Step 2 — Launch the squad:**
 
 ```bash
 squad-station init
 ```
 
-The interactive TUI wizard collects your project name, SDD workflow, orchestrator config, and worker agent configs. It generates `squad.yml` and registers all agents automatically.
+Reads `squad.yml`, creates the SQLite database, launches tmux sessions, and installs hooks.
 
-**Step 2 — Send a task:**
+**Step 3 — Send a task:**
 
 ```bash
 squad-station send my-app-claude-code-backend --body "Implement the /api/health endpoint"
 ```
 
-**Step 3 — Signal completion** (from inside the agent's tmux session via hook):
+**Step 4 — Signal completion** (from inside the agent's tmux session via hook):
 
 ```bash
 squad-station signal $TMUX_PANE
 ```
 
-**Step 4 — Monitor your fleet:**
+**Step 5 — Monitor your fleet:**
 
 ```bash
 squad-station ui      # TUI dashboard
