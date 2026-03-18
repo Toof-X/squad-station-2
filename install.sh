@@ -1,9 +1,9 @@
 #!/bin/sh
 set -e
 
-REPO="thientranhung/squad-station"
-BASE_URL="https://github.com/thientranhung/squad-station/releases/download"
-VERSION="0.5.1"
+REPO="Toof-X/squad-station-2"
+BASE_URL="https://github.com/Toof-X/squad-station-2/releases/download"
+VERSION="1.5"
 
 # Detect OS
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -12,7 +12,7 @@ case "$OS" in
   linux)  ;;
   *)
     echo "Unsupported OS: $OS" >&2
-    echo "Please download manually from: https://github.com/${REPO}/releases/download/v${VERSION}/" >&2
+    echo "Please download manually from: https://github.com/Toof-X/squad-station-2/releases/download/v${VERSION}/" >&2
     exit 1
     ;;
 esac
@@ -24,7 +24,7 @@ case "$ARCH" in
   arm64|aarch64) ARCH="arm64" ;;
   *)
     echo "Unsupported architecture: $ARCH" >&2
-    echo "Please download manually from: https://github.com/${REPO}/releases/download/v${VERSION}/" >&2
+    echo "Please download manually from: https://github.com/Toof-X/squad-station-2/releases/download/v${VERSION}/" >&2
     exit 1
     ;;
 esac

@@ -4,7 +4,7 @@
   "description": "Message routing and orchestration for AI agent squads",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/thientranhung/squad-station.git"
+    "url": "git+https://github.com/Toof-X/squad-station-2.git"
   },
   "bin": {
     "squad-station": "./bin/run.js"

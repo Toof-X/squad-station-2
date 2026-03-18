@@ -43,7 +43,7 @@ function install() {
 
 function installBinary() {
   const VERSION = require('../package.json').version;
-  const REPO = 'thientranhung/squad-station';
+  const REPO = 'Toof-X/squad-station-2';
 
   const platformMap = { darwin: 'darwin', linux: 'linux' };
   const archMap = { x64: 'x86_64', arm64: 'arm64' };
