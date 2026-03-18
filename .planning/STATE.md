@@ -4,7 +4,7 @@ milestone: v1.7
 milestone_name: First-Run Onboarding
 status: executing
 stopped_at: Completed 21-02-PLAN.md
-last_updated: "2026-03-18T02:29:24.976Z"
+last_updated: "2026-03-18T02:32:32.679Z"
 last_activity: 2026-03-17 — Phase 20, Plan 01 complete (welcome TUI + ratatui 0.30 upgrade)
 progress:
   total_phases: 2
