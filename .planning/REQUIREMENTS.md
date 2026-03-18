@@ -23,9 +23,9 @@
 
 ### Install Flow
 
-- [ ] **INSTALL-01**: npm postinstall checks `process.stdout.isTTY` and auto-launches `squad-station` if interactive
-- [ ] **INSTALL-02**: curl | sh installer checks `[ -t 1 ]` and auto-launches `squad-station` if interactive
-- [ ] **INSTALL-03**: Both install scripts degrade silently in non-interactive environments (CI, pipes, sudo)
+- [x] **INSTALL-01**: npm postinstall checks `process.stdout.isTTY` and auto-launches `squad-station` if interactive
+- [x] **INSTALL-02**: curl | sh installer checks `[ -t 1 ]` and auto-launches `squad-station` if interactive
+- [x] **INSTALL-03**: Both install scripts degrade silently in non-interactive environments (CI, pipes, sudo)
 
 ## v2 Requirements
 
@@ -54,9 +54,9 @@
 | INIT-01 | Phase 20 | Complete |
 | INIT-02 | Phase 20 | Complete |
 | INIT-03 | Phase 20 | Complete |
-| INSTALL-01 | Phase 21 | Pending |
-| INSTALL-02 | Phase 21 | Pending |
-| INSTALL-03 | Phase 21 | Pending |
+| INSTALL-01 | Phase 21 | Complete |
+| INSTALL-02 | Phase 21 | Complete |
+| INSTALL-03 | Phase 21 | Complete |
 
 **Coverage:**
 - v1.7 requirements: 13 total

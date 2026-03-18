@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: First-Run Onboarding
 status: executing
-stopped_at: Completed 21-01-PLAN.md
-last_updated: "2026-03-18T02:26:12.844Z"
+stopped_at: Completed 21-02-PLAN.md
+last_updated: "2026-03-18T02:29:24.976Z"
 last_activity: 2026-03-17 — Phase 20, Plan 01 complete (welcome TUI + ratatui 0.30 upgrade)
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 5
 ---
 
@@ -54,6 +54,8 @@ All decisions logged in PROJECT.md Key Decisions table.
 - [Phase 20]: Quit action maps to None return from run_welcome_tui(): main.rs exits silently to shell
 - [Phase 20]: init::run() called with hardcoded PathBuf::from('squad.yml') matching init subcommand default
 - [Phase 21-quick-guide-and-install-flow]: WelcomePage enum added in same file; hint_bar_text tests converted to contains(); guide_content footer in Min(0) chunk; Tab/Left from guide preserves countdown
+- [Phase 21-02]: installBinary() returns destPath to avoid PATH uncertainty in auto-launch — uses full absolute path
+- [Phase 21-02]: TTY check only (process.stdout.isTTY / [ -t 1 ]) guards auto-launch — no CI env var detection per locked decision
 
 ### Pending Todos
 
@@ -65,6 +67,6 @@ None — all Phase 20, Plan 01 blockers resolved.
 
 ## Session Continuity
 
-Last session: 2026-03-18T02:26:12.816Z
-Stopped at: Completed 21-01-PLAN.md
+Last session: 2026-03-18T02:29:24.974Z
+Stopped at: Completed 21-02-PLAN.md
 Resume file: None
