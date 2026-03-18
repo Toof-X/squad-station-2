@@ -22,6 +22,7 @@ if (subcommand === 'install') {
 function install() {
   var args = process.argv.slice(3);
   var force = args.includes('--force') || args.includes('-f');
+  var tui = args.includes('--tui');
 
   console.log('\n\x1b[32m══════════════════════════════════\x1b[0m');
   console.log('  \x1b[1mSquad Station Install\x1b[0m');
@@ -40,8 +41,8 @@ function install() {
   console.log('  2. Edit \x1b[36msquad.yml\x1b[0m — set project name, providers, models');
   console.log('  3. Run  \x1b[36msquad-station init\x1b[0m — launch tmux sessions\n');
 
-  // Auto-launch welcome TUI in interactive terminals
-  if (process.stdout.isTTY) {
+  // Launch welcome TUI only when --tui flag is passed
+  if (tui && process.stdout.isTTY) {
     spawnSync(destPath, ['--tui'], { stdio: 'inherit' });
   }
 }
