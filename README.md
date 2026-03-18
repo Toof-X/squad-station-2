@@ -21,7 +21,7 @@ Requires Node.js 14+. Downloads the native binary for your platform to `/usr/loc
 ### Build from source
 
 ```bash
-git clone https://github.com/Toof-X/squad-station.git
+git clone https://github.com/thientranhung/squad-station.git
 cd squad-station
 cargo build --release
 # Binary: target/release/squad-station
