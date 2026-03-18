@@ -7,7 +7,11 @@ Squad Station routes messages between an AI orchestrator and N agents running in
 ## Install
 
 ```bash
-npx squad-station install
+# Install binary and scaffold project files
+npx squad-station-2 install
+
+# Same, but launch the interactive welcome TUI after install
+npx squad-station-2 install --tui
 ```
 
 This downloads the `squad-station` binary to your system and scaffolds project files:
