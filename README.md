@@ -10,10 +10,10 @@ Squad Station routes messages between an AI orchestrator and N agents running in
 
 ```bash
 # Install binary and scaffold project files
-npx squad-station-2 install
+npx squad-station-2@latest install
 
 # Same, but launch the interactive welcome TUI after install
-npx squad-station-2 install --tui
+npx squad-station-2@latest install --tui
 ```
 
 Requires Node.js 14+. Downloads the native binary for your platform to `/usr/local/bin` (falls back to `~/.local/bin`) and scaffolds `.squad/` project files.
@@ -21,8 +21,8 @@ Requires Node.js 14+. Downloads the native binary for your platform to `/usr/loc
 ### Build from source
 
 ```bash
-git clone https://github.com/thientranhung/squad-station.git
-cd squad-station
+git clone https://github.com/Toof-X/squad-station-2.git
+cd squad-station-2
 cargo build --release
 # Binary: target/release/squad-station
 ```
