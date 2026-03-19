@@ -127,7 +127,7 @@ Plans:
   5. The template list reorders based on the SDD workflow selected on wizard page 1 (bmad/gsd/superpower) — the most relevant roles for that workflow appear at the top
 **Plans**: 3 plans
 Plans:
-- [ ] 24-01-PLAN.md — Templates data module, DB migration, Agent/insert_agent updates, all caller fixes
+- [x] 24-01-PLAN.md — Templates data module, DB migration, Agent/insert_agent updates, all caller fixes
 - [ ] 24-02-PLAN.md — Wizard UI integration (template selector, auto-fill, split-pane layout, routing_hints flow)
 - [ ] 24-03-PLAN.md — Routing Matrix in context.rs + comprehensive test suite
 
@@ -149,4 +149,4 @@ Plans:
 | 21. Quick Guide and Install Flow | v1.7 | 2/2 | Complete | 2026-03-18 |
 | 22. Orchestrator Intelligence Data | v1.8 | 2/2 | Complete | 2026-03-19 |
 | 23. Dynamic Agent Cloning | 2/2 | Complete    | 2026-03-19 | - |
-| 24. Agent Role Templates in Wizard | v1.8 | 0/3 | Not started | - |
+| 24. Agent Role Templates in Wizard | v1.8 | 1/3 | In progress | - |

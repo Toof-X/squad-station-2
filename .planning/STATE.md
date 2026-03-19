@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Smart Agent Management
 status: planning
-stopped_at: Phase 24 UI-SPEC approved
-last_updated: "2026-03-19T07:39:40.068Z"
-last_activity: 2026-03-19 — Roadmap created for v1.8 Smart Agent Management (Phases 22-24)
+stopped_at: Phase 24 Plan 01 complete
+last_updated: "2026-03-19T08:30:00.000Z"
+last_activity: 2026-03-19 — Completed 24-01 templates data module and routing_hints foundation
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 0
+  total_plans: 7
+  completed_plans: 5
+  percent: 14
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 
 ## Current Position
 
-Phase: 22 of 24 (Orchestrator Intelligence Data)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-03-19 — Roadmap created for v1.8 Smart Agent Management (Phases 22-24)
+Phase: 24 of 24 (Agent Role Templates in Wizard)
+Plan: 01 complete, next: 02
+Status: In progress
+Last activity: 2026-03-19 — Completed 24-01: templates data module, routing_hints migration, all callers updated
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 14%
 
 ## Code Status
 
@@ -60,6 +60,8 @@ Key decisions relevant to v1.8:
 - [Phase 22]: Orchestrator and dead agents skipped in metrics loop to avoid unnecessary DB queries
 - [Phase 23-dynamic-agent-cloning]: Clone command: strip_clone_suffix only strips -N where N>=2; name generation checks both DB and tmux sessions; antigravity agents skip tmux; context regeneration is best-effort
 - [Phase 23-dynamic-agent-cloning]: Used pub instead of pub(crate) for clone helper functions — integration tests in tests/ are separate crates and cannot access pub(crate) items
+- [Phase 24-01]: All 11 templates use default_provider=claude-code; per-provider model mapping stored in template struct not resolved at runtime
+- [Phase 24-01]: routing_hints stored as JSON string (Option<String>) in DB and AgentInput; serialization to JSON array deferred to Plan 02 when template selection wires the data
 
 ### Pending Todos
 
@@ -68,11 +70,11 @@ None.
 ### Blockers/Concerns
 
 - Phase 22: Exact wording of Fleet Status section in squad-orchestrator.md needs to be designed before modifying `build_orchestrator_md()` — wording has correctness implications for orchestrator behavior
-- Phase 22: `busy_since` vs `status_updated_at` — pick one approach before starting Phase 22 work (research recommends new `busy_since` column via migration 0005)
+- Phase 22: `busy_since` vs `status_updated_at` — pick one approach before starting Phase 22 work (note: migration 0005 was used by Phase 24 for routing_hints; Phase 22 busy_since column would need 0006)
 - Phase 23: Five critical pitfalls each require explicit acceptance criteria: name collision (DB+tmux), DB-first ordering with rollback, auto-context-regeneration, orchestrator rejection guard, session name sanitization
 
 ## Session Continuity
 
-Last session: 2026-03-19T07:39:40.066Z
-Stopped at: Phase 24 UI-SPEC approved
-Resume file: .planning/phases/24-agent-role-templates-in-wizard/24-UI-SPEC.md
+Last session: 2026-03-19T08:30:00.000Z
+Stopped at: Completed Phase 24 Plan 01 (24-01-PLAN.md)
+Resume file: .planning/phases/24-agent-role-templates-in-wizard/24-02-PLAN.md
