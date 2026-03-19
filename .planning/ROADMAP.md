@@ -144,5 +144,5 @@ Plans:
 | 20. TTY-Safe Welcome TUI Core | v1.7 | 2/2 | Complete | 2026-03-17 |
 | 21. Quick Guide and Install Flow | v1.7 | 2/2 | Complete | 2026-03-18 |
 | 22. Orchestrator Intelligence Data | v1.8 | 2/2 | Complete | 2026-03-19 |
-| 23. Dynamic Agent Cloning | 1/2 | In Progress|  | - |
+| 23. Dynamic Agent Cloning | 2/2 | Complete   | 2026-03-19 | - |
 | 24. Agent Role Templates in Wizard | v1.8 | 0/TBD | Not started | - |

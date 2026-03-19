@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Smart Agent Management
 status: planning
-stopped_at: Completed 23-01-PLAN.md
-last_updated: "2026-03-19T06:26:34.423Z"
+stopped_at: Completed 23-02-PLAN.md
+last_updated: "2026-03-19T06:32:04.076Z"
 last_activity: 2026-03-19 — Roadmap created for v1.8 Smart Agent Management (Phases 22-24)
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -59,6 +59,7 @@ Key decisions relevant to v1.8:
 - [Phase 22]: context run() DB queries execute before build_orchestrator_md call — INTEL-05 purity maintained
 - [Phase 22]: Orchestrator and dead agents skipped in metrics loop to avoid unnecessary DB queries
 - [Phase 23-dynamic-agent-cloning]: Clone command: strip_clone_suffix only strips -N where N>=2; name generation checks both DB and tmux sessions; antigravity agents skip tmux; context regeneration is best-effort
+- [Phase 23-dynamic-agent-cloning]: Used pub instead of pub(crate) for clone helper functions — integration tests in tests/ are separate crates and cannot access pub(crate) items
 
 ### Pending Todos
 
@@ -72,6 +73,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-19T06:26:34.421Z
-Stopped at: Completed 23-01-PLAN.md
+Last session: 2026-03-19T06:32:04.074Z
+Stopped at: Completed 23-02-PLAN.md
 Resume file: None
