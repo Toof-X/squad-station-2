@@ -85,7 +85,7 @@ pub async fn run(source_name: String, json: bool) -> anyhow::Result<()> {
 /// - Check uniqueness against both DB agents table AND live tmux sessions
 /// - If source name already ends with `-N`, strip suffix to find base name
 ///   (cloning `worker-3` produces `worker-4`, not `worker-3-2`)
-async fn generate_clone_name(
+pub async fn generate_clone_name(
     source_name: &str,
     pool: &sqlx::SqlitePool,
 ) -> anyhow::Result<String> {
@@ -116,7 +116,7 @@ async fn generate_clone_name(
 
 /// Strip trailing `-N` suffix if present (where N is a positive integer >= 2).
 /// Examples: "worker-3" -> "worker", "my-project-cc-worker" -> "my-project-cc-worker"
-fn strip_clone_suffix(name: &str) -> &str {
+pub fn strip_clone_suffix(name: &str) -> &str {
     if let Some(pos) = name.rfind('-') {
         let suffix = &name[pos + 1..];
         if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
@@ -131,7 +131,7 @@ fn strip_clone_suffix(name: &str) -> &str {
 
 /// Extract clone number N from a name matching `{base}-N` pattern.
 /// Returns None if name doesn't match the pattern.
-fn extract_clone_number(name: &str, base: &str) -> Option<u32> {
+pub fn extract_clone_number(name: &str, base: &str) -> Option<u32> {
     let suffix = name.strip_prefix(base)?.strip_prefix('-')?;
     if suffix.is_empty() || !suffix.chars().all(|c| c.is_ascii_digit()) {
         return None;
@@ -141,7 +141,7 @@ fn extract_clone_number(name: &str, base: &str) -> Option<u32> {
 
 /// Build launch command from agent tool + model (replicates init.rs get_launch_command logic).
 /// Cannot reuse init.rs version directly because it takes &AgentConfig, not DB fields.
-fn get_launch_command(tool: &str, model: Option<&str>) -> String {
+pub fn get_launch_command(tool: &str, model: Option<&str>) -> String {
     match tool {
         "claude-code" => {
             let mut cmd = "claude --dangerously-skip-permissions".to_string();
