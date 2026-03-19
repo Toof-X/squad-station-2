@@ -9,11 +9,11 @@ Requirements for Smart Agent Management milestone. Each maps to roadmap phases.
 
 ### Orchestrator Intelligence
 
-- [ ] **INTEL-01**: Orchestrator context file includes pending message count per agent (SQL aggregate from messages table)
-- [ ] **INTEL-02**: Orchestrator context file includes busy-time duration for each agent (derived from busy_since or status_updated_at)
-- [ ] **INTEL-03**: Orchestrator context file includes task-role alignment hints (keyword overlap between recent task bodies and agent role/description)
-- [ ] **INTEL-04**: Orchestrator context embeds CLI commands for live re-query instead of stale pre-computed values
-- [ ] **INTEL-05**: `build_orchestrator_md()` remains a pure function — metrics fetched externally and passed as parameter
+- [x] **INTEL-01**: Orchestrator context file includes pending message count per agent (SQL aggregate from messages table)
+- [x] **INTEL-02**: Orchestrator context file includes busy-time duration for each agent (derived from busy_since or status_updated_at)
+- [x] **INTEL-03**: Orchestrator context file includes task-role alignment hints (keyword overlap between recent task bodies and agent role/description)
+- [x] **INTEL-04**: Orchestrator context embeds CLI commands for live re-query instead of stale pre-computed values
+- [x] **INTEL-05**: `build_orchestrator_md()` remains a pure function — metrics fetched externally and passed as parameter
 
 ### Dynamic Agent Cloning
 
@@ -67,11 +67,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INTEL-01 | Phase 22 | Pending |
-| INTEL-02 | Phase 22 | Pending |
-| INTEL-03 | Phase 22 | Pending |
-| INTEL-04 | Phase 22 | Pending |
-| INTEL-05 | Phase 22 | Pending |
+| INTEL-01 | Phase 22 | Complete |
+| INTEL-02 | Phase 22 | Complete |
+| INTEL-03 | Phase 22 | Complete |
+| INTEL-04 | Phase 22 | Complete |
+| INTEL-05 | Phase 22 | Complete |
 | CLONE-01 | Phase 23 | Pending |
 | CLONE-02 | Phase 23 | Pending |
 | CLONE-03 | Phase 23 | Pending |
