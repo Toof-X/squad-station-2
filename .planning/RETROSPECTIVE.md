@@ -364,6 +364,53 @@
 
 ---
 
+## Milestone: v1.8 — Smart Agent Management
+
+**Shipped:** 2026-03-19
+**Phases:** 3 (22-24) | **Plans:** 7 | **Files changed:** 44 (+7,059 / -144) | **Tests:** 303
+
+### What Was Built
+- Fleet Status metrics in orchestrator context — pending count, busy duration, task-role alignment hints per agent in squad-orchestrator.md
+- `squad-station clone <agent>` — auto-incremented naming, DB-first with tmux rollback, orchestrator rejection guard, auto-context regeneration
+- 11 role templates (8 worker + 3 orchestrator) — split-pane TUI selector with description preview, auto-fill model + description
+- Routing Matrix section in squad-orchestrator.md — agents with routing hints listed for orchestrator specialization awareness
+- routing_hints column (migration 0005) in agents table — JSON string parsed by pure `build_orchestrator_md()` function
+- 13 template-specific tests and 18 clone command tests added to test suite
+
+### What Worked
+- Milestone audit run BEFORE completion — all 17/17 requirements verified, tech debt items documented upfront
+- `build_orchestrator_md()` pure function pattern held across all 3 phases — INTEL-05 satisfied cleanly, no DB coupling
+- Phase ordering (22→23, 22→24) was correct: context file is the coordination mechanism, so it had to exist before clone and templates
+- DB-first clone with rollback (CLONE-03) worked cleanly — no orphaned records in failure cases
+- Template data module as static compiled arrays — no runtime file I/O, no external dependencies, fast iteration
+
+### What Was Inefficient
+- SUMMARY frontmatter `one_liner` and `requirements_completed` not populated (8th milestone in a row)
+- Nyquist validation missing for Phases 22-23; partial for Phase 24 — validation skipped during execution
+- routing_hints not persisted to squad.yml — known gap creating destructive upsert risk on non-TUI re-init
+- TMPL-06 (SDD-based template reordering) satisfied at minimal level — static ordering is functional but not dynamic
+
+### Patterns Established
+- `AgentMetrics` struct as intermediate between DB queries and pure rendering — clean data flow
+- `strip_clone_suffix` + `extract_clone_number` for deterministic clone naming
+- JSON string column for semi-structured data (`routing_hints`) — parsed by serde_json in pure function
+- Split-pane TUI layout (45%/55%) for selection + preview pattern — reusable for future wizard pages
+- `render_radio_list` reuse extended to template selector — consistent TUI interaction model
+
+### Key Lessons
+1. Pure function rendering (metrics in, markdown out) is the correct pattern for context generation — enables testing without DB
+2. DB-first with rollback is safer than tmux-first — DB operations are more reliable and reversible
+3. JSON string columns work well for optional semi-structured data — avoids schema complexity, serde_json handles parsing
+4. Milestone audit before completion surfaces real issues — routing_hints persistence gap was documented before archiving
+5. Static compiled templates over file-based configuration — zero I/O, zero runtime dependency, type-checked
+
+### Cost Observations
+- Model mix: ~85% sonnet, ~10% haiku, ~5% opus
+- Sessions: ~4 execution sessions
+- Notable: 3 phases (7 plans) shipped in 2 days with formal milestone audit
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -378,6 +425,7 @@
 | v1.5 | 2 | 4 | 201 | TUI wizard for init, squad.yml generation, re-init prompt, crossterm UX |
 | v1.6 | 2 | 3 | 211 | Welcome screen, agent fleet diagram, simplified model names — pure UX polish |
 | v1.7 | 2 | 4 | 241 | Interactive welcome TUI, Quick Guide page, auto-launch from both install paths |
+| v1.8 | 3 | 7 | 303 | Fleet Status metrics, dynamic cloning, role templates, Routing Matrix — first 3-phase milestone since v1.3 |
 
 ### Cumulative Quality
 
@@ -391,15 +439,17 @@
 | v1.5 | 201 | 0 | 0 (clean close, audit skipped) |
 | v1.6 | 211 | 0 | 0 (clean close, audit skipped) |
 | v1.7 | 241 | 0 | 0 (clean close, audit skipped) |
+| v1.8 | 303 | 0 | 7 (Nyquist gaps, routing_hints persistence, SUMMARY frontmatter) |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. Safety-first architecture: wire all safety primitives in the foundation phase
 2. Stateless CLI + SQLite WAL = simple, testable, concurrent-safe
 3. Atomic schema migrations with clear before/after states — clean upgrade path, no data loss
-4. Fill SUMMARY one_liner during execution — milestone tooling depends on it (7 milestones in a row with empty field)
-5. Run milestone audit before completion — v1.3 first and last to do this; should be default
+4. Fill SUMMARY one_liner during execution — milestone tooling depends on it (8 milestones in a row with empty field)
+5. Run milestone audit before completion — v1.3 and v1.8 did this; should be default for all milestones
 6. Small focused milestones (2 phases) execute efficiently — minimal overhead, clear scope
 7. TDD for TUI code works — type-level tests catch design issues before rendering implementation begins
 8. Non-interactive guard (`is_terminal()`) must be added upfront for crossterm raw-mode code — not as a bugfix after tests break
 9. Pure function extraction for TUI action routing — unit-testable without spawning a terminal, enables fast TDD cycles
+10. Pure function rendering for context generation (metrics in, markdown out) — testable without DB, clean data flow

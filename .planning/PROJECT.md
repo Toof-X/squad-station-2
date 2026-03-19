@@ -1,19 +1,8 @@
 # Squad Station
 
-## Current Milestone: v1.8 Smart Agent Management
-
-**Goal:** Upgrade agent management with role templates in the wizard, provide metrics data for orchestrator to detect misrouting and overload, and support dynamic agent cloning to scale the team at runtime.
-
-**Target features:**
-- Agent role templates in init wizard — pre-built packages (role, model suggestion, description, routing hints) with custom option + system suggestions
-- Orchestrator intelligence data — CLI provides task-role alignment metrics, messages/agent count, busy time tracking via `squad-orchestrator.md` context
-- Dynamic agent cloning — CLI command to clone agent (same role/model/desc, auto-incremented name, new tmux session), orchestrator decides when and how many
-- TUI monitor live update — cloned agents appear immediately on dashboard
-- Seamless agent coordination — agents (original + clones) operate seamlessly and adapt to each other in the team
-
 ## What This Is
 
-Squad Station là một stateless CLI binary (Rust + embedded SQLite) hoạt động như trạm trung chuyển messages giữa AI Orchestrator và N agents chạy trong tmux sessions. Provider-agnostic — hỗ trợ bất kỳ AI coding tool nào (Claude Code, Gemini CLI, Codex, Aider...). Người dùng chỉ tương tác với Orchestrator, Station lo việc routing messages, tracking trạng thái agent, và cung cấp fleet monitoring qua TUI dashboard và tmux views.
+Squad Station là một stateless CLI binary (Rust + embedded SQLite) hoạt động như trạm trung chuyển messages giữa AI Orchestrator và N agents chạy trong tmux sessions. Provider-agnostic — hỗ trợ bất kỳ AI coding tool nào (Claude Code, Gemini CLI, Codex, Aider...). Người dùng chỉ tương tác với Orchestrator, Station lo việc routing messages, tracking trạng thái agent, cung cấp fleet monitoring qua TUI dashboard, và hỗ trợ orchestrator scale team với intelligence metrics, dynamic cloning, và role templates.
 
 ## Core Value
 
@@ -91,13 +80,17 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 - ✓ `init` requires explicit `--tui` flag to enter wizard; bare `init` reads existing squad.yml directly — v1.8-pre
 
+- ✓ Fleet Status metrics in orchestrator context (pending count, busy duration, task-role alignment hints) — v1.8
+- ✓ `build_orchestrator_md()` accepts `&[AgentMetrics]` as pure function — metrics fetched externally — v1.8
+- ✓ `squad-station clone <agent>` with auto-incremented naming, DB-first + tmux rollback, orchestrator rejection guard — v1.8
+- ✓ Clone auto-regenerates squad-orchestrator.md so orchestrator learns about new agents immediately — v1.8
+- ✓ 11 role templates in init wizard (8 worker + 3 orchestrator) with split-pane TUI selector — v1.8
+- ✓ Template routing hints embedded in Routing Matrix section of squad-orchestrator.md — v1.8
+- ✓ Cloned agents appear in TUI dashboard on next poll cycle (existing connect-per-refresh pattern) — v1.8
+
 ### Active
 
-- [ ] Agent role templates in wizard with pre-built packages and custom + suggestions
-- [ ] Orchestrator intelligence data (task-role alignment, messages/agent, busy time) in `squad-orchestrator.md`
-- [ ] Dynamic agent cloning command (auto-increment name, new tmux session, same config)
-- [ ] TUI monitor live update when cloned agents appear
-- [ ] Seamless agent coordination — agents adapt to each other in the team
+(None — planning next milestone)
 
 ### Out of Scope
 
@@ -111,18 +104,19 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ## Context
 
-Shipped v1.7 First-Run Onboarding. Pre-v1.8 change: `init --tui` flag added (bare `init` reads squad.yml directly).
-Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.30, crossterm 0.29, tui-big-text 0.8, serde-saphyr, owo-colors 3, uuid (temp file naming).
+Shipped v1.8 Smart Agent Management. Orchestrator now has intelligence metrics, dynamic cloning, and role templates.
+Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.30, crossterm 0.29, tui-big-text 0.8, serde-saphyr, serde_json, owo-colors 3, uuid (temp file naming).
 Distribution: npm package (v1.5.7, binaryVersion 1.8) + curl | sh installer, both download pre-built binaries from GitHub Releases. Both install paths auto-launch the welcome TUI in interactive terminals.
 CI/CD: GitHub Actions matrix workflow produces 4 musl/darwin binaries on v* tag push.
 Providers supported: claude-code, gemini-cli, antigravity (DB-only IDE orchestrator).
 Hook registration: inline `squad-station signal $TMUX_PANE` command (scripts in hooks/ deprecated).
-Init flow: TUI wizard (ratatui, requires `--tui` flag) generates squad.yml from scratch; re-init prompt handles overwrite/add-agents/abort. Post-init prints ASCII agent fleet diagram.
+Init flow: TUI wizard (ratatui, requires `--tui` flag) with role template selector generates squad.yml from scratch; re-init prompt handles overwrite/add-agents/abort. Post-init prints ASCII agent fleet diagram.
 Welcome TUI: bare `squad-station` invocation opens ratatui AlternateScreen with BigText title, 5s countdown, Tab-navigable Quick Guide page; Enter routes to init wizard or dashboard.
-Context generation: `.agent/workflows/squad-orchestrator.md` — single unified playbook for IDE orchestrator.
+Context generation: `.agent/workflows/squad-orchestrator.md` — unified playbook with Fleet Status metrics and Routing Matrix sections.
+Clone: `squad-station clone <agent>` creates duplicate agent with auto-incremented name, DB-first + tmux rollback, auto-regenerates orchestrator context.
 Safe injection: load-buffer/paste-buffer pattern for multiline task bodies (no shell-injection artifacts).
-Database: `.squad/station.db` in project directory (no home-dir dependency, no `dirs` crate).
-Test suite: 241 tests (all green).
+Database: `.squad/station.db` in project directory (no home-dir dependency, no `dirs` crate). 5 migrations (latest: 0005_routing_hints).
+Test suite: 303 tests (all green).
 
 ## Constraints
 
@@ -189,6 +183,17 @@ Test suite: 241 tests (all green).
 | WelcomePage enum state machine | Title/Guide pages as enum variant; mutable deadline for per-page countdown reset | ✓ Good — clean dispatch in event loop, no nested match |
 | TTY check only for auto-launch | `process.stdout.isTTY` / `[ -t 1 ]` sufficient; no CI env var guards | ✓ Good — correct silent degradation in non-interactive environments |
 | `exec` in curl / `spawnSync` in npm | exec replaces shell process cleanly; spawnSync blocks until TUI exits | ✓ Good — correct handoff semantics per install path |
+| `build_orchestrator_md()` pure fn with `&[AgentMetrics]` | Metrics fetched externally, pure rendering — testable without DB, INTEL-05 | ✓ Good — integration tests verify output directly |
+| Fleet Status after Completion Notification | Orchestrator reads status after understanding completion flow | ✓ Good — correct reading order in context file |
+| DB-before-pure-fn pattern in context::run() | All DB queries execute before build_orchestrator_md call | ✓ Good — clean separation, INTEL-05 purity maintained |
+| Clone name: strip_clone_suffix only strips -N where N>=2 | Original agent name preserved; -2, -3, -4... for clones | ✓ Good — unambiguous naming |
+| Clone DB-first with rollback | Write DB record first, rollback if tmux fails — no orphans | ✓ Good — CLONE-03 satisfied, safe error handling |
+| Clones are DB-only (not in squad.yml) | Same as `register` behavior — ephemeral runtime entities | ✓ Good — consistent with existing patterns |
+| pub over pub(crate) for clone helpers | Integration tests in tests/ are separate crates, need pub access | ✓ Good — pragmatic visibility choice |
+| 11 templates with default_provider=claude-code | Per-provider model mapping in struct, not resolved at runtime | ✓ Good — simple, extensible |
+| routing_hints as JSON string in DB | `Option<String>` serialized to JSON array; parsed by build_orchestrator_md | ✓ Good — no schema complexity, serde_json parsing |
+| Template selector split-pane layout (45%/55%) | Left: role list, Right: description preview — scannable selection UX | ✓ Good — clear visual hierarchy |
+| Routing Matrix after Session Routing section | Orchestrator reads routing knowledge after understanding sessions | ✓ Good — correct context ordering |
 
 ---
-*Last updated: 2026-03-19 after v1.8 Smart Agent Management milestone redefined*
+*Last updated: 2026-03-19 after v1.8 Smart Agent Management milestone*

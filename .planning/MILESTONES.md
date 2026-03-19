@@ -1,5 +1,28 @@
 # Milestones
 
+## v1.8 Smart Agent Management (Shipped: 2026-03-19)
+
+**Phases:** 22-24 | **Plans:** 7 | **Files changed:** 44 (+7,059 / -144) | **Timeline:** 2 days (2026-03-18 → 2026-03-19)
+**Git range:** docs(22) capture phase context → docs(phase-24) complete phase execution
+**Tests:** 303 (all green)
+
+**Key accomplishments:**
+- Fleet Status metrics in orchestrator context — pending message count, busy duration, and task-role alignment hints rendered in squad-orchestrator.md as live CLI-queryable data (INTEL-01 through INTEL-05)
+- `squad-station clone <agent>` command — creates duplicate agents with auto-incremented `<project>-<tool>-<role>-N` names, DB-first with tmux rollback, auto-regenerates orchestrator context (CLONE-01 through CLONE-06)
+- 11 role templates in init wizard — 8 worker + 3 orchestrator pre-built packages (role, model suggestion, description, routing hints) with "Custom" escape hatch (TMPL-01 through TMPL-04)
+- Template selector split-pane TUI — ratatui 45%/55% horizontal layout with role list and description preview, auto-fills model and description on selection
+- Routing Matrix section in squad-orchestrator.md — agents with routing hints listed so orchestrator knows each agent's specialization and task routing keywords (TMPL-05)
+- 303 test suite including 13 template-specific tests and 18 clone command tests — zero failures
+
+**Known tech debt:**
+- Nyquist validation missing for Phases 22-23, partial for Phase 24
+- routing_hints not persisted to squad.yml — destructive upsert risk on non-TUI re-init (low severity)
+- TMPL-06 at minimal level — static template ordering, dynamic SDD-based reordering deferred
+
+**Archives:** [v1.8-ROADMAP.md](milestones/v1.8-ROADMAP.md) | [v1.8-REQUIREMENTS.md](milestones/v1.8-REQUIREMENTS.md) | [v1.8-MILESTONE-AUDIT.md](milestones/v1.8-MILESTONE-AUDIT.md)
+
+---
+
 ## v1.7 First-Run Onboarding (Shipped: 2026-03-18)
 
 **Phases:** 20-21 | **Plans:** 4 | **Files changed:** 16 (+2,489 / -47) | **Timeline:** 2 days (2026-03-17 → 2026-03-18)
