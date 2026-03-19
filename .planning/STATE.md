@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Smart Agent Management
 status: planning
-stopped_at: Completed 22-01-PLAN.md
-last_updated: "2026-03-19T04:52:05.234Z"
+stopped_at: Completed 22-02-PLAN.md
+last_updated: "2026-03-19T04:58:00.722Z"
 last_activity: 2026-03-19 — Roadmap created for v1.8 Smart Agent Management (Phases 22-24)
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -56,6 +56,8 @@ Key decisions relevant to v1.8:
 - Clones are DB-only entries — never written to squad.yml (same as `register` behavior)
 - Clone name collision check must cover both DB and tmux (orphaned sessions from re-init)
 - [Phase 22-orchestrator-intelligence-data]: Fleet Status section inserted after Completion Notification, before Session Routing; empty metrics slice produces no section (INTEL-05 pure fn purity)
+- [Phase 22]: context run() DB queries execute before build_orchestrator_md call — INTEL-05 purity maintained
+- [Phase 22]: Orchestrator and dead agents skipped in metrics loop to avoid unnecessary DB queries
 
 ### Pending Todos
 
@@ -69,6 +71,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-19T04:52:05.232Z
-Stopped at: Completed 22-01-PLAN.md
+Last session: 2026-03-19T04:58:00.720Z
+Stopped at: Completed 22-02-PLAN.md
 Resume file: None
