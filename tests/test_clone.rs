@@ -86,7 +86,7 @@ fn test_launch_command_unknown_provider() {
 #[tokio::test]
 async fn test_generate_clone_name_first_clone() {
     let pool = helpers::setup_test_db().await;
-    db::agents::insert_agent(&pool, "worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     let name = clone::generate_clone_name("worker", &pool).await.unwrap();
@@ -96,13 +96,13 @@ async fn test_generate_clone_name_first_clone() {
 #[tokio::test]
 async fn test_generate_clone_name_increments() {
     let pool = helpers::setup_test_db().await;
-    db::agents::insert_agent(&pool, "worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
-    db::agents::insert_agent(&pool, "worker-2", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker-2", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
-    db::agents::insert_agent(&pool, "worker-3", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker-3", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     let name = clone::generate_clone_name("worker", &pool).await.unwrap();
@@ -112,13 +112,13 @@ async fn test_generate_clone_name_increments() {
 #[tokio::test]
 async fn test_generate_clone_name_from_existing_clone() {
     let pool = helpers::setup_test_db().await;
-    db::agents::insert_agent(&pool, "worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
-    db::agents::insert_agent(&pool, "worker-2", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker-2", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
-    db::agents::insert_agent(&pool, "worker-3", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker-3", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     // Cloning worker-3 should produce worker-4 (sibling, not nested clone)
@@ -129,7 +129,7 @@ async fn test_generate_clone_name_from_existing_clone() {
 #[tokio::test]
 async fn test_clone_rejects_orchestrator() {
     let pool = helpers::setup_test_db().await;
-    db::agents::insert_agent(&pool, "my-orch", "claude-code", "orchestrator", None, None)
+    db::agents::insert_agent(&pool, "my-orch", "claude-code", "orchestrator", None, None, None)
         .await
         .unwrap();
     let source = db::agents::get_agent(&pool, "my-orch")
@@ -143,7 +143,7 @@ async fn test_clone_rejects_orchestrator() {
 #[tokio::test]
 async fn test_delete_agent_by_name() {
     let pool = helpers::setup_test_db().await;
-    db::agents::insert_agent(&pool, "to-delete", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "to-delete", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     assert!(

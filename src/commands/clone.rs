@@ -36,6 +36,7 @@ pub async fn run(source_name: String, json: bool) -> anyhow::Result<()> {
         &source.role,
         source.model.as_deref(),
         source.description.as_deref(),
+        source.routing_hints.as_deref(),
     )
     .await?;
 

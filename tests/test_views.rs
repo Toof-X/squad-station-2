@@ -22,6 +22,7 @@ fn mock_agent(name: &str, status: &str) -> squad_station::db::agents::Agent {
         model: None,
         description: None,
         current_task: None,
+        routing_hints: None,
     }
 }
 

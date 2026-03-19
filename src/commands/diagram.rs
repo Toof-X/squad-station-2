@@ -333,6 +333,7 @@ mod tests {
             model: model.map(|s| s.to_string()),
             description: None,
             current_task: None,
+            routing_hints: None,
         }
     }
 

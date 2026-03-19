@@ -14,6 +14,7 @@ pub struct Agent {
     pub model: Option<String>,        // AGNT-01
     pub description: Option<String>,  // AGNT-01
     pub current_task: Option<String>, // AGNT-02: FK to messages.id
+    pub routing_hints: Option<String>, // Phase 24: JSON array of routing keywords
 }
 
 pub async fn insert_agent(
@@ -23,14 +24,15 @@ pub async fn insert_agent(
     role: &str,
     model: Option<&str>,
     description: Option<&str>,
+    routing_hints: Option<&str>,
 ) -> anyhow::Result<()> {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
     sqlx::query(
-        "INSERT INTO agents (id, name, tool, role, command, model, description, created_at, status_updated_at) \
-         VALUES (?, ?, ?, ?, '', ?, ?, ?, ?) \
+        "INSERT INTO agents (id, name, tool, role, command, model, description, routing_hints, created_at, status_updated_at) \
+         VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?) \
          ON CONFLICT(name) DO UPDATE SET tool = excluded.tool, role = excluded.role, \
-         model = excluded.model, description = excluded.description"
+         model = excluded.model, description = excluded.description, routing_hints = excluded.routing_hints"
     )
     .bind(id)
     .bind(name)
@@ -38,6 +40,7 @@ pub async fn insert_agent(
     .bind(role)
     .bind(model)
     .bind(description)
+    .bind(routing_hints)
     .bind(&now)
     .bind(&now)
     .execute(pool)

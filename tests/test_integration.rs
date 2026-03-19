@@ -212,7 +212,7 @@ async fn test_list_text_output_with_messages() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None, None)
         .await
         .unwrap();
     db::messages::insert_message(
@@ -305,7 +305,7 @@ async fn test_list_json_output() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None, None)
         .await
         .unwrap();
     db::messages::insert_message(
@@ -375,10 +375,10 @@ async fn test_list_filter_by_agent() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "alpha", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "alpha", "claude", "worker", None, None, None)
         .await
         .unwrap();
-    db::agents::insert_agent(&pool, "beta", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "beta", "claude", "worker", None, None, None)
         .await
         .unwrap();
     db::messages::insert_message(
@@ -428,7 +428,7 @@ async fn test_list_filter_by_status() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "worker", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker", "claude", "worker", None, None, None)
         .await
         .unwrap();
     db::messages::insert_message(
@@ -480,7 +480,7 @@ async fn test_list_with_limit() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "worker", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker", "claude", "worker", None, None, None)
         .await
         .unwrap();
     for i in 0..10u32 {
@@ -524,7 +524,7 @@ async fn test_peek_text_with_pending_task() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None, None)
         .await
         .unwrap();
     db::messages::insert_message(
@@ -568,7 +568,7 @@ async fn test_peek_json_with_pending_task() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None, None)
         .await
         .unwrap();
     db::messages::insert_message(
@@ -608,7 +608,7 @@ async fn test_peek_no_pending_text() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None, None)
         .await
         .unwrap();
     pool.close().await;
@@ -632,7 +632,7 @@ async fn test_peek_no_pending_json() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None, None)
         .await
         .unwrap();
     pool.close().await;
@@ -660,7 +660,7 @@ async fn test_peek_priority_ordering() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None, None)
         .await
         .unwrap();
     db::messages::insert_message(
@@ -754,7 +754,7 @@ async fn test_send_no_tmux_session() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "offline-agent", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "offline-agent", "claude", "worker", None, None, None)
         .await
         .unwrap();
     pool.close().await;
@@ -788,7 +788,7 @@ async fn test_signal_completes_message_and_resets_status() {
     // Full signal flow: insert agent + message, signal, verify message completed + agent idle
     let pool = helpers::setup_test_db().await;
 
-    db::agents::insert_agent(&pool, "sig-agent", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "sig-agent", "claude", "worker", None, None, None)
         .await
         .unwrap();
     db::messages::insert_message(
@@ -835,7 +835,7 @@ async fn test_signal_multiple_messages_completes_most_recent() {
     // Signal should complete only the most recent pending message
     let pool = helpers::setup_test_db().await;
 
-    db::agents::insert_agent(&pool, "multi-agent", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "multi-agent", "claude", "worker", None, None, None)
         .await
         .unwrap();
     db::messages::insert_message(
@@ -898,7 +898,7 @@ async fn test_signal_orchestrator_self_signal_guard() {
     let pool = setup_file_db(&db_path).await;
 
     // Register as orchestrator
-    db::agents::insert_agent(&pool, "orch-test", "claude", "orchestrator", None, None)
+    db::agents::insert_agent(&pool, "orch-test", "claude", "orchestrator", None, None, None)
         .await
         .unwrap();
     db::messages::insert_message(
@@ -976,10 +976,10 @@ async fn test_agents_json_output() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "agent-1", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "agent-1", "claude", "worker", None, None, None)
         .await
         .unwrap();
-    db::agents::insert_agent(&pool, "agent-2", "gemini", "orchestrator", None, None)
+    db::agents::insert_agent(&pool, "agent-2", "gemini", "orchestrator", None, None, None)
         .await
         .unwrap();
     pool.close().await;
@@ -1042,7 +1042,7 @@ async fn test_context_lists_registered_agents() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     pool.close().await;
@@ -1081,7 +1081,7 @@ async fn test_context_generates_delegate_file() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     pool.close().await;
@@ -1126,7 +1126,7 @@ async fn test_context_delegate_content() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     pool.close().await;
@@ -1155,7 +1155,7 @@ async fn test_context_generates_monitor_file() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     pool.close().await;
@@ -1200,7 +1200,7 @@ async fn test_context_monitor_content() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     pool.close().await;
@@ -1234,7 +1234,7 @@ async fn test_context_generates_roster_file() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     // Update model and description via SQL since insert_agent may not take those
@@ -1291,7 +1291,7 @@ async fn test_context_roster_content() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     pool.close().await;
@@ -1320,7 +1320,7 @@ async fn test_context_idempotent() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     pool.close().await;
@@ -1368,7 +1368,7 @@ async fn test_full_workflow_register_send_peek_signal() {
     let pool = helpers::setup_test_db().await;
 
     // 1. Register agent
-    db::agents::insert_agent(&pool, "e2e-agent", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "e2e-agent", "claude", "worker", None, None, None)
         .await
         .unwrap();
     let agent = db::agents::get_agent(&pool, "e2e-agent").await.unwrap();
@@ -1463,6 +1463,7 @@ async fn test_signal_antigravity_orchestrator_db_only() {
         "orchestrator",
         None,
         None,
+        None,
     )
     .await
     .unwrap();
@@ -1471,6 +1472,7 @@ async fn test_signal_antigravity_orchestrator_db_only() {
         "test-squad-claude-code-worker",
         "claude-code",
         "worker",
+        None,
         None,
         None,
     )
@@ -1518,6 +1520,7 @@ async fn test_signal_antigravity_message_completed() {
         "orchestrator",
         None,
         None,
+        None,
     )
     .await
     .unwrap();
@@ -1526,6 +1529,7 @@ async fn test_signal_antigravity_message_completed() {
         "test-squad-claude-code-worker",
         "claude-code",
         "worker",
+        None,
         None,
         None,
     )

@@ -93,6 +93,7 @@ pub struct AgentInput {
     pub provider: String, // "claude-code" | "gemini-cli" | "antigravity"
     pub model: Option<String>,
     pub description: Option<String>,
+    pub routing_hints: Option<String>, // Phase 24: JSON-serialized routing keywords
 }
 
 // ----------------------------------------------------------------------------
@@ -504,6 +505,7 @@ fn draft_to_agent_input(d: AgentDraft, role: &str) -> AgentInput {
         provider: d.provider.as_str().to_string(),
         model,
         description,
+        routing_hints: None,
     }
 }
 

@@ -10,7 +10,7 @@ use squad_station::db::{agents, messages};
 async fn test_insert_and_get_agent() {
     let pool = helpers::setup_test_db().await;
 
-    agents::insert_agent(&pool, "frontend", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "frontend", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -28,12 +28,12 @@ async fn test_insert_agent_idempotent() {
     // Upsert: re-inserting with different config updates the existing record
     let pool = helpers::setup_test_db().await;
 
-    agents::insert_agent(&pool, "backend", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "backend", "claude-code", "worker", None, None, None)
         .await
         .expect("first insert should succeed");
 
     // Second insert must NOT return an error and must update the record
-    agents::insert_agent(&pool, "backend", "gemini", "orchestrator", None, None)
+    agents::insert_agent(&pool, "backend", "gemini", "orchestrator", None, None, None)
         .await
         .expect("upsert should succeed");
 
@@ -50,13 +50,13 @@ async fn test_insert_agent_idempotent() {
 async fn test_list_agents() {
     let pool = helpers::setup_test_db().await;
 
-    agents::insert_agent(&pool, "charlie", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "charlie", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
-    agents::insert_agent(&pool, "alpha", "gemini", "worker", None, None)
+    agents::insert_agent(&pool, "alpha", "gemini", "worker", None, None, None)
         .await
         .unwrap();
-    agents::insert_agent(&pool, "bravo", "claude-code", "orchestrator", None, None)
+    agents::insert_agent(&pool, "bravo", "claude-code", "orchestrator", None, None, None)
         .await
         .unwrap();
 
@@ -81,7 +81,7 @@ async fn test_get_nonexistent_agent() {
 #[tokio::test]
 async fn test_agent_has_tool_field() {
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "my-agent", "gemini", "worker", None, None)
+    agents::insert_agent(&pool, "my-agent", "gemini", "worker", None, None, None)
         .await
         .unwrap();
     let agent = agents::get_agent(&pool, "my-agent").await.unwrap().unwrap();
@@ -100,6 +100,7 @@ async fn test_agent_stores_model_description() {
         "worker",
         Some("claude-opus"),
         Some("implements features"),
+        None,
     )
     .await
     .unwrap();
@@ -111,7 +112,7 @@ async fn test_agent_stores_model_description() {
 #[tokio::test]
 async fn test_send_sets_current_task() {
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "worker-1", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "worker-1", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     let msg_id = messages::insert_message(
@@ -138,7 +139,7 @@ async fn test_send_sets_current_task() {
 #[tokio::test]
 async fn test_signal_clears_current_task() {
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "worker-1", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "worker-1", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
     let msg_id = messages::insert_message(
@@ -181,7 +182,7 @@ async fn test_insert_message() {
     let pool = helpers::setup_test_db().await;
 
     // Insert agent first (FK constraint)
-    agents::insert_agent(&pool, "agent-a", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "agent-a", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -208,7 +209,7 @@ async fn test_insert_message() {
 #[tokio::test]
 async fn test_insert_message_with_priority() {
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-b", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "agent-b", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -241,7 +242,7 @@ async fn test_insert_message_with_priority() {
 async fn test_insert_message_stores_direction() {
     // MSGS-01: from_agent and to_agent are stored correctly
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-dir", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "agent-dir", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -281,7 +282,7 @@ async fn test_insert_message_stores_direction() {
 async fn test_update_status_completes_message() {
     // MSG-02: update_status marks most-recent processing message as completed
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-c", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "agent-c", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -311,7 +312,7 @@ async fn test_update_status_completes_message() {
 async fn test_update_status_sets_completed_at() {
     // MSGS-04: update_status must set completed_at timestamp
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-cat", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "agent-cat", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -352,7 +353,7 @@ async fn test_update_status_sets_completed_at() {
 async fn test_update_status_idempotent() {
     // MSG-03: calling update_status twice returns 0 rows on the second call — no error
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-d", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "agent-d", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -383,7 +384,7 @@ async fn test_update_status_idempotent() {
 async fn test_update_status_no_pending() {
     // MSG-03: update_status with no processing messages returns 0, not an error
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-e", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "agent-e", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -402,10 +403,10 @@ async fn test_update_status_no_pending() {
 async fn test_list_filter_by_agent() {
     // MSG-04: list filtered by agent_name
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "alpha", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "alpha", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
-    agents::insert_agent(&pool, "beta", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "beta", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -456,7 +457,7 @@ async fn test_list_filter_by_agent() {
 async fn test_list_filter_by_status() {
     // MSG-04: list filtered by status
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-f", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "agent-f", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -505,7 +506,7 @@ async fn test_list_filter_by_status() {
 #[tokio::test]
 async fn test_list_with_limit() {
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-g", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "agent-g", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -530,10 +531,10 @@ async fn test_list_with_limit() {
 #[tokio::test]
 async fn test_list_no_filters() {
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "alpha2", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "alpha2", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
-    agents::insert_agent(&pool, "beta2", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "beta2", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -589,7 +590,7 @@ async fn test_list_no_filters() {
 async fn test_peek_returns_pending() {
     // MSG-06: peek returns only the processing message
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-h", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "agent-h", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -628,7 +629,7 @@ async fn test_peek_returns_pending() {
 async fn test_peek_priority_ordering() {
     // MSG-05: urgent > high > normal; oldest-first tie-breaking
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-i", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "agent-i", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -681,7 +682,7 @@ async fn test_peek_priority_ordering() {
 async fn test_peek_no_pending() {
     // MSG-06: peek returns None when no processing messages exist — not an error
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-j", "claude-code", "worker", None, None)
+    agents::insert_agent(&pool, "agent-j", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -725,7 +726,7 @@ async fn test_peek_nonexistent_agent() {
 async fn test_update_agent_status() {
     // SESS-03: update_agent_status writes new status to DB
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "test-agent", "claude", "worker", None, None)
+    agents::insert_agent(&pool, "test-agent", "claude", "worker", None, None, None)
         .await
         .unwrap();
     agents::update_agent_status(&pool, "test-agent", "busy")
@@ -742,7 +743,7 @@ async fn test_update_agent_status() {
 async fn test_agent_default_status_is_idle() {
     // SESS-03: newly inserted agent has status = "idle" by default
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "test-agent", "claude", "worker", None, None)
+    agents::insert_agent(&pool, "test-agent", "claude", "worker", None, None, None)
         .await
         .unwrap();
     let agent = agents::get_agent(&pool, "test-agent")
@@ -756,7 +757,7 @@ async fn test_agent_default_status_is_idle() {
 async fn test_update_agent_status_updates_timestamp() {
     // SESS-03: update_agent_status also updates status_updated_at
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "test-agent", "claude", "worker", None, None)
+    agents::insert_agent(&pool, "test-agent", "claude", "worker", None, None, None)
         .await
         .unwrap();
     let before = agents::get_agent(&pool, "test-agent")

@@ -199,7 +199,7 @@ fn test_signal_no_tmux_pane_exits_zero() {
 async fn test_update_agent_status_dead_to_idle() {
     // SESS-04: agent can be revived from dead to idle (simulates tmux session reappearing)
     let pool = helpers::setup_test_db().await;
-    db::agents::insert_agent(&pool, "agent-1", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "agent-1", "claude", "worker", None, None, None)
         .await
         .unwrap();
     // Set to dead
@@ -230,7 +230,7 @@ async fn test_update_agent_status_dead_to_idle() {
 async fn test_orchestrator_has_orchestrator_role() {
     // HOOK-01: get_orchestrator returns the agent with role = "orchestrator"
     let pool = helpers::setup_test_db().await;
-    db::agents::insert_agent(&pool, "orch", "claude", "orchestrator", None, None)
+    db::agents::insert_agent(&pool, "orch", "claude", "orchestrator", None, None, None)
         .await
         .unwrap();
     let orch = db::agents::get_orchestrator(&pool).await.unwrap().unwrap();
@@ -242,7 +242,7 @@ async fn test_orchestrator_has_orchestrator_role() {
 async fn test_get_orchestrator_returns_none_when_no_orchestrator() {
     // HOOK-01: get_orchestrator returns None if no orchestrator is registered
     let pool = helpers::setup_test_db().await;
-    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "worker-1", "claude", "worker", None, None, None)
         .await
         .unwrap();
     let result = db::agents::get_orchestrator(&pool).await.unwrap();
@@ -259,7 +259,7 @@ async fn test_get_orchestrator_prefers_non_dead() {
     let pool = helpers::setup_test_db().await;
 
     // Insert old orchestrator (will be marked dead)
-    db::agents::insert_agent(&pool, "old-orch", "claude", "orchestrator", None, None)
+    db::agents::insert_agent(&pool, "old-orch", "claude", "orchestrator", None, None, None)
         .await
         .unwrap();
     db::agents::update_agent_status(&pool, "old-orch", "dead")
@@ -267,7 +267,7 @@ async fn test_get_orchestrator_prefers_non_dead() {
         .unwrap();
 
     // Insert new orchestrator (idle)
-    db::agents::insert_agent(&pool, "new-orch", "claude", "orchestrator", None, None)
+    db::agents::insert_agent(&pool, "new-orch", "claude", "orchestrator", None, None, None)
         .await
         .unwrap();
 
@@ -286,10 +286,10 @@ async fn test_get_orchestrator_prefers_non_dead() {
 async fn test_list_agents_includes_status() {
     // SESS-04: list_agents returns status for each agent
     let pool = helpers::setup_test_db().await;
-    db::agents::insert_agent(&pool, "a1", "claude", "worker", None, None)
+    db::agents::insert_agent(&pool, "a1", "claude", "worker", None, None, None)
         .await
         .unwrap();
-    db::agents::insert_agent(&pool, "a2", "gemini", "worker", None, None)
+    db::agents::insert_agent(&pool, "a2", "gemini", "worker", None, None, None)
         .await
         .unwrap();
     db::agents::update_agent_status(&pool, "a2", "busy")

@@ -156,6 +156,7 @@ async fn test_init_agent_name_prefix() {
         "worker",
         None,
         None,
+        None,
     )
     .await
     .unwrap();
@@ -219,6 +220,7 @@ async fn test_context_includes_model_and_description() {
         "worker",
         Some("Claude Sonnet"),
         Some("Developer agent. Writes code."),
+        None,
     )
     .await
     .unwrap();
@@ -247,6 +249,7 @@ async fn test_context_generates_single_orchestrator_file() {
         "orchestrator",
         Some("claude-haiku"),
         Some("Orchestrator agent"),
+        None,
     )
     .await
     .unwrap();
@@ -258,6 +261,7 @@ async fn test_context_generates_single_orchestrator_file() {
         "worker",
         Some("claude-sonnet"),
         Some("Senior coder"),
+        None,
     )
     .await
     .unwrap();
@@ -285,6 +289,7 @@ async fn test_build_orchestrator_md_contains_all_sections() {
         "worker",
         Some("claude-sonnet"),
         Some("Coder"),
+        None,
     )
     .await
     .unwrap();
@@ -293,6 +298,7 @@ async fn test_build_orchestrator_md_contains_all_sections() {
         "p-claude-orchestrator",
         "claude-code",
         "orchestrator",
+        None,
         None,
         None,
     )
@@ -357,7 +363,7 @@ async fn test_build_orchestrator_md_with_sdd() {
     use squad_station::commands::context::build_orchestrator_md;
 
     let db = helpers::setup_test_db().await;
-    db::agents::insert_agent(&db, "p-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&db, "p-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -406,7 +412,7 @@ async fn test_build_orchestrator_md_without_sdd() {
     use squad_station::commands::context::build_orchestrator_md;
 
     let db = helpers::setup_test_db().await;
-    db::agents::insert_agent(&db, "p-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&db, "p-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -565,6 +571,7 @@ async fn test_build_orchestrator_md_fleet_status_table() {
         "orchestrator",
         None,
         None,
+        None,
     )
     .await
     .unwrap();
@@ -575,6 +582,7 @@ async fn test_build_orchestrator_md_fleet_status_table() {
         "worker",
         Some("claude-sonnet"),
         Some("Frontend engineer"),
+        None,
     )
     .await
     .unwrap();
@@ -585,6 +593,7 @@ async fn test_build_orchestrator_md_fleet_status_table() {
         "worker",
         Some("claude-sonnet"),
         Some("Backend engineer"),
+        None,
     )
     .await
     .unwrap();
@@ -639,6 +648,7 @@ async fn test_build_orchestrator_md_fleet_status_excludes_orchestrator() {
         "orchestrator",
         None,
         None,
+        None,
     )
     .await
     .unwrap();
@@ -683,6 +693,7 @@ async fn test_build_orchestrator_md_fleet_status_excludes_dead() {
         "worker",
         None,
         None,
+        None,
     )
     .await
     .unwrap();
@@ -722,7 +733,7 @@ async fn test_build_orchestrator_md_fleet_status_empty_metrics() {
     use squad_station::commands::context::build_orchestrator_md;
 
     let db = helpers::setup_test_db().await;
-    db::agents::insert_agent(&db, "proj-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&db, "proj-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -747,6 +758,7 @@ async fn test_build_orchestrator_md_fleet_status_alignment_warning() {
         "worker",
         None,
         Some("Backend engineer"),
+        None,
     )
     .await
     .unwrap();
@@ -784,7 +796,7 @@ async fn test_build_orchestrator_md_fleet_status_requery_commands() {
     use squad_station::commands::context::{build_orchestrator_md, AgentMetrics, AlignmentResult};
 
     let db = helpers::setup_test_db().await;
-    db::agents::insert_agent(&db, "proj-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&db, "proj-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -821,7 +833,7 @@ async fn test_build_orchestrator_md_fleet_status_section_order() {
     use squad_station::commands::context::{build_orchestrator_md, AgentMetrics, AlignmentResult};
 
     let db = helpers::setup_test_db().await;
-    db::agents::insert_agent(&db, "proj-worker", "claude-code", "worker", None, None)
+    db::agents::insert_agent(&db, "proj-worker", "claude-code", "worker", None, None, None)
         .await
         .unwrap();
 
@@ -867,14 +879,17 @@ async fn test_context_metrics_pipeline_end_to_end() {
     // Set up agents: 1 orchestrator + 2 workers (1 busy, 1 idle)
     db::agents::insert_agent(
         &db, "proj-orchestrator", "claude-code", "orchestrator", None, None,
+        None,
     ).await.unwrap();
     db::agents::insert_agent(
         &db, "proj-worker-a", "claude-code", "worker",
         Some("sonnet"), Some("Frontend engineer for React and CSS"),
+        None,
     ).await.unwrap();
     db::agents::insert_agent(
         &db, "proj-worker-b", "claude-code", "worker",
         Some("opus"), Some("Backend API developer"),
+        None,
     ).await.unwrap();
 
     // Make worker-a busy

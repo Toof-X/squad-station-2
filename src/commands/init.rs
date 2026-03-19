@@ -201,6 +201,7 @@ pub async fn run(config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<
         "orchestrator",
         config.orchestrator.model.as_deref(),
         config.orchestrator.description.as_deref(),
+        None,
     )
     .await?;
 
@@ -247,6 +248,7 @@ pub async fn run(config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<
             &agent.role,
             agent.model.as_deref(),
             agent.description.as_deref(),
+            None,
         )
         .await
         {
@@ -628,6 +630,7 @@ mod tests {
             provider: provider.to_string(),
             model: None,
             description: None,
+            routing_hints: None,
         }
     }
 
@@ -638,6 +641,7 @@ mod tests {
             provider: provider.to_string(),
             model: Some(model.to_string()),
             description: None,
+            routing_hints: None,
         }
     }
 
@@ -720,6 +724,7 @@ mod tests {
                 provider: "claude-code".to_string(),
                 model: Some("sonnet".to_string()),
                 description: Some("main orchestrator".to_string()),
+                routing_hints: None,
             },
             agents: vec![AgentInput {
                 name: "backend".to_string(),
@@ -727,6 +732,7 @@ mod tests {
                 provider: "gemini-cli".to_string(),
                 model: Some("gemini-2.5-pro".to_string()),
                 description: None,
+                routing_hints: None,
             }],
         }
     }

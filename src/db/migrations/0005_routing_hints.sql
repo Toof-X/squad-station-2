@@ -1,0 +1,1 @@
+ALTER TABLE agents ADD COLUMN routing_hints TEXT DEFAULT NULL;
