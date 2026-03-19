@@ -12,7 +12,8 @@
   "files": [
     "bin/",
     ".squad/sdd/",
-    ".squad/examples/"
+    ".squad/examples/",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=14"
