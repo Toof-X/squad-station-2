@@ -17,12 +17,12 @@ Requirements for Smart Agent Management milestone. Each maps to roadmap phases.
 
 ### Dynamic Agent Cloning
 
-- [ ] **CLONE-01**: User can run `squad-station clone <agent-name>` to create a duplicate agent with same role/model/description
-- [ ] **CLONE-02**: Cloned agent receives auto-incremented name following `<project>-<tool>-<role>-N` convention (checks both DB and tmux for uniqueness)
-- [ ] **CLONE-03**: Clone command registers agent in DB before launching tmux session; rolls back DB record if tmux launch fails
-- [ ] **CLONE-04**: Clone command rejects cloning the orchestrator agent with a clear error message (prevents signal routing breakage)
-- [ ] **CLONE-05**: Clone command auto-regenerates `squad-orchestrator.md` after successful clone so orchestrator learns about new agent
-- [ ] **CLONE-06**: Cloned agent appears in TUI dashboard on next poll cycle with no additional TUI code changes
+- [x] **CLONE-01**: User can run `squad-station clone <agent-name>` to create a duplicate agent with same role/model/description
+- [x] **CLONE-02**: Cloned agent receives auto-incremented name following `<project>-<tool>-<role>-N` convention (checks both DB and tmux for uniqueness)
+- [x] **CLONE-03**: Clone command registers agent in DB before launching tmux session; rolls back DB record if tmux launch fails
+- [x] **CLONE-04**: Clone command rejects cloning the orchestrator agent with a clear error message (prevents signal routing breakage)
+- [x] **CLONE-05**: Clone command auto-regenerates `squad-orchestrator.md` after successful clone so orchestrator learns about new agent
+- [x] **CLONE-06**: Cloned agent appears in TUI dashboard on next poll cycle with no additional TUI code changes
 
 ### Agent Role Templates
 
@@ -72,12 +72,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INTEL-03 | Phase 22 | Complete |
 | INTEL-04 | Phase 22 | Complete |
 | INTEL-05 | Phase 22 | Complete |
-| CLONE-01 | Phase 23 | Pending |
-| CLONE-02 | Phase 23 | Pending |
-| CLONE-03 | Phase 23 | Pending |
-| CLONE-04 | Phase 23 | Pending |
-| CLONE-05 | Phase 23 | Pending |
-| CLONE-06 | Phase 23 | Pending |
+| CLONE-01 | Phase 23 | Complete |
+| CLONE-02 | Phase 23 | Complete |
+| CLONE-03 | Phase 23 | Complete |
+| CLONE-04 | Phase 23 | Complete |
+| CLONE-05 | Phase 23 | Complete |
+| CLONE-06 | Phase 23 | Complete |
 | TMPL-01 | Phase 24 | Pending |
 | TMPL-02 | Phase 24 | Pending |
 | TMPL-03 | Phase 24 | Pending |
