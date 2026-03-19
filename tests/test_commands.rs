@@ -850,3 +850,101 @@ async fn test_build_orchestrator_md_fleet_status_section_order() {
         "Fleet Status must appear before Session Routing"
     );
 }
+
+// ============================================================
+// End-to-end metrics pipeline integration test — INTEL-01..05
+// ============================================================
+
+#[tokio::test]
+async fn test_context_metrics_pipeline_end_to_end() {
+    use squad_station::commands::context::{
+        build_orchestrator_md, compute_alignment, format_busy_duration,
+        AgentMetrics, AlignmentResult,
+    };
+
+    let db = helpers::setup_test_db().await;
+
+    // Set up agents: 1 orchestrator + 2 workers (1 busy, 1 idle)
+    db::agents::insert_agent(
+        &db, "proj-orchestrator", "claude-code", "orchestrator", None, None,
+    ).await.unwrap();
+    db::agents::insert_agent(
+        &db, "proj-worker-a", "claude-code", "worker",
+        Some("sonnet"), Some("Frontend engineer for React and CSS"),
+    ).await.unwrap();
+    db::agents::insert_agent(
+        &db, "proj-worker-b", "claude-code", "worker",
+        Some("opus"), Some("Backend API developer"),
+    ).await.unwrap();
+
+    // Make worker-a busy
+    db::agents::update_agent_status(&db, "proj-worker-a", "busy").await.unwrap();
+
+    // Send 2 processing messages to worker-a, 1 to worker-b
+    db::messages::insert_message(
+        &db, "proj-orchestrator", "proj-worker-a", "task_request",
+        "Fix the CSS grid layout for the dashboard", "normal", None,
+    ).await.unwrap();
+    db::messages::insert_message(
+        &db, "proj-orchestrator", "proj-worker-a", "task_request",
+        "Add responsive breakpoints", "normal", None,
+    ).await.unwrap();
+    db::messages::insert_message(
+        &db, "proj-orchestrator", "proj-worker-b", "task_request",
+        "Optimize database query performance", "normal", None,
+    ).await.unwrap();
+
+    // Simulate the metrics assembly that run() does
+    let agents = db::agents::list_agents(&db).await.unwrap();
+    let mut metrics = Vec::new();
+    for agent in &agents {
+        if agent.role == "orchestrator" || agent.status == "dead" {
+            continue;
+        }
+        let pending = db::messages::count_processing(&db, &agent.name).await.unwrap();
+        let busy_for = format_busy_duration(&agent.status, &agent.status_updated_at);
+        let alignment = match db::messages::peek_message(&db, &agent.name).await.unwrap() {
+            Some(msg) => compute_alignment(&msg.task, agent.description.as_deref()),
+            None => AlignmentResult::None,
+        };
+        metrics.push(AgentMetrics {
+            agent_name: agent.name.clone(),
+            pending_count: pending,
+            busy_for,
+            alignment,
+        });
+    }
+
+    let content = build_orchestrator_md(&agents, "/test/project", &[], &metrics);
+
+    // INTEL-01: Pending counts appear
+    assert!(content.contains("| proj-worker-a | 2 |"), "Worker A should show 2 pending, got:\n{}", content);
+    assert!(content.contains("| proj-worker-b | 1 |"), "Worker B should show 1 pending, got:\n{}", content);
+
+    // INTEL-02: Busy For column present
+    // worker-b is idle (should show "idle")
+    assert!(content.contains("idle"), "Worker B should show idle");
+
+    // INTEL-03: Alignment check
+    // worker-a: "Fix CSS grid layout..." vs "Frontend engineer for React and CSS" — overlap on "css" → checkmark
+    assert!(content.contains('\u{2705}'), "Worker A should have checkmark alignment (CSS overlap)");
+
+    // INTEL-04: Re-query commands
+    assert!(content.contains("squad-station agents"), "Missing re-query: agents");
+    assert!(content.contains("squad-station list --status processing"), "Missing re-query: list");
+    assert!(content.contains("squad-station status"), "Missing re-query: status");
+    assert!(content.contains("squad-station context"), "Missing re-query: context");
+
+    // Orchestrator excluded from Fleet Status
+    let fleet_section = content.split("## Fleet Status").nth(1).unwrap_or("");
+    let session_section_start = fleet_section.find("## Session Routing").unwrap_or(fleet_section.len());
+    let fleet_only = &fleet_section[..session_section_start];
+    assert!(!fleet_only.contains("proj-orchestrator"), "Orchestrator should not be in Fleet Status");
+
+    // Section ordering: Fleet Status between PRE-FLIGHT and Session Routing
+    let fleet_pos = content.find("## Fleet Status").expect("Fleet Status section missing");
+    let preflight_pos = content.find("PRE-FLIGHT").expect("PRE-FLIGHT missing");
+    let routing_pos = content.find("## Session Routing").expect("Session Routing missing");
+    assert!(fleet_pos > preflight_pos, "Fleet Status should come after PRE-FLIGHT");
+    assert!(fleet_pos < routing_pos, "Fleet Status should come before Session Routing");
+}
