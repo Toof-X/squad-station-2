@@ -41,13 +41,9 @@ function install() {
     console.log('  3. Run  \x1b[36msquad-station init\x1b[0m — launch tmux sessions\n');
   }
 
-  // Launch welcome TUI only when --tui flag is passed and binary supports it
+  // Launch welcome TUI after install when --tui flag is passed
   if (tui && process.stdout.isTTY) {
-    var help = spawnSync(destPath, ['--help'], { encoding: 'utf8' });
-    var helpText = (help.stdout || '') + (help.stderr || '');
-    if (helpText.indexOf('--tui') !== -1) {
-      spawnSync(destPath, ['--tui'], { stdio: 'inherit' });
-    }
+    spawnSync(destPath, [], { stdio: 'inherit' });
   }
 }
 
