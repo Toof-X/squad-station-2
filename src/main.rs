@@ -22,10 +22,10 @@ async fn main() {
 async fn run(cli: cli::Cli) -> Result<()> {
     match cli.command {
         None => {
-            use std::io::IsTerminal;
             use std::path::PathBuf;
-            if cli.tui && std::io::stdout().is_terminal() {
+            if cli.tui {
                 // --tui: interactive welcome screen with countdown and auto-launch
+                // No is_terminal() guard — user explicitly requested TUI via flag
                 let has_config = std::path::Path::new("squad.yml").exists();
                 let action = commands::welcome::run_welcome_tui(has_config).await?;
                 match action {
