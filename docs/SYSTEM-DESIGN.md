@@ -118,57 +118,63 @@ squad-station init
 9. Print "Get Started" message with provider-specific CLI invocation
 ```
 
-### 3.1 Orchestrator Context — Provider-Specific File
+### 3.1 Orchestrator Context — Provider-Specific Slash Command
 
-The `context` command generates a playbook file that the Orchestrator auto-loads on every conversation start.
-
-**Location:** `.squad/orchestrator/<PROVIDER_FILE>`
+The `context` command generates a slash command file that the Orchestrator loads via `/squad-orchestrator`.
 
 | Provider | Generated file |
 |----------|----------------|
-| claude-code | `.squad/orchestrator/CLAUDE.md` |
-| gemini-cli  | `.squad/orchestrator/GEMINI.md` |
-| other       | `.squad/orchestrator/CLAUDE.md` (fallback) |
+| claude-code | `.claude/commands/squad-orchestrator.md` |
+| gemini-cli  | `.gemini/commands/squad-orchestrator.toml` |
+| other       | `.claude/commands/squad-orchestrator.md` (fallback) |
 
 **Content structure (auto-generated):**
 
 ```markdown
-# Squad Orchestrator Playbook
+## PRE-FLIGHT — Execute IMMEDIATELY before any task
+(read SDD playbooks, verify agents, check project root)
 
-> BEHAVIORAL RULE: You are an orchestrator. Do not implement tasks yourself.
-> Delegate to agents using `squad-station send`. Wait for completion signals.
+## Completion Notification (Automatic)
+(signal-based wait protocol, anti-polling rules)
 
-## Project
-Codebase at: `/absolute/path/to/project`
+## Context Management — /clear
+(when to send /clear to agents, re-injection guidance)
 
-## Delegation Workflow
-### Registered Agents
-(one section per worker with send + capture-pane commands)
+## Session Routing
+(which agent for which task type, routing rules)
 
-### How to Delegate
-1. Select agent based on task type
-2. squad-station send <agent> --body "<task>"
-3. Wait for completion hook signal
-4. Read output: tmux capture-pane -t <agent> -p
-5. Verify: squad-station list --agent <agent>
-6. Parallel dispatch only when tasks are independent
+## SDD Orchestration
+(playbook-driven task delegation, if SDD configured)
 
-## Monitoring Workflow
-(agents command, list command, capture-pane)
+## Sending Tasks
+(send command templates per worker agent)
 
-## Workflow (SDD)
-(playbook references from squad.yml sdd config)
+## Full Context Transfer
+(capture-pane instructions for cross-agent handoff)
+
+## Workflow Completion Discipline
+(never interrupt, wait for signal)
+
+## QA Gate
+(6-step checklist after receiving signal, includes /clear decision)
 
 ## Agent Roster
 (table: Agent | Model | Role | Description)
-
-## Principles
-1. Read the SDD playbook before starting any task
-2. Don't code yourself — delegate to agents
-3. Only ask the user (HITL) when a business decision is truly needed
-4. After an agent finishes → read results → decide next step
-5. Send a summary report when workflow is complete
 ```
+
+### 3.2 Context Auto-Inject (SessionStart Hook)
+
+During `squad-station init`, the user is asked whether to enable auto-injection.
+When enabled, a `SessionStart` hook is installed that runs `squad-station context --inject`
+on every session start, resume, or compact/clear.
+
+The `--inject` flag:
+1. Detects the current tmux session name via `tmux display-message -p '#S'`
+2. Compares against the orchestrator session name from `squad.yml`
+3. If not the orchestrator → silent exit 0 (workers get no injection)
+4. If the orchestrator → outputs content to stdout in provider-appropriate format:
+   - Claude Code: raw markdown (stdout is injected as context)
+   - Gemini CLI: JSON `{"hookSpecificOutput":{"additionalContext":"..."}}`
 
 ---
 
@@ -327,7 +333,8 @@ Setup:
   init [config]                       Read squad.yml, create DB, tmux sessions, context,
                                       and monitor session with interactive panes
                                       (default: squad.yml, walks up dir tree)
-  context                             Generate orchestrator context file per provider
+  context [--inject]                  Generate orchestrator context file per provider
+                                      --inject: output to stdout for SessionStart hook
 
 Messaging:
   send <agent> --body "..."           Assign task to agent
@@ -354,9 +361,8 @@ Display:
 
 Lifecycle:
   register <name> [--role] [--tool]   Register agent at runtime
-  close [config]                      Kill all squad tmux sessions
-  reset [config] [--no-relaunch]      Kill sessions + delete DB + optionally relaunch
-  clean [config] [-y]                 Delete DB file only (with confirmation)
+  clean [config] [-y]                 Kill all squad tmux sessions + delete DB
+  reset [config] [--no-relaunch]      Clean + optionally relaunch (re-init)
 
 Flags:
   --json                              Machine-readable output (global)
@@ -396,7 +402,7 @@ Agent stops → Hook fires → squad-station signal [agent]
 `squad-station init` auto-installs all hooks below. The inline command pattern uses
 `$(tmux display-message -p '#S')` to resolve the agent name from the tmux session.
 
-**Claude Code** (`.claude/settings.json`) — 4 hook events:
+**Claude Code** (`.claude/settings.json`) — 4 hook events (+ optional SessionStart):
 
 | Event | Matcher | Command | Purpose |
 |-------|---------|---------|---------|
@@ -404,6 +410,7 @@ Agent stops → Hook fires → squad-station signal [agent]
 | `Notification` | `permission_prompt` | `squad-station notify ...` | Permission dialog blocking agent |
 | `Notification` | `elicitation_dialog` | `squad-station notify ...` | MCP server input form blocking agent |
 | `PostToolUse` | `AskUserQuestion` | `squad-station notify ...` | Agent asking clarifying question |
+| `SessionStart` | `*` | `squad-station context --inject` | Auto-inject orchestrator context (opt-in) |
 
 ```json
 {
@@ -417,17 +424,25 @@ Agent stops → Hook fires → squad-station signal [agent]
     ],
     "PostToolUse": [
       { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "squad-station notify --body 'Agent needs input' --agent $(tmux display-message -p '#S')" }] }
+    ],
+    "SessionStart": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "squad-station context --inject" }] }
     ]
   }
 }
 ```
 
-**Gemini CLI** (`.gemini/settings.json`) — 2 hook events:
+The `SessionStart` hook is **opt-in** — installed only if the user says yes during `squad-station init`.
+The `--inject` command internally guards on the orchestrator session name, so workers sharing the
+same settings file receive no injection.
+
+**Gemini CLI** (`.gemini/settings.json`) — 2 hook events (+ optional SessionStart):
 
 | Event | Matcher | Command | Purpose |
 |-------|---------|---------|---------|
 | `AfterAgent` | `*` | `squad-station signal ...` | Agent finished turn → signal completion |
 | `Notification` | `*` | `squad-station notify ...` | Any notification (permissions, alerts) |
+| `SessionStart` | `*` | `squad-station context --inject` | Auto-inject orchestrator context (opt-in) |
 
 ```json
 {
@@ -437,6 +452,9 @@ Agent stops → Hook fires → squad-station signal [agent]
     ],
     "Notification": [
       { "matcher": "", "hooks": [{ "type": "command", "command": "squad-station notify --body 'Agent needs input' --agent $(tmux display-message -p '#S')" }] }
+    ],
+    "SessionStart": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "squad-station context --inject" }] }
     ]
   }
 }
@@ -513,16 +531,15 @@ my-app/
 ├── .squad/
 │   ├── station.db               ← SQLite WAL message hub
 │   ├── station.db-wal           ← WAL file
-│   ├── station.db-shm           ← shared memory
-│   └── orchestrator/
-│       └── CLAUDE.md            ← orchestrator playbook (auto-generated)
-│           (or GEMINI.md for gemini-cli provider)
-├── scripts/
-│   ├── _common.sh               ← shared helpers (provider/model validation)
-│   ├── setup-sessions.sh         ← create tmux sessions
-│   ├── teardown-sessions.sh      ← tear down sessions
-│   ├── tmux-send.sh              ← send text to tmux
-│   └── validate-squad.sh         ← validate squad.yml
+│   └── station.db-shm           ← shared memory
+├── .claude/
+│   ├── settings.json            ← hooks (auto-installed by init)
+│   └── commands/
+│       └── squad-orchestrator.md ← orchestrator slash command (auto-generated)
+├── .gemini/                     ← (if gemini-cli provider)
+│   ├── settings.json            ← hooks
+│   └── commands/
+│       └── squad-orchestrator.toml
 └── (project codebase)
 
 tmux sessions created:
@@ -579,13 +596,13 @@ tmux sessions created:
 ```
 src/
 ├── main.rs          ← Entry: SIGPIPE handler (SAFE-04), async tokio runtime, command dispatch
-├── cli.rs           ← clap-based arg parsing (Commands enum, 16 subcommands)
+├── cli.rs           ← clap-based arg parsing (Commands enum, 15 subcommands)
 ├── config.rs        ← YAML config loading, validation, DB path resolution, session name sanitization
 ├── tmux.rs          ← tmux operations: send-keys (literal), inject-body (multiline via buffer),
 │                       session management, view creation, pane-to-session resolution
 ├── commands/
 │   ├── mod.rs       ← module declarations
-│   ├── init.rs      ← bootstrap: config → DB → register agents → tmux sessions → context
+│   ├── init.rs      ← bootstrap: config → DB → register agents → tmux sessions → hooks → context
 │   ├── send.rs      ← task dispatch: validate → DB write → agent busy → tmux inject
 │   ├── signal.rs    ← hook handler: guard chain → mark complete → notify orchestrator
 │   ├── notify.rs    ← mid-task HITL notification (no status change)
@@ -593,13 +610,13 @@ src/
 │   ├── list.rs      ← message listing with filters
 │   ├── register.rs  ← runtime agent registration
 │   ├── agents.rs    ← agent listing with tmux status reconciliation
-│   ├── context.rs   ← generate provider-specific orchestrator context file
+│   ├── context.rs   ← generate orchestrator context file; --inject outputs to stdout for hooks
 │   ├── status.rs    ← project + agent status summary
 │   ├── ui.rs        ← ratatui TUI dashboard (drops pool after each fetch to prevent WAL starvation)
 │   ├── view.rs      ← tmux tiled view of agent sessions
-│   ├── close.rs     ← kill all squad tmux sessions
-│   ├── reset.rs     ← kill + delete DB + optionally relaunch
-│   ├── clean.rs     ← delete DB file only
+│   ├── clean.rs     ← kill all squad tmux sessions + delete DB
+│   ├── reset.rs     ← clean + optionally relaunch (re-init)
+│   ├── freeze.rs    ← freeze/unfreeze agent task dispatch
 │   └── helpers.rs   ← shared: colorize_agent_status, format_status_with_duration, reconcile
 └── db/
     ├── mod.rs       ← SQLite pool setup (max_connections=1, busy_timeout=5s)
@@ -614,17 +631,15 @@ src/
 
 ---
 
-## 11. Completed Milestones
+## 11. Release History
 
-| Version | Content |
-|---------|---------|
-| v1.0 | Core: `init`, `send`, `signal`, `status`, `agents`, hook install, context generation |
-| v1.1 | Design compliance: schema alignment, directional routing, message types |
-| v1.2 | Distribution: release binary, symlink at `~/.cargo/bin/squad-station` |
-| v1.3 | Antigravity & hooks optimization: DB-only mode, guard chain, provider detection |
-| v1.4 | Unified playbook & local DB: `.squad/station.db`, thread_id, cleanup commands |
+| Version | Highlights |
+|---------|------------|
+| v0.5.1 | First public release: npm package, colored init, provider-agnostic hooks, full messaging pipeline |
+| v0.5.3 | PostToolUse hook (AskUserQuestion), elicitation_dialog support, orchestrator resolution fix |
+| v0.5.5 | Context auto-inject (SessionStart hook), /clear management, simplified CLI (close removed, clean = kill + delete) |
 
 ---
 
 *Implementation language: Rust (decided in TECH-STACK.md)*
-*164 tests: cargo test (unit + integration, all async tokio)*
+*171 tests: cargo test (unit + integration, all async tokio)*

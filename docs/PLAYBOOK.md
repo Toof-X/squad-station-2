@@ -95,8 +95,9 @@ This will:
 2. Register all agents (names auto-prefixed as `<project>-<name>`)
 3. Launch each agent in its own tmux session
 4. Auto-install completion hooks (or print manual instructions)
-5. Generate orchestrator context file (`.squad/orchestrator/CLAUDE.md` or provider-specific)
-6. Create `<project>-monitor` tmux session with interactive tiled panes for all agents
+5. Ask whether to enable context auto-inject (SessionStart hook)
+6. Generate orchestrator slash command (`.claude/commands/squad-orchestrator.md` or `.gemini/commands/squad-orchestrator.toml`)
+7. Create `<project>-monitor` tmux session with interactive tiled panes for all agents
 
 **Check the result:**
 
@@ -130,7 +131,7 @@ All hooks use the same inline command pattern — no external shell scripts need
 - **Signal:** `squad-station signal $(tmux display-message -p '#S')`
 - **Notify:** `squad-station notify --body 'Agent needs input' --agent $(tmux display-message -p '#S')`
 
-### Claude Code Hooks (4 events)
+### Claude Code Hooks (4 events + optional SessionStart)
 
 Add to `.claude/settings.json` (project-level) or `~/.claude/settings.json` (global):
 
@@ -140,8 +141,9 @@ Add to `.claude/settings.json` (project-level) or `~/.claude/settings.json` (glo
 | `Notification` | `permission_prompt` | Agent blocked by permission dialog → `notify` orchestrator |
 | `Notification` | `elicitation_dialog` | Agent blocked by MCP input form → `notify` orchestrator |
 | `PostToolUse` | `AskUserQuestion` | Agent asks a clarifying question → `notify` orchestrator |
+| `SessionStart` | `*` | Session start/compact → `context --inject` (opt-in) |
 
-### Gemini CLI Hooks (2 events)
+### Gemini CLI Hooks (2 events + optional SessionStart)
 
 Add to `.gemini/settings.json`:
 
@@ -149,6 +151,19 @@ Add to `.gemini/settings.json`:
 |-------|---------|------------|
 | `AfterAgent` | `*` | Agent finishes turn → `signal` marks task completed |
 | `Notification` | `*` | Any notification (permissions, alerts) → `notify` orchestrator |
+| `SessionStart` | `*` | Session start/resume/clear → `context --inject` (opt-in) |
+
+### SessionStart — Context Auto-Inject
+
+The `SessionStart` hook is **opt-in**. During `squad-station init`, you are asked:
+
+```
+Enable auto-inject? [y/N]
+```
+
+When enabled, the orchestrator automatically receives its role, agent roster, and playbook context whenever the AI starts a new session, resumes, or compacts context. When disabled, you must manually run `/squad-orchestrator` each time.
+
+The `--inject` command guards on the orchestrator session name — workers sharing the same settings file receive no injection.
 
 ### Notes
 
@@ -271,7 +286,7 @@ The dashboard auto-refreshes every 3 seconds.
 tmux attach -t my-app-monitor
 ```
 
-The monitor session is created automatically during `squad-station init`. It contains interactive tiled panes — one per agent (orchestrator + workers). You can type directly into any pane. Killed and recreated on each `init` or `close`.
+The monitor session is created automatically during `squad-station init`. It contains interactive tiled panes — one per agent (orchestrator + workers). You can type directly into any pane. Killed and recreated on each `init` or `clean`.
 
 ### tmux tiled view (read-only)
 
@@ -324,25 +339,7 @@ Duplicate signals are safe — they silently succeed.
 
 ## 10. Cleanup Commands
 
-### Kill tmux sessions
-
-```bash
-squad-station close
-```
-
-Kills all tmux sessions defined in squad.yml, including the monitor session. Shows killed/skipped counts.
-
-### Full reset (kill + delete DB + relaunch)
-
-```bash
-# Kill sessions, delete DB, then relaunch
-squad-station reset
-
-# Kill sessions, delete DB, don't relaunch
-squad-station reset --no-relaunch
-```
-
-### Delete database only
+### Clean (kill sessions + delete DB)
 
 ```bash
 # With confirmation prompt
@@ -350,6 +347,18 @@ squad-station clean
 
 # Skip confirmation
 squad-station clean -y
+```
+
+Kills all squad tmux sessions (agents + monitor) and deletes the database. Shows killed/skipped counts and DB deletion status.
+
+### Full reset (clean + relaunch)
+
+```bash
+# Kill sessions, delete DB, then relaunch
+squad-station reset
+
+# Kill sessions, delete DB, don't relaunch
+squad-station reset --no-relaunch
 ```
 
 ---
@@ -370,7 +379,7 @@ Use `provider: antigravity` when you want to run the orchestrator inside an IDE 
 ### IDE workflow
 
 1. Run `squad-station init` — registers orchestrator in DB, launches worker tmux sessions
-2. Run `squad-station context` — generates `.squad/orchestrator/CLAUDE.md` (or provider-specific file)
+2. Run `squad-station context` — generates `.claude/commands/squad-orchestrator.md` (or provider-specific file)
 3. IDE orchestrator reads the generated playbook
 4. IDE orchestrator calls `squad-station send <agent> --body "..."` to dispatch tasks
 5. IDE orchestrator polls `squad-station status` to detect task completion
@@ -380,24 +389,34 @@ Use `provider: antigravity` when you want to run the orchestrator inside an IDE 
 ## 12. Generate Orchestrator Context
 
 ```bash
+# Generate slash command file (normal mode)
 squad-station context
+
+# Output to stdout for SessionStart hook (inject mode)
+squad-station context --inject
 ```
 
-Generates the orchestrator playbook in `.squad/orchestrator/` with a provider-specific filename:
+Generates the orchestrator slash command with a provider-specific format:
 
 | Provider | Generated path |
 |----------|----------------|
-| `claude-code` | `.squad/orchestrator/CLAUDE.md` |
-| `gemini-cli` | `.squad/orchestrator/GEMINI.md` |
-| Other | `.squad/orchestrator/CLAUDE.md` (fallback) |
+| `claude-code` | `.claude/commands/squad-orchestrator.md` |
+| `gemini-cli` | `.gemini/commands/squad-orchestrator.toml` |
+| Other | `.claude/commands/squad-orchestrator.md` (fallback) |
 
-The generated file includes:
-- Behavioral rules (delegate, don't implement)
-- Registered agents with send/capture commands
-- Delegation and monitoring workflows
-- SDD playbook references (if configured in squad.yml)
+The generated content includes:
+- PRE-FLIGHT checklist (read playbooks, verify agents)
+- Completion notification protocol (signal-based wait, anti-polling)
+- Context management guidance (when to /clear agents)
+- Session routing rules (which agent for which task type)
+- SDD orchestration (if configured in squad.yml)
+- Sending task templates
+- Full context transfer instructions
+- Workflow completion discipline
+- QA Gate (6-step checklist)
 - Agent roster table
-- Anti-context-decay rules
+
+The `--inject` flag outputs the content to stdout for hook consumption instead of writing to a file. It guards on the orchestrator session name — workers receive no output.
 
 ---
 
@@ -463,12 +482,11 @@ SQUAD_STATION_DB=/path/to/station.db squad-station register my-agent --tool clau
 | `register <name>` | Register agent at runtime | `--role`, `--tool`, `--json` |
 | `agents` | List agents with status | `--json` |
 | `status` | Project overview | `--json` |
-| `context` | Generate orchestrator context | — |
+| `context` | Generate orchestrator context | `--inject` |
 | `ui` | Interactive TUI dashboard | — |
 | `view` | tmux tiled view | `--json` |
-| `close [config]` | Kill all squad tmux sessions | `--json` |
-| `reset [config]` | Kill sessions + delete DB + relaunch | `--no-relaunch`, `--json` |
-| `clean [config]` | Delete database only | `-y`/`--yes`, `--json` |
+| `clean [config]` | Kill all sessions + delete DB | `-y`/`--yes`, `--json` |
+| `reset [config]` | Clean + relaunch | `--no-relaunch`, `--json` |
 
 All commands support `--json` for machine-readable output and `--help` for usage details.
 
