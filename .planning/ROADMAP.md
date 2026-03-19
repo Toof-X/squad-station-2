@@ -95,7 +95,10 @@ Interactive ratatui welcome TUI (BigText title, countdown, Tab-navigable Quick G
   3. The context file includes task-role alignment hints derived from keyword overlap between recent task bodies and each agent's role/description
   4. The context file embeds CLI commands for live re-query rather than pre-computed static tables so values never go stale
   5. `build_orchestrator_md()` remains a pure function — calling it with an empty metrics slice produces valid output with no DB calls inside the function
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 22-01-PLAN.md — Define AgentMetrics types, alignment logic, and Fleet Status rendering in build_orchestrator_md()
+- [ ] 22-02-PLAN.md — Wire DB metrics queries in run() and add integration tests
 
 ### Phase 23: Dynamic Agent Cloning
 **Goal**: The orchestrator can expand the agent fleet at runtime by cloning an existing agent without touching squad.yml or reinitializing
@@ -137,6 +140,6 @@ Interactive ratatui welcome TUI (BigText title, countdown, Tab-navigable Quick G
 | 19. Agent Diagram | v1.6 | 1/1 | Complete | 2026-03-17 |
 | 20. TTY-Safe Welcome TUI Core | v1.7 | 2/2 | Complete | 2026-03-17 |
 | 21. Quick Guide and Install Flow | v1.7 | 2/2 | Complete | 2026-03-18 |
-| 22. Orchestrator Intelligence Data | v1.8 | 0/TBD | Not started | - |
+| 22. Orchestrator Intelligence Data | v1.8 | 0/2 | Not started | - |
 | 23. Dynamic Agent Cloning | v1.8 | 0/TBD | Not started | - |
 | 24. Agent Role Templates in Wizard | v1.8 | 0/TBD | Not started | - |
