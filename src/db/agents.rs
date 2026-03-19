@@ -94,3 +94,12 @@ pub async fn delete_all_agents(pool: &SqlitePool) -> anyhow::Result<()> {
     sqlx::query("DELETE FROM agents").execute(pool).await?;
     Ok(())
 }
+
+/// Delete a single agent by name. Used for clone rollback when tmux launch fails.
+pub async fn delete_agent_by_name(pool: &SqlitePool, name: &str) -> anyhow::Result<()> {
+    sqlx::query("DELETE FROM agents WHERE name = ?")
+        .bind(name)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
