@@ -38,15 +38,14 @@ created: 2026-03-19
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 24-01-01 | 01 | 0 | TMPL-01 | unit | `cargo test test_templates` | ❌ W0 | ⬜ pending |
-| 24-01-02 | 01 | 0 | TMPL-04 | unit | `cargo test test_templates` | ❌ W0 | ⬜ pending |
-| 24-02-01 | 02 | 1 | TMPL-01 | integration | `cargo test test_templates` | ❌ W0 | ⬜ pending |
-| 24-02-02 | 02 | 1 | TMPL-02 | integration | `cargo test test_templates` | ❌ W0 | ⬜ pending |
-| 24-02-03 | 02 | 1 | TMPL-03 | integration | `cargo test test_templates` | ❌ W0 | ⬜ pending |
-| 24-02-04 | 02 | 1 | TMPL-05 | integration | `cargo test test_context` | ❌ W0 | ⬜ pending |
-| 24-02-05 | 02 | 1 | TMPL-06 | integration | `cargo test test_clone` | ❌ W0 | ⬜ pending |
+| 24-01-01 | 01 | 1 | TMPL-01 | unit | `cargo check` | n/a | pending |
+| 24-01-02 | 01 | 1 | TMPL-02, TMPL-06 | unit | `cargo test` | n/a | pending |
+| 24-02-01 | 02 | 2 | TMPL-01, TMPL-03, TMPL-04 | integration | `cargo check` | n/a | pending |
+| 24-02-02 | 02 | 2 | TMPL-01, TMPL-05 | integration | `cargo test` | n/a | pending |
+| 24-03-01 | 03 | 2 | TMPL-05 | unit | `cargo check` | n/a | pending |
+| 24-03-02 | 03 | 2 | TMPL-02, TMPL-03, TMPL-04, TMPL-06 | unit+integration | `cargo test test_templates` | tests/test_templates.rs | pending |
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+*Status: pending / green / red / flaky*
 
 ---
 
@@ -55,6 +54,8 @@ created: 2026-03-19
 - [ ] `tests/test_templates.rs` — stubs for TMPL-01 through TMPL-06
 - [ ] Template data unit tests (catalog completeness, field validity)
 - [ ] Routing Matrix output tests in context generation
+- [ ] Custom clears fields test (TMPL-03)
+- [ ] Template auto-fill model index test (TMPL-04)
 
 *Existing test infrastructure (cargo test, helpers.rs, setup_test_db) covers framework needs.*
 
