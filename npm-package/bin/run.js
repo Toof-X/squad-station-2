@@ -42,9 +42,9 @@ function install() {
   }
 
   // Launch welcome TUI after install when --tui flag is passed
-  // The Rust binary has its own is_terminal() guard — safe to always try
+  // The Rust binary requires --tui flag and has its own is_terminal() guard
   if (tui) {
-    spawnSync(destPath, [], { stdio: 'inherit' });
+    spawnSync(destPath, ['--tui'], { stdio: 'inherit' });
   }
 }
 
