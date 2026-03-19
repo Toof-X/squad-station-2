@@ -15,6 +15,7 @@ pub mod reset;
 pub mod send;
 pub mod signal;
 pub mod status;
+pub mod templates;
 pub mod ui;
 pub mod view;
 pub mod welcome;
