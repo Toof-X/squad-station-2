@@ -22,10 +22,12 @@ async fn main() {
 async fn run(cli: cli::Cli) -> Result<()> {
     match cli.command {
         None => {
+            use std::io::IsTerminal;
             use std::path::PathBuf;
-            if cli.tui {
-                // --tui: interactive welcome screen with countdown and auto-launch
-                // No is_terminal() guard — user explicitly requested TUI via flag
+            if cli.tui && std::io::stdin().is_terminal() {
+                // --tui with a real TTY: interactive welcome screen
+                // Guard checks stdin because crossterm's enable_raw_mode()
+                // calls tcsetattr() on stdin — fails with ENXIO if no TTY
                 let has_config = std::path::Path::new("squad.yml").exists();
                 let action = commands::welcome::run_welcome_tui(has_config).await?;
                 match action {
@@ -38,7 +40,7 @@ async fn run(cli: cli::Cli) -> Result<()> {
                     _ => {}
                 }
             } else {
-                // Default: static welcome text, prompt user to create squad.yml
+                // No TTY or no --tui flag: static welcome text
                 commands::welcome::print_welcome();
             }
             Ok(())
