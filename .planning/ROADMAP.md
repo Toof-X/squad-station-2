@@ -97,8 +97,8 @@ Interactive ratatui welcome TUI (BigText title, countdown, Tab-navigable Quick G
   5. `build_orchestrator_md()` remains a pure function — calling it with an empty metrics slice produces valid output with no DB calls inside the function
 **Plans**: 2 plans
 Plans:
-- [ ] 22-01-PLAN.md — Define AgentMetrics types, alignment logic, and Fleet Status rendering in build_orchestrator_md()
-- [ ] 22-02-PLAN.md — Wire DB metrics queries in run() and add integration tests
+- [x] 22-01-PLAN.md — Define AgentMetrics types, alignment logic, and Fleet Status rendering in build_orchestrator_md()
+- [x] 22-02-PLAN.md — Wire DB metrics queries in run() and add integration tests
 
 ### Phase 23: Dynamic Agent Cloning
 **Goal**: The orchestrator can expand the agent fleet at runtime by cloning an existing agent without touching squad.yml or reinitializing
@@ -110,7 +110,10 @@ Plans:
   3. If the tmux session launch fails after the DB record is written, the DB record is removed and the command exits with a non-zero code (no orphaned records)
   4. After a successful clone, `squad-orchestrator.md` is regenerated automatically so the orchestrator immediately knows about the new agent
   5. The cloned agent appears in the TUI dashboard on the next poll cycle with no manual refresh required
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 23-01-PLAN.md — Implement clone command with DB helper and CLI wiring
+- [ ] 23-02-PLAN.md — Add unit and integration tests for clone logic
 
 ### Phase 24: Agent Role Templates in Wizard
 **Goal**: The init wizard presents pre-built role packages so users configure agents with correct descriptions and routing hints in seconds rather than typing from scratch
@@ -140,6 +143,6 @@ Plans:
 | 19. Agent Diagram | v1.6 | 1/1 | Complete | 2026-03-17 |
 | 20. TTY-Safe Welcome TUI Core | v1.7 | 2/2 | Complete | 2026-03-17 |
 | 21. Quick Guide and Install Flow | v1.7 | 2/2 | Complete | 2026-03-18 |
-| 22. Orchestrator Intelligence Data | 2/2 | Complete    | 2026-03-19 | - |
-| 23. Dynamic Agent Cloning | v1.8 | 0/TBD | Not started | - |
+| 22. Orchestrator Intelligence Data | v1.8 | 2/2 | Complete | 2026-03-19 |
+| 23. Dynamic Agent Cloning | v1.8 | 0/2 | Not started | - |
 | 24. Agent Role Templates in Wizard | v1.8 | 0/TBD | Not started | - |
