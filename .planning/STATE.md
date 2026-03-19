@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Smart Agent Management
-status: planning
-stopped_at: Phase 24 Plan 01 complete
-last_updated: "2026-03-19T08:30:00.000Z"
-last_activity: 2026-03-19 — Completed 24-01 templates data module and routing_hints foundation
+status: executing
+stopped_at: Completed Phase 24 Plan 02 (24-02-PLAN.md)
+last_updated: "2026-03-19T08:22:58.647Z"
+last_activity: "2026-03-19 — Completed 24-01: templates data module, routing_hints migration, all callers updated"
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
   percent: 14
 ---
 
@@ -62,6 +62,8 @@ Key decisions relevant to v1.8:
 - [Phase 23-dynamic-agent-cloning]: Used pub instead of pub(crate) for clone helper functions — integration tests in tests/ are separate crates and cannot access pub(crate) items
 - [Phase 24-01]: All 11 templates use default_provider=claude-code; per-provider model mapping stored in template struct not resolved at runtime
 - [Phase 24-01]: routing_hints stored as JSON string (Option<String>) in DB and AgentInput; serialization to JSON array deferred to Plan 02 when template selection wires the data
+- [Phase 24-02]: Use orch_role (raw wizard name) not orch_name (sanitized session name) as HashMap key for orchestrator routing hints lookup to avoid key mismatch
+- [Phase 24-02]: extract_routing_hints stores raw agent names as keys (matching role_suffix in init.rs agents loop) not sanitized session names
 
 ### Pending Todos
 
@@ -75,6 +77,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-19T08:30:00.000Z
-Stopped at: Completed Phase 24 Plan 01 (24-01-PLAN.md)
-Resume file: .planning/phases/24-agent-role-templates-in-wizard/24-02-PLAN.md
+Last session: 2026-03-19T08:22:46.250Z
+Stopped at: Completed Phase 24 Plan 02 (24-02-PLAN.md)
+Resume file: None
