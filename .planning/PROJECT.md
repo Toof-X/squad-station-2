@@ -1,13 +1,15 @@
 # Squad Station
 
-## Current Milestone: v1.8 Install & Live Status
+## Current Milestone: v1.8 Smart Agent Management
 
-**Goal:** Polish the install experience with a proper `install` subcommand, use folder name as project name default throughout the TUI, and add live orchestrator state detection via pane polling.
+**Goal:** Upgrade agent management with role templates in the wizard, provide metrics data for orchestrator to detect misrouting and overload, and support dynamic agent cloning to scale the team at runtime.
 
 **Target features:**
-- `squad-station install [--tui]` subcommand replacing bare binary auto-launch
-- Folder name as default project name in wizard, dashboard, and squad.yml generation
-- Orchestrator "processing" state detected via `capture-pane` content polling in TUI
+- Agent role templates in init wizard — pre-built packages (role, model suggestion, description, routing hints) with custom option + system suggestions
+- Orchestrator intelligence data — CLI provides task-role alignment metrics, messages/agent count, busy time tracking via `squad-orchestrator.md` context
+- Dynamic agent cloning — CLI command to clone agent (same role/model/desc, auto-incremented name, new tmux session), orchestrator decides when and how many
+- TUI monitor live update — cloned agents appear immediately on dashboard
+- Seamless agent coordination — agents (original + clones) operate seamlessly and adapt to each other in the team
 
 ## What This Is
 
@@ -87,6 +89,16 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 - ✓ npm postinstall auto-launches `squad-station` via `spawnSync` when `process.stdout.isTTY` — v1.7
 - ✓ curl installer auto-launches `squad-station` via `exec` when `[ -t 1 ]`; silent in non-interactive environments — v1.7
 
+- ✓ `init` requires explicit `--tui` flag to enter wizard; bare `init` reads existing squad.yml directly — v1.8-pre
+
+### Active
+
+- [ ] Agent role templates in wizard with pre-built packages and custom + suggestions
+- [ ] Orchestrator intelligence data (task-role alignment, messages/agent, busy time) in `squad-orchestrator.md`
+- [ ] Dynamic agent cloning command (auto-increment name, new tmux session, same config)
+- [ ] TUI monitor live update when cloned agents appear
+- [ ] Seamless agent coordination — agents adapt to each other in the team
+
 ### Out of Scope
 
 - Task management / workflow logic — đó là việc của Orchestrator AI
@@ -99,13 +111,13 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ## Context
 
-Shipped v1.7 First-Run Onboarding with ~82,700 LOC Rust (codebase + tests, total project).
+Shipped v1.7 First-Run Onboarding. Pre-v1.8 change: `init --tui` flag added (bare `init` reads squad.yml directly).
 Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.30, crossterm 0.29, tui-big-text 0.8, serde-saphyr, owo-colors 3, uuid (temp file naming).
-Distribution: npm package + curl | sh installer, both download pre-built binaries from GitHub Releases. Both install paths auto-launch the welcome TUI in interactive terminals.
+Distribution: npm package (v1.5.7, binaryVersion 1.8) + curl | sh installer, both download pre-built binaries from GitHub Releases. Both install paths auto-launch the welcome TUI in interactive terminals.
 CI/CD: GitHub Actions matrix workflow produces 4 musl/darwin binaries on v* tag push.
 Providers supported: claude-code, gemini-cli, antigravity (DB-only IDE orchestrator).
 Hook registration: inline `squad-station signal $TMUX_PANE` command (scripts in hooks/ deprecated).
-Init flow: TUI wizard (ratatui) generates squad.yml from scratch; re-init prompt handles overwrite/add-agents/abort. Post-init prints ASCII agent fleet diagram.
+Init flow: TUI wizard (ratatui, requires `--tui` flag) generates squad.yml from scratch; re-init prompt handles overwrite/add-agents/abort. Post-init prints ASCII agent fleet diagram.
 Welcome TUI: bare `squad-station` invocation opens ratatui AlternateScreen with BigText title, 5s countdown, Tab-navigable Quick Guide page; Enter routes to init wizard or dashboard.
 Context generation: `.agent/workflows/squad-orchestrator.md` — single unified playbook for IDE orchestrator.
 Safe injection: load-buffer/paste-buffer pattern for multiline task bodies (no shell-injection artifacts).
@@ -179,4 +191,4 @@ Test suite: 241 tests (all green).
 | `exec` in curl / `spawnSync` in npm | exec replaces shell process cleanly; spawnSync blocks until TUI exits | ✓ Good — correct handoff semantics per install path |
 
 ---
-*Last updated: 2026-03-18 after v1.8 milestone start*
+*Last updated: 2026-03-19 after v1.8 Smart Agent Management milestone redefined*

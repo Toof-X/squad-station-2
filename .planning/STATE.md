@@ -1,11 +1,11 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.8
-milestone_name: Install & Live Status
+milestone_name: Smart Agent Management
 status: defining_requirements
 stopped_at: defining requirements
-last_updated: "2026-03-18"
-last_activity: 2026-03-18 — feat(init): add --tui flag to init command; npm bumped to v1.5.7 (binaryVersion 1.8)
+last_updated: "2026-03-19"
+last_activity: 2026-03-19 — Milestone v1.8 redefined as Smart Agent Management
 progress:
   total_phases: 0
   completed_phases: 0
@@ -18,17 +18,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-18)
+See: .planning/PROJECT.md (updated 2026-03-19)
 
-**Core value:** Routing messages reliably between Orchestrator and agents — stateless CLI, no daemon
-**Current focus:** Defining requirements for v1.8
+**Core value:** Reliable message routing between Orchestrator and agents — stateless CLI, no daemon
+**Current focus:** Defining requirements for v1.8 Smart Agent Management
 
 ## Current Position
 
 Phase: Not started (defining requirements)
 Plan: —
 Status: Defining requirements
-Last activity: 2026-03-18 — feat(init): add --tui flag to init command; npm bumped to v1.5.7 (binaryVersion 1.8)
+Last activity: 2026-03-19 — Milestone v1.8 redefined as Smart Agent Management
 
 ## Code Status
 
