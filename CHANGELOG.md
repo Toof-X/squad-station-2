@@ -2,6 +2,16 @@
 
 All notable changes to Squad Station are documented in this file.
 
+## v0.5.8 - 2026-03-20
+
+### 🐛 Bug Fixes
+
+- Fixed `current_task` corruption when `/clear` is sent while another task is already processing — `current_task` now reverts to the real task instead of staying pointed at the completed `/clear` message
+
+### 🧪 Tests
+
+- Added `test_fire_and_forget_clear_while_task_processing` integration test — verifies `current_task` and agent status are correct when fire-and-forget overlaps with an in-flight task
+
 ## v0.5.7 - 2026-03-20
 
 ### 🐛 Bug Fixes

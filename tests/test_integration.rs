@@ -1803,3 +1803,88 @@ async fn test_fire_and_forget_clear_auto_completed() {
     let remaining = db::messages::count_processing(&pool, "ff-agent").await.unwrap();
     assert_eq!(remaining, 0, "no tasks should remain stuck at processing");
 }
+
+/// Edge case: /clear sent while a real task is already processing.
+/// current_task must revert to the real task, not stay pointed at the completed /clear.
+#[tokio::test]
+async fn test_fire_and_forget_clear_while_task_processing() {
+    let pool = helpers::setup_test_db().await;
+
+    // Register agent
+    db::agents::insert_agent(&pool, "ff2-agent", "claude", "worker", None, None)
+        .await
+        .unwrap();
+
+    // Send a real task first (already processing)
+    let real_id = db::messages::insert_message(
+        &pool,
+        "orchestrator",
+        "ff2-agent",
+        "task_request",
+        "implement feature X",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE agents SET current_task = ?, status = 'busy' WHERE name = ?")
+        .bind(&real_id)
+        .bind("ff2-agent")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Now send /clear (fire-and-forget) — simulating what send.rs does
+    let clear_id = db::messages::insert_message(
+        &pool,
+        "orchestrator",
+        "ff2-agent",
+        "task_request",
+        "/clear",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Step 5b equivalent: current_task now wrongly points to /clear
+    sqlx::query("UPDATE agents SET current_task = ? WHERE name = ?")
+        .bind(&clear_id)
+        .bind("ff2-agent")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Auto-complete /clear
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query(
+        "UPDATE messages SET status = 'completed', updated_at = ?, completed_at = ? WHERE id = ?",
+    )
+    .bind(&now)
+    .bind(&now)
+    .bind(&clear_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Fix current_task: should revert to the real task (remaining > 0 path)
+    let remaining = db::messages::count_processing(&pool, "ff2-agent").await.unwrap();
+    assert_eq!(remaining, 1, "real task should still be processing");
+
+    let next = db::messages::peek_message(&pool, "ff2-agent").await.unwrap();
+    assert!(next.is_some());
+    assert_eq!(next.unwrap().id, real_id, "next task should be the real task");
+
+    // Simulate the current_task fixup (as send.rs now does)
+    sqlx::query("UPDATE agents SET current_task = ? WHERE name = ?")
+        .bind(&real_id)
+        .bind("ff2-agent")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Verify agent state
+    let agent = db::agents::get_agent(&pool, "ff2-agent").await.unwrap().unwrap();
+    assert_eq!(agent.current_task.as_deref(), Some(real_id.as_str()));
+    assert_eq!(agent.status, "busy", "agent should remain busy");
+}

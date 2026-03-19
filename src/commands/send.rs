@@ -92,9 +92,19 @@ pub async fn run(
         .execute(&pool)
         .await?;
 
-        // Reset agent to idle if no other processing tasks remain
+        // Restore agent state: point current_task to next real task, or go idle
         let remaining = db::messages::count_processing(&pool, &agent).await?;
-        if remaining == 0 {
+        if remaining > 0 {
+            // current_task was set to the /clear message in step 5b — fix it
+            let next = db::messages::peek_message(&pool, &agent).await?;
+            if let Some(next_msg) = next {
+                sqlx::query("UPDATE agents SET current_task = ? WHERE name = ?")
+                    .bind(&next_msg.id)
+                    .bind(&agent)
+                    .execute(&pool)
+                    .await?;
+            }
+        } else {
             sqlx::query("UPDATE agents SET current_task = NULL WHERE name = ?")
                 .bind(&agent)
                 .execute(&pool)
