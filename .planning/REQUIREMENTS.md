@@ -27,11 +27,11 @@ Requirements for Smart Agent Management milestone. Each maps to roadmap phases.
 ### Agent Role Templates
 
 - [x] **TMPL-01**: Init wizard presents a predefined role menu with 8-12 role templates (e.g., frontend-engineer, backend-engineer, qa-engineer, architect, devops-engineer, code-reviewer)
-- [ ] **TMPL-02**: Each template includes role name, description text, default model suggestion, and routing hints
+- [x] **TMPL-02**: Each template includes role name, description text, default model suggestion, and routing hints
 - [x] **TMPL-03**: User can select "Custom" to skip templates and enter free-text role/description (existing behavior preserved)
 - [x] **TMPL-04**: Selecting a template auto-fills the model selector with the template's suggested model (user can override)
-- [ ] **TMPL-05**: Template routing hints are embedded in `squad-orchestrator.md` via the context command
-- [ ] **TMPL-06**: Template list ordering adapts based on detected SDD workflow (bmad/gsd/superpower) from wizard page 1
+- [x] **TMPL-05**: Template routing hints are embedded in `squad-orchestrator.md` via the context command
+- [x] **TMPL-06**: Template list ordering adapts based on detected SDD workflow (bmad/gsd/superpower) from wizard page 1
 
 ## v2 Requirements
 
@@ -79,11 +79,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLONE-05 | Phase 23 | Complete |
 | CLONE-06 | Phase 23 | Complete |
 | TMPL-01 | Phase 24 | Complete |
-| TMPL-02 | Phase 24 | Pending |
+| TMPL-02 | Phase 24 | Complete |
 | TMPL-03 | Phase 24 | Complete |
 | TMPL-04 | Phase 24 | Complete |
-| TMPL-05 | Phase 24 | Pending |
-| TMPL-06 | Phase 24 | Pending |
+| TMPL-05 | Phase 24 | Complete |
+| TMPL-06 | Phase 24 | Complete |
 
 **Coverage:**
 - v1.8 requirements: 17 total
