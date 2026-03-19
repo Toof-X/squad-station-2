@@ -1,216 +1,197 @@
 # Project Research Summary
 
-**Project:** squad-station v1.8 — Install Subcommand, Folder-Name Default, Orchestrator Processing State
-**Domain:** Rust CLI — stateless AI agent fleet orchestration with embedded SQLite, ratatui TUI, and tmux integration
-**Researched:** 2026-03-18
+**Project:** Squad Station v1.8 — Smart Agent Management
+**Domain:** Rust CLI — stateless binary with embedded SQLite, ratatui TUI, tmux integration
+**Researched:** 2026-03-19
 **Confidence:** HIGH
 
 ## Executive Summary
 
-Squad Station v1.8 is a focused feature increment on top of a stable, well-tested v1.7 foundation. The three additions — a Rust `install` subcommand, folder-name-as-project-name defaulting, and orchestrator "processing" state detection via tmux pane polling — all share a key characteristic: zero new Cargo dependencies. The existing stack (clap 4.5, ratatui 0.30, tokio 1.37, sqlx 0.8, crossterm 0.29, and Rust stdlib) is fully sufficient. The recommended approach treats these three features as independent work streams with a clear build order dictated by shared file ownership rather than logical dependencies.
+Squad Station v1.8 adds three capabilities to an already-solid v1.7 foundation: agent role templates embedded in the init wizard, orchestrator intelligence data surfaced in `squad-orchestrator.md`, and a new `clone` subcommand for dynamic agent duplication. All three features are implementable with zero new Rust crates — the existing dependency set (clap 4.5, sqlx 0.8, chrono 0.4, ratatui 0.30, tokio 1, serde/serde_json 1.0) covers every requirement. The only schema addition is a single `ALTER TABLE ADD COLUMN` migration for `busy_since` to enable accurate busy-time tracking. Architecture research confirms each feature maps cleanly to established patterns in the codebase without requiring new cross-cutting concerns.
 
-The recommended implementation sequence is: (1) lay the tmux `capture_pane` foundation and processing-state display infrastructure, (2) wire the pane polling into the TUI refresh loop with the correct DB write pattern, (3) inject folder-name defaults into the wizard and dashboard, then (4) add the `install` subcommand and update distribution files. This order minimizes rebase conflicts on `ui.rs` and `tmux.rs`, which are the most heavily touched files. All three features can be reviewed in isolation once landed.
+The recommended implementation order, grounded in dependency analysis, is: (1) orchestrator intelligence data first — it gives the orchestrator the signal it needs to decide when to clone; (2) dynamic agent cloning second — a clean command-per-file addition that reuses existing DB CRUD and tmux session launch; (3) agent role templates in the wizard last — entirely self-contained to `wizard.rs` and independent of runtime orchestration behavior. This ordering keeps each phase focused, avoids refactoring pressure, and delivers immediate orchestrator value before the UX polish.
 
-The highest-risk area is orchestrator pane-state detection. Scraping terminal UI output for semantic state is inherently heuristic — false positives (always showing "processing") and blocked async executor threads are the two most dangerous failure modes. Both are preventable by design: isolate the classification logic in a pure testable function, poll only the orchestrator (not all agents), use a separate slower interval (10–15s) for pane polling vs. the existing 3s DB refresh, and treat the detected state as a TUI-only overlay rather than a DB status value. The `install` subcommand carries its own secondary risk: a JS/Rust version mismatch during release can break `npx squad-station install` with a clap parse error. The safest mitigation is to keep the npm auto-launch as a bare binary call and document `install --tui` as the explicit user-facing form.
-
----
+The most critical risks are concentrated in the clone command: name collision between DB state and orphaned tmux sessions after re-init, partial success (tmux launched but DB write failed or vice versa), missing context regeneration after a successful clone, and accidental orchestrator cloning breaking the signal routing chain. All are preventable with explicitly specified guards and tests. The orchestrator intelligence feature carries one significant design risk: embedding static metric values in a snapshot file creates stale-data misrouting — the correct pattern is embedding CLI commands for live re-query rather than pre-computed tables.
 
 ## Key Findings
 
 ### Recommended Stack
 
-No new Rust crates are needed for v1.8. All three features are implementable with the existing dependency set and Rust stdlib primitives. The only external-surface change is in the npm layer: adding a `"scripts"` block to `package.json` and a one-line change to `install.sh`.
+No new Rust crates are required for any v1.8 feature. All three capabilities use the existing dependency set. The only infrastructure change is one SQL migration file adding `busy_since TEXT DEFAULT NULL` to the `agents` table, following the established `ALTER TABLE ADD COLUMN` pattern from migrations 0003 and 0004. Role templates are compile-time Rust constants (`&[RoleTemplate]`) — static structs are zero-cost at startup, compile-time validated, and require no file-read code path. Template data must not be stored in TOML or JSON files, as that would add a new dependency and a fallible parse path for data that never changes at runtime.
 
-**Core technologies (unchanged from v1.7):**
-- **clap 4.5.60** — CLI subcommand dispatch — add `Install { tui: bool }` variant; no version change, no new dep
-- **ratatui 0.30 + crossterm 0.29** — TUI rendering and TTY detection — extend existing patterns, no change
-- **tokio 1.37** — async runtime — `tokio::time::interval` already available; `tokio::process::Command` recommended for non-blocking capture-pane calls in the TUI loop
-- **sqlx 0.8 + SQLite WAL** — persistence — no schema migration needed; `processing` is TUI-only (not written to DB)
-- **std::env::current_dir() + Path::file_name()** — zero-cost folder-name derivation — no crate needed
-
-**Rejected alternatives:** `reqwest` (+1.5 MB binary size, musl TLS complications — use `curl` via subprocess instead), `dirs` crate (removed in v1.4 — stdlib suffices), `regex` (start with `str::contains`; promote only if classification complexity grows), `notify` filesystem watcher (pane polling via `capture-pane` is the correct tmux-native pattern).
+**Core technologies — no version changes:**
+- **clap 4.5**: CLI dispatch — add `Clone` variant to `Commands` enum, same derive pattern as all other subcommands
+- **sqlx 0.8**: SQLite queries + migrations — one new migration (`0005_v18_metrics.sql`); all query patterns already established
+- **chrono 0.4**: Timestamp arithmetic — `signed_duration_since` + `parse_from_rfc3339` for busy-time duration; already imported
+- **ratatui 0.30**: TUI rendering — template selector reuses existing `List` widget + `ListState` pattern from Provider/Model selectors; no new widget types
+- **serde_json 1.0**: JSON output — `serde_json::json!` already used in every command; clone output follows same pattern
+- **Rust stdlib**: Clone name auto-increment — `str::rfind`, `str::parse::<u32>()`, `format!`; no regex crate needed
 
 ### Expected Features
 
-**Must have (table stakes — P1):**
-- `squad-station install [--tui]` — bare = one-line silent confirmation + exit 0; `--tui` = launch welcome TUI with TTY guard; every serious CLI has a discrete install command
-- Update npm postinstall and curl installer to call `install --tui` — required for the install subcommand to be the canonical path rather than dead code
-- Folder name pre-filled in wizard project name field — universal scaffolding convention (`cargo init`, `npm create vite`, `create-next-app` all do this)
-- Folder name fallback in `generate_squad_yml()` — prevents broken YAML with empty `project:` field, which breaks agent auto-naming (`<project>-<tool>-<role>`)
-- Dashboard title shows project name from config — makes TUI feel scoped to the current project rather than a generic debug tool
+Research confirmed the feature set against CrewAI, AutoGen, LangGraph, MetaGPT, and Microsoft multi-agent pattern documentation. All five PROJECT.md active requirements are validated as correct scope for v1.8.
 
-**Should have (differentiators — P2):**
-- Orchestrator "processing" state indicator in TUI dashboard — no competing tool (tmuxcc, NTM, Ralph TUI, TUICommander) distinguishes orchestrator-idle vs. orchestrator-mid-response; reduces unnecessary interrupts from human observers
+**Must have (table stakes):**
+- Predefined role menu in wizard (8+ templates: orchestrator, frontend-engineer, backend-engineer, fullstack-engineer, qa-engineer, devops-engineer, architect, code-reviewer, custom) — every multi-agent framework ships these; absence makes setup feel unfinished
+- Custom role escape hatch in wizard — templating systems without a custom option exclude legitimate use cases
+- Model pre-fill from template selection — implied by role; requiring manual model selection after template pick is unnecessary friction
+- Routing hints from templates embedded in `squad-orchestrator.md` — CrewAI and MetaGPT both encode role goals into orchestration context; without this the orchestrator has no specialization signal
+- `squad-station clone <agent>` command — dynamic scaling is a core expectation in workload-aware multi-agent systems; without it the orchestrator cannot expand the fleet
+- Pending message count per agent in orchestrator context — fundamental overload detection signal; orchestrator cannot reason about queue depth without it
+- Busy-time tracking in orchestrator context — detects stuck agents; `status_updated_at` already exists in the schema
 
-**Defer (post-v1.8):**
-- Richer orchestrator state: distinguish "thinking" vs. "waiting for approval" vs. "idle at shell" — requires provider-specific content patterns beyond basic prompt regex
-- `--silent` flag as explicit synonym for bare install
-- Install subcommand with version pinning (`--version x.y.z`)
-- TUI project switcher (significant `ui.rs` refactor)
+**Should have (differentiators):**
+- Task-role alignment hints in `squad-orchestrator.md` — lightweight keyword overlap between recent task bodies and role/description; unique signal no competing tool provides in a file-based context model
+- Orchestrator-controlled cloning (not auto-scaling) — deliberately keeps scaling decisions with the AI; CLI provides mechanism, AI decides when; correct abstraction for semantic workload reasoning
+- Auto-incremented clone naming with project prefix — deterministic, human-readable, parseable by the orchestrator without additional metadata (unlike UUIDs)
+- SDD-aware template ordering in wizard — reorders (not filters) template list based on detected workflow; proactive guidance competitors lack
 
-**Anti-features (do not build):**
-- Buffer-diff typing detection — tmux capture-pane returns a static rendered screen, not a keystroke stream; diff noise creates false positives
-- Block `send` when orchestrator is "processing" — violates stateless design, introduces race conditions
-- Auto-detect project name from git remote URL — brittle, adds git subprocess dependency; folder name is universally available
+**Defer to v2+:**
+- `clone --n 3 <agent>` batch clone shorthand — add after single clone is validated
+- Clone count limit guardrail — warn when more than N agents with same role exist; add when teams hit terminal real-estate limits
+- Task-role alignment scoring with ML embeddings — binary size and inference latency are prohibitive at team scale
+- Template versioning and user-defined local template registry — relevant only at larger user scale
+- Metrics history (snapshots over time) — requires an `agent_events` table; defer until orchestrators need trend data
 
 ### Architecture Approach
 
-The v1.8 changes are additive layers on a stable layered architecture: CLI dispatch → command handlers → tmux abstraction + DB layer. All new code follows three established patterns: command-per-file (`pub async fn run(...)` in a new `install.rs`), connect-per-refresh for writable pools in the TUI (open a writable `db::connect()` only when a status write is needed; drop immediately after), and argument-builder functions in `tmux.rs` (private `_args()` for unit testability, public function calls `Command::new("tmux")`).
+The v1.8 features integrate as additive changes to the existing layered architecture: CLI dispatch → command handlers → DB layer → SQLite (WAL). No new layers, no new cross-cutting infrastructure. Each feature follows a named pattern already in use in the codebase: `clone.rs` follows command-per-file; `agent_metrics()` follows DB-as-thin-CRUD; `busy_duration_seconds()` follows pure-fn for testability; template data follows compile-time constants. The connect-per-refresh pattern in `ui.rs` means cloned agents appear in the TUI dashboard within one 3-second poll cycle with zero TUI code changes.
 
-**Files changed across all three features:**
+**Major components changed:**
+1. `src/commands/wizard.rs` — add `RoleTemplate` struct, `ROLE_TEMPLATES` const, `TemplatePickerPageState` in `WizardState`, pre-fill logic, new render branch, hint text
+2. `src/db/messages.rs` + `src/db/agents.rs` — add `AgentMetrics` struct, `agent_metrics()` async query, `busy_duration_seconds()` pure fn
+3. `src/commands/context.rs` — update `build_orchestrator_md()` signature, add Fleet Status section
+4. `src/commands/clone.rs` (NEW) + `src/cli.rs` + `src/commands/mod.rs` + `src/main.rs` — full clone subcommand
+5. `src/db/migrations/0005_v18_metrics.sql` (NEW) — single `ALTER TABLE ADD COLUMN` for `busy_since`
 
-| File | Change | Feature |
-|------|--------|---------|
-| `src/cli.rs` | Add `Install { tui: bool }` variant | install |
-| `src/commands/install.rs` | NEW — `run(tui: bool)` handler | install |
-| `src/commands/mod.rs` | Add `pub mod install;` | install |
-| `src/main.rs` | Add `Install { tui }` match arm | install |
-| `src/commands/wizard.rs` | Pre-populate `project_input` with folder name | folder default |
-| `src/commands/ui.rs` | Add `project: String` to `App`; title bar; `processing` color; capture-pane poll | folder default + processing |
-| `src/tmux.rs` | Add `capture_pane_args()` + `capture_pane()` | processing |
-| `src/commands/helpers.rs` | Add `"processing"` arm to `colorize_agent_status()` | processing |
-| `npm-package/bin/run.js` | Update auto-launch call | install |
-| `install.sh` | Update exec target | install |
-
-**Key architectural decision — processing state storage:** Treat `processing` as a TUI-only overlay, not a DB status value. DB status tracks hook-driven lifecycle (`idle`/`busy`/`dead`). The TUI optionally overlays a `processing` indicator from pane polling displayed alongside (not replacing) the DB status. This avoids a migration, keeps the DB contract stable, and prevents `squad-station status` and `agents --json` from breaking.
+**Critical architectural constraints to preserve:**
+- `build_orchestrator_md()` must remain a pure `fn` — fetch `Vec<AgentMetrics>` in `context::run()` and pass as a parameter; never make DB calls inside the function
+- Clones are DB-only entries; never write clones to `squad.yml` (same as `register` behavior)
+- Routing hints live in compile-time `ROLE_TEMPLATES` constants, not in a DB column
 
 ### Critical Pitfalls
 
-1. **npm/Rust `install` command boundary confusion** — `npx squad-station install` is intercepted by `run.js` (JS download path) before reaching the binary. The Rust `install` subcommand is the post-binary-install welcome UX path. These must stay separate. Prevention: keep `run.js` auto-launch as a bare binary call; `install --tui` is the explicitly user-invoked form. Document the JS/Rust boundary in code comments.
+1. **Clone name collision (DB vs. tmux reality)** — After re-init, orphaned tmux sessions exist that the DB no longer knows about. Auto-increment scanning only the DB produces a name that tmux rejects with "session already exists." Prevention: `generate_clone_name()` must check both `get_agent(pool, candidate)` AND `tmux::session_exists(candidate)` before committing to a name.
 
-2. **`current_dir()` edge cases corrupt tmux session names** — `file_name()` returns `None` at filesystem root; `to_string_lossy()` introduces replacement characters for non-UTF-8 paths; directory names with spaces break tmux session creation. Prevention: apply an extended sanitizer at derivation time (`[a-z0-9A-Z_-]` allowlist), handle `None` gracefully with empty-string fallback, and extract derivation to a pure function accepting `&Path` for testability.
+2. **Partial clone success — tmux launched before DB write** — If the tmux session is launched before DB registration, a DB write failure leaves an orphaned session invisible to the signal chain. Prevention: always DB-first; if `tmux::launch_agent()` fails after DB write, immediately call compensating `delete_agent_by_name()`.
 
-3. **`capture-pane` called on non-existent session floods TUI with errors** — orchestrators with `tool = "antigravity"` have no tmux session; dead sessions no longer exist after `squad-station close`. Prevention: explicit guard chain — check `agent.tool != "antigravity"`, then `tmux::session_exists()`, then return `None` on any error; never surface capture-pane failures as user-visible errors.
+3. **Context not regenerated after clone** — The orchestrator never learns about the clone because `squad-orchestrator.md` is only updated when `context` is explicitly invoked. Prevention: `clone::run()` must call `build_orchestrator_md()` directly as its final step and print explicit user instructions to reload `/squad-orchestrator` in the orchestrator session.
 
-4. **False positive "processing" detection creates a permanent "processing" state** — idle prompt lines (`>`, `$`) look like activity; stale pane content from completed tasks triggers the heuristic. Prevention: conservative provider-specific patterns, prefer DB state when ambiguous, implement `classify_pane_output()` as a pure testable function with no I/O.
+4. **Stale metrics in orchestrator playbook** — Embedding pre-computed metric values creates stale-data misrouting. Prevention: embed CLI commands for live re-query (`squad-station status --json`, `squad-station agents`) rather than static tables; any static snapshot must include a generated-at timestamp.
 
-5. **Blocking `std::process::Command` for capture-pane blocks the tokio executor** — the existing tmux functions use blocking subprocess calls; adding capture-pane to the 3s TUI refresh loop creates visible UI lag and drops key events under load. Prevention: use `tokio::process::Command` for capture-pane, poll on a separate 10–15s interval (not the 3s DB interval), cache last pane content so slow calls don't freeze the render cycle.
+5. **Cloning the orchestrator creates a routing loop** — Two `role == "orchestrator"` agents break the signal routing chain silently (`get_orchestrator` returns the wrong record). Prevention: reject `role == "orchestrator"` with a clear error as the first guard in `clone::run()`, before any DB writes.
 
-6. **Version mismatch breaks `npx squad-station install` during partial release** — if the npm package is published with `spawnSync(destPath, ['install', '--tui'])` before the new binary is released, users on old binaries get a clap parse error. Prevention: keep auto-launch as bare `spawnSync(destPath, [])` in v1.8; or add version detection in JS before using the subcommand form.
-
----
+6. **Template model strings drift from validation allowlist** — Templates compiled into the binary reference model aliases independently of `valid_models_for()` in `config.rs`. Drift causes validation errors on wizard-offered selections. Prevention: templates omit model strings entirely, or a CI test validates each template's generated config against `validate_agent_config()`.
 
 ## Implications for Roadmap
 
-All three features are mutually independent and can be developed in any order. The recommended sequence below is driven by shared file ownership (minimizing merge conflicts on `ui.rs`) and by the principle of laying stable foundations before wiring up polling logic.
+Based on the combined research, four phases are recommended. The first three are required for v1.8; the fourth is optional polish.
 
-### Phase 1: `capture_pane` Foundation and Processing Display Infrastructure
+### Phase 1: Orchestrator Intelligence Data
 
-**Rationale:** Pure additions to `tmux.rs` and `helpers.rs` with no side effects. Landing the arg-builder function and colorize arm first makes Phase 2's TUI wiring a clean, focused change. These foundational modules should be stable before the event loop changes land.
+**Rationale:** Pure additive DB + context changes with no side effects. Landing this first gives the orchestrator the workload signal it needs to make informed clone decisions — making the clone command immediately useful upon delivery. The `build_orchestrator_md()` signature change requires updating existing tests (pass `&[]` for metrics), which is a mechanical fix best completed before any other feature builds on top of context generation.
 
-**Delivers:** `tmux::capture_pane()` (unit-testable via arg-builder pattern), `"processing"` color arm in `helpers.rs` and `ui.rs::status_color()`, `classify_pane_output(output: &str) -> bool` pure function
+**Delivers:** Live fleet metrics in `squad-orchestrator.md` — pending message count per agent, busy-time duration, and routing guidance with clone hints embedded as CLI commands (not static values).
 
-**Addresses features:** Orchestrator processing state (display infrastructure only)
+**Addresses:** "Message-per-agent count in orchestrator context" (P1) and "Busy-time in orchestrator context" (P1) from FEATURES.md.
 
-**Avoids pitfalls:** Arg-builder pattern and pure classification function enforced from the start, before any polling code is written
+**Avoids:** Stale metrics pitfall — embed CLI commands for live re-query, not pre-computed tables. Document `busy_time` limitations (resets on re-init; represents "time in current state," not "total runtime").
 
-**Research flag:** Standard patterns — follows established `tmux.rs` arg-builder pattern exactly; no deeper research needed
+**Files:** `src/db/messages.rs`, `src/db/agents.rs`, `src/commands/context.rs`, `src/db/migrations/0005_v18_metrics.sql`
 
----
+### Phase 2: Dynamic Agent Cloning
 
-### Phase 2: Processing State Detection in TUI Refresh Loop
+**Rationale:** The orchestrator now has workload data from Phase 1 and can act on it immediately via `clone`. This is the highest-value runtime feature. Building it second keeps the new command file isolated and avoids any entanglement with wizard changes.
 
-**Rationale:** Requires Phase 1 `capture_pane()` to exist. Contains the most risk (heuristic accuracy, async blocking, DB write pattern) and should be validated early while research findings are fresh.
+**Delivers:** `squad-station clone <agent>` command — reads source config, auto-increments name (checking both DB and tmux), registers in DB, launches tmux session, regenerates `squad-orchestrator.md` as a final step.
 
-**Delivers:** Live orchestrator status polling in the TUI dashboard with guard chain (antigravity check, dead session check, error fallback), separate 10–15s poll interval, TUI-only overlay using `classify_pane_output()`, `tokio::process::Command` for non-blocking subprocess
+**Addresses:** "Dynamic agent cloning" (P1) and "Orchestrator-controlled cloning" (differentiator) from FEATURES.md.
 
-**Addresses features:** Orchestrator "processing" state (P2 differentiator — fully shipped)
+**Avoids:** All clone-specific pitfalls — name collision (check DB + tmux), partial success (DB-first with compensating rollback), missing context regeneration (auto-call in clone handler), orchestrator cloning (reject `role == "orchestrator"` first), session name sanitization (apply `config::sanitize_session_name()` to derived names).
 
-**Avoids pitfalls:** Pitfall 3 (guard chain), Pitfall 4 (conservative heuristic, pure function), Pitfall 5 (async-safe subprocess, separate interval), Pitfall 9 (TUI-only — no DB contract change)
+**Files:** `src/commands/clone.rs` (NEW), `src/cli.rs`, `src/commands/mod.rs`, `src/main.rs`
 
-**Research flag:** Needs attention during implementation — the provider-specific heuristic patterns for `classify_pane_output()` (Claude Code vs. Gemini CLI) require manual testing against real sessions before the patterns are finalized. The DB-vs-TUI-only decision must be explicitly locked before code is written.
+### Phase 3: Agent Role Templates in Wizard
 
----
+**Rationale:** Entirely self-contained to `wizard.rs`. Does not affect clone, metrics, or DB at all. Improves onboarding for the v1.8 release but does not block any orchestrator runtime functionality. Building last keeps wizard changes separate and avoids merge conflicts with Phases 1 and 2.
 
-### Phase 3: Folder Name as Project Name Default
+**Delivers:** Role template selector page in the init wizard — 8+ predefined templates with role, description, model pre-fill, and routing hints. Custom option preserves existing free-text behavior. SDD-aware template ordering when workflow is detected.
 
-**Rationale:** Fully independent of Phases 1 and 2. Zero risk to existing functionality. Batching the `ui.rs` title bar change after Phase 2's larger `ui.rs` changes reduces merge noise.
+**Addresses:** "Predefined role menu in wizard" (P1), "Template includes model suggestion" (P1), "Template includes routing hints" (P2), "SDD-aware template ordering" (P2) from FEATURES.md.
 
-**Delivers:** Pre-populated project name field in wizard (sanitized, with cursor at end), project name in dashboard title bar, folder-name fallback in `generate_squad_yml()`, pure derivation function accepting `&Path` for testability
+**Avoids:** Template model drift pitfall — CI test validates each template's generated config against `validate_agent_config()`. Model field in templates either omitted or references allowlist aliases only.
 
-**Addresses features:** Folder name pre-fill (P1), dashboard title (P1), squad.yml fallback (P1)
+**Files:** `src/commands/wizard.rs`
 
-**Avoids pitfalls:** Pitfall 2 (sanitization and `None` guard built in from the start), Pitfall 7 (wizard validation reviewed alongside the default introduction), Pitfall 8 (pure function accepting `&Path` for testability — no direct `current_dir()` call inside unit-tested code)
+### Phase 4: TUI Live Update Polish (Optional)
 
-**Research flag:** Standard patterns — `cargo init` convention is universal; sanitization approach is straightforward; no deeper research needed
+**Rationale:** The connect-per-refresh pattern already picks up cloned agents within one 3-second poll cycle — this phase is cosmetic only. Include if time permits before v1.8 release; skip if not without affecting any v1.8 functional requirement.
 
----
+**Delivers:** Visual highlight for newly-appeared agents in the TUI agent list for one refresh cycle. Optional identification of clone agents by naming convention suffix in the display.
 
-### Phase 4: `install` Subcommand and Distribution Updates
-
-**Rationale:** Most review surface area (new file + CLI enum + distribution files). Independent of Phases 1–3, but benefits from landing after core binary changes are stable. The JS/Rust boundary decision must be settled before writing code.
-
-**Delivers:** `Commands::Install { tui: bool }`, `src/commands/install.rs` config-free handler, updated `npm-package/bin/run.js` and `install.sh`, documented JS/Rust ownership boundary in code comments
-
-**Addresses features:** `install` subcommand (P1 table stakes), unified install path (P1 differentiator)
-
-**Avoids pitfalls:** Pitfall 1 (clean JS/Rust boundary documented), Pitfall 6 (keep npm auto-launch as bare call to avoid version coupling), Pitfall 10 (install handler explicitly config-free — no `load_config()` before `squad.yml` exists)
-
-**Research flag:** Standard patterns for CLI subcommand structure. The npm/Rust ownership boundary is a documented design decision (not a research gap) that must be written into the implementation plan before coding starts.
-
----
+**Files:** `src/commands/ui.rs` (optional `seen_agents: HashSet<String>` addition)
 
 ### Phase Ordering Rationale
 
-- **Phases 1 and 2 are sequenced together** because they share `tmux.rs` and `ui.rs`. Landing the pure foundation (Phase 1) before wiring the polling loop (Phase 2) avoids a single large diff that combines display infrastructure with event loop logic.
-- **Phase 3 is independent** of all other phases and could be Phase 1. It is placed third only to avoid a second `ui.rs` PR conflicting with Phase 2's larger changes.
-- **Phase 4 is last** because it has the most distribution touchpoints and the longest review cycle. The core binary features (Phases 1–3) should be stable before the CLI surface and distribution files change.
-- **All three features can be parallelized** by separate developers. The only coordination point is `ui.rs`: Phase 2 (processing color + poll) and Phase 3 (title bar + project field) both modify `ui.rs`. Assign these to the same developer or coordinate the merge order explicitly.
+- Phase 1 before Phase 2: The context file is the coordination mechanism. Cloning without updated orchestrator context produces agents the orchestrator never routes to (Pitfall 3). Phase 1 also establishes the `build_orchestrator_md()` signature change that Phase 2 must call.
+- Phase 2 before Phase 3: Runtime orchestration features (metrics + cloning) deliver higher impact than onboarding UX. Phase 3 is independent and carries no dependencies on Phases 1 or 2.
+- Phase 4 last: Optional and purely cosmetic. The live update already works; the phase only adds optional highlighting.
+- All three features are confirmed independent by the FEATURES.md dependency graph — parallel development is feasible if resources allow, but the sequential order above minimizes integration risk.
 
 ### Research Flags
 
-Phases needing attention during planning or implementation:
-- **Phase 2 (pane polling):** Provider-specific heuristic patterns for `classify_pane_output()` require manual validation against real Claude Code and Gemini CLI sessions. The DB-vs-TUI-only overlay decision is an architectural choice that must be documented in the implementation plan before any code is written.
+Phases requiring deeper attention during planning:
+- **Phase 2 (Clone command):** The five critical pitfalls each require explicit acceptance criteria before coding begins. The implementation plan must enumerate: double-check for name collision (DB + tmux), DB-first ordering with compensating rollback, auto-context-regeneration, orchestrator rejection guard, and session name sanitization. None of these are standard patterns — each requires a specific test.
+- **Phase 1 (Playbook text design):** The exact wording of the Fleet Status section and routing guidance in `squad-orchestrator.md` is a UX design decision with correctness implications. Draft and review the generated markdown template before writing any query code.
 
-Phases with standard, well-documented patterns:
-- **Phase 1 (capture_pane foundation):** Follows `tmux.rs` arg-builder pattern exactly. No research needed.
-- **Phase 3 (folder name default):** `cargo init` convention is universal; sanitization is straightforward. No research needed.
-- **Phase 4 (install subcommand):** clap subcommand pattern is well-established. JS/Rust boundary is a design decision, not a research gap.
-
----
+Phases with standard patterns (skip research-phase):
+- **Phase 3 (Templates):** Wizard integration follows the established `List` widget + `ListState` radio-selector pattern visible in the current `wizard.rs` for Provider and Model selectors. No research needed; the implementation pattern is directly observable in the existing code.
+- **Phase 4 (TUI polish):** Adding a `HashSet<String>` to `App` state is a trivial additive change. No research needed.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All findings derived from direct `Cargo.lock` inspection and codebase review. Zero new dependencies confirmed across all three features. |
-| Features | HIGH | Features are well-defined; ecosystem patterns verified (clig.dev, cargo init, tmuxcc, NTM, TUICommander). Anti-features explicitly identified with justification. |
-| Architecture | HIGH | All findings from direct source inspection of v1.7 codebase. File change matrix is complete and verified against actual module structure. |
-| Pitfalls | HIGH | Based on direct codebase inspection plus patterns from v1.5–v1.7 development history. 10 specific pitfalls with phase-level prevention guidance and recovery costs. |
+| Stack | HIGH | Verified directly against `Cargo.toml` and all relevant source files. Zero new crates confirmed by inspecting every feature requirement against existing imports. |
+| Features | HIGH | PROJECT.md requirements cross-validated against CrewAI docs, Microsoft multi-agent patterns, DRTAG research, and IBM orchestration guidance. Ecosystem patterns confirmed for role templates (8-12 roles standard), dynamic cloning (master-clone architecture), and workload metrics (pending count + busy time). |
+| Architecture | HIGH | All findings from direct source inspection of the v1.7 codebase. Integration points verified against actual function signatures in `wizard.rs`, `context.rs`, `db/agents.rs`, `db/messages.rs`, `tmux.rs`, `cli.rs`, `main.rs`. No inferred behavior. |
+| Pitfalls | HIGH | All pitfalls grounded in direct codebase inspection (`signal.rs` GUARDs, `config.rs` allowlist, `db/agents.rs` upsert semantics) and the existing CONCERNS.md audit. Recovery strategies verified against available CLI commands. |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Pane content heuristic patterns:** The specific string patterns for detecting "processing" vs. "idle" in Claude Code and Gemini CLI panes cannot be finalized without manual testing against real sessions. The Phase 2 implementation plan should include a validation step (run the heuristic against known-idle and known-active sessions) before the code is merged.
-
-- **npm auto-launch backward compatibility:** The safest approach (keep bare invocation in `run.js`) is documented but not the only option. If the team wants to use `spawnSync(destPath, ['install', '--tui'])` in the auto-launch path, a version-detection guard must be added. This decision should be made explicitly during Phase 4 planning, not left to the implementor.
-
-- **`processing` DB vs. TUI-only decision:** Research recommends TUI-only overlay. If any future feature (e.g., `squad-station status` reporting processing state, external monitoring tools parsing `agents --json`) requires the DB value, a schema migration and complete consumer audit will be needed. Lock this decision at the start of Phase 2.
-
----
+- **Exact model aliases for templates:** Templates need model suggestions referencing valid aliases from `valid_models_for()` in `config.rs`. Read the allowlist before writing template constants to avoid the validation drift pitfall. Alternatively, omit model from templates entirely and rely on the wizard radio selector — the safer default.
+- **`busy_since` vs. `status_updated_at` discrepancy:** STACK.md recommends a new `busy_since` column (migration 0005) for accurate busy-time tracking, while ARCHITECTURE.md and FEATURES.md reference the existing `status_updated_at` column. Both approaches work; `busy_since` is more reliable (not overwritten on every status change). The implementation plan must pick one approach and specify it explicitly before Phase 1 work begins.
+- **Playbook text for Fleet Status section:** The exact format of the generated `squad-orchestrator.md` Fleet Status section — column layout, routing guidance wording, CLI command embed vs. static table decision — should be drafted and agreed before `build_orchestrator_md()` is modified. The wording has correctness implications for orchestrator behavior.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- Squad Station codebase v1.7 (direct inspection): `src/cli.rs`, `src/main.rs`, `src/commands/ui.rs`, `src/commands/wizard.rs`, `src/commands/init.rs`, `src/commands/helpers.rs`, `src/tmux.rs`, `src/db/agents.rs`, `src/db/migrations/`, `npm-package/bin/run.js`, `install.sh`
-- `Cargo.lock` (local) — confirmed locked versions: clap 4.5.60, ratatui 0.30.0, crossterm 0.29, tokio 1.37
-- Rust stdlib (stable since 1.70): `std::env::current_dir`, `Path::file_name`, `std::io::IsTerminal`, `OsStr::to_str` / `to_string_lossy`
-- [cargo init — The Cargo Book](https://doc.rust-lang.org/cargo/commands/cargo-init.html) — folder-name-as-default convention
-- [Command Line Interface Guidelines (clig.dev)](https://clig.dev/) — interactive/silent modes, flag conventions, TTY guard rationale
+
+- `Cargo.toml` (local codebase) — confirmed locked versions; zero new dependencies required
+- `src/commands/wizard.rs` (local codebase) — confirmed `List` widget + `ListState` radio-selector pattern; `AgentInput` struct fields; `WizardState` structure
+- `src/commands/context.rs` (local codebase) — confirmed `build_orchestrator_md()` as `pub fn`; string-building pattern; stateless snapshot design
+- `src/db/agents.rs` (local codebase) — confirmed `insert_agent`, `update_agent_status`, `get_agent`, `get_orchestrator` signatures; `status_updated_at` behavior; `delete_all_agents` re-init path
+- `src/db/messages.rs` (local codebase) — confirmed existing `status` and `to_agent` columns; `list_messages()` query patterns
+- `src/commands/signal.rs` (local codebase) — confirmed GUARD 3 (missing agent = silent exit) and GUARD 4 (orchestrator self-signal) behavior
+- `src/config.rs` (local codebase) — confirmed `VALID_PROVIDERS`, `valid_models_for()`, `sanitize_session_name()` APIs
+- `src/tmux.rs` (local codebase) — confirmed `launch_agent()`, `session_exists()`, `list_live_session_names()` availability
+- `src/db/migrations/` (local codebase) — confirmed `ALTER TABLE ADD COLUMN` pattern from migrations 0003/0004
+- `.planning/codebase/CONCERNS.md` — pre-existing audit covering tmux/DB sync risks, reconciliation duplication, single-writer pool limits
 
 ### Secondary (MEDIUM confidence)
-- [tmuxcc GitHub](https://github.com/nyanko3141592/tmuxcc) — pane content pattern detection for AI agent state
-- [TUICommander](https://tuicommander.com/) — agent status detection patterns, provider-specific regex approach
-- [Ralph TUI](https://ralph-tui.com/) — task execution state visualization in TUI dashboards
-- [tmux man page](https://man7.org/linux/man-pages/man1/tmux.1.html) — `capture-pane`, `display-message`, `pane_current_command`, session name restrictions
-- clap docs — unrecognized subcommand error behavior, `Commands` derive macro
-- tokio `process::Command` docs — non-blocking subprocess calls in async runtimes
 
-### Tertiary (LOW confidence — validate during implementation)
-- Provider-specific pane content patterns for Claude Code and Gemini CLI — documented from community observation; must be validated against real sessions before finalizing `classify_pane_output()`
+- [CrewAI Agents Documentation](https://docs.crewai.com/en/concepts/agents) — role, goal, backstory field patterns; software team role set
+- [Microsoft ISE Blog: Patterns for Building a Scalable Multi-Agent System](https://devblogs.microsoft.com/ise/multi-agent-systems-at-scale/) — dynamic agent spawning; master-clone architecture
+- [Frontiers in AI: Auto-scaling LLM-based multi-agent systems](https://www.frontiersin.org/journals/artificial-intelligence/articles/10.3389/frai.2025.1638227/full) — DRTAG pattern; clone-inherits-config pattern
+- [IBM: AI Agent Orchestration](https://www.ibm.com/think/topics/ai-agent-orchestration) — orchestrator metrics for workload balancing; pending task queue depth as primary signal
+- [Microsoft Azure: AI Agent Design Patterns](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) — multi-agent coordination patterns
+
+### Tertiary (LOW confidence)
+
+- [Agentic AI Systems Guide: Scaling Multi-Agent AI Systems](https://agenticaiguide.ai/ch_8/sec_8-3.html) — elastic scaling; stateless cloning patterns (single source, not independently verified)
 
 ---
-
-*Research completed: 2026-03-18*
+*Research completed: 2026-03-19*
 *Ready for roadmap: yes*

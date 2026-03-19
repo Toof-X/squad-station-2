@@ -1,8 +1,8 @@
 # Architecture Research
 
-**Domain:** Rust CLI — stateless binary with embedded SQLite, ratatui TUI, tmux integration (v1.8)
-**Researched:** 2026-03-18
-**Confidence:** HIGH — all findings derived from direct source inspection of the v1.7 codebase.
+**Domain:** Rust CLI — stateless binary with embedded SQLite, ratatui TUI, tmux integration (v1.8 Smart Agent Management)
+**Researched:** 2026-03-19
+**Confidence:** HIGH — all findings derived from direct source inspection of the v1.7 codebase. No external sources required; the question is integration-only, not ecosystem discovery.
 
 ---
 
@@ -17,7 +17,7 @@
 └──────────────────────────┬──────────────────────────────────────────┘
                            │
 ┌──────────────────────────▼──────────────────────────────────────────┐
-│                         CLI Dispatch (src/cli.rs)                    │
+│                       CLI Dispatch (src/cli.rs)                      │
 │   Cli { command: Option<Commands> }                                  │
 │   None  →  welcome TUI or print_welcome()                            │
 │   Some  →  match to subcommand handler                               │
@@ -29,355 +29,473 @@
 │  agents.rs   context.rs status.rs view.rs  peek.rs  register.rs      │
 │  list.rs     notify.rs  close.rs  reset.rs freeze.rs clean.rs        │
 │  diagram.rs  helpers.rs                                              │
-└──────┬─────────────────────────────┬───────────────────────────────┘
-       │                             │
-┌──────▼──────────┐        ┌─────────▼─────────────────────────────────┐
-│  src/tmux.rs    │        │  src/db/  (SQLite via sqlx)                │
-│  send_keys      │        │  mod.rs → connect() → pool setup           │
-│  inject_body    │        │  agents.rs → insert/get/list/update        │
-│  session_exists │        │  messages.rs → insert/list/update          │
-│  launch_agent   │        │  migrations/ → auto-applied on connect     │
-│  (no capture)   │        └────────────────────────────────────────────┘
+└──────┬─────────────────────────┬───────────────────────────────────┘
+       │                         │
+┌──────▼──────────┐    ┌─────────▼─────────────────────────────────┐
+│  src/tmux.rs    │    │  src/db/  (SQLite via sqlx)                │
+│  send_keys      │    │  mod.rs → connect() → pool setup           │
+│  inject_body    │    │  agents.rs → insert/get/list/update        │
+│  session_exists │    │  messages.rs → insert/list/update          │
+│  launch_agent   │    │  migrations/ → auto-applied on connect     │
+│  (arg builders) │    └────────────────────────────────────────────┘
 └─────────────────┘
 ```
 
-### Component Responsibilities
+### Existing Component Inventory
 
-| Component | Responsibility | v1.8 Status |
+| Component | Responsibility | v1.8 Impact |
 |-----------|----------------|-------------|
-| `src/main.rs` | Entry point, SIGPIPE handler, async runtime, None/Some dispatch | Minor: add Install match arm |
-| `src/cli.rs` | clap `Commands` enum; one variant per subcommand | Modify: add `Install { tui: bool }` |
-| `src/config.rs` | YAML parsing, DB path resolution, session name sanitization | No change |
-| `src/tmux.rs` | All tmux shell-outs (arg builders + public API) | Modify: add `capture_pane()` |
-| `src/db/agents.rs` | Agent CRUD, status updates | No schema change; `processing` is a new string value in free-form TEXT column |
-| `src/db/messages.rs` | Message CRUD, priority ordering | No change |
-| `src/db/migrations/` | SQL schema migrations, auto-applied by sqlx | No new migration needed |
-| `src/commands/welcome.rs` | Bare-invocation TUI, WelcomeAction routing | No change |
-| `src/commands/wizard.rs` | Multi-page ratatui form; project name input | Modify: pre-populate project field with folder name |
-| `src/commands/init.rs` | Wizard guard, squad.yml generation, agent registration | No change |
-| `src/commands/ui.rs` | `App` state, connect-per-refresh loop, ratatui draw | Modify: add `processing` color, project title, capture-pane poll |
-| `src/commands/helpers.rs` | `reconcile_agent_statuses`, colorize, format utilities | Modify: add `processing` to colorize |
+| `src/main.rs` | Entry point, SIGPIPE, None/Some dispatch | No change |
+| `src/cli.rs` | clap `Commands` enum | Modify: add `Clone` variant |
+| `src/config.rs` | YAML parsing, DB path, session name sanitization | No change |
+| `src/tmux.rs` | All tmux shell-outs, arg builders | No change for core features |
+| `src/db/agents.rs` | Agent CRUD, status updates | Modify: add metrics queries |
+| `src/db/messages.rs` | Message CRUD, priority ordering | Modify: add metrics queries |
+| `src/db/migrations/` | SQL schema, auto-applied by sqlx | No new migration needed |
+| `src/commands/wizard.rs` | Multi-page ratatui form, `WizardState`, `AgentInput` | Modify: add role template selection page |
+| `src/commands/init.rs` | Wizard guard, squad.yml generation, registration | No change |
+| `src/commands/context.rs` | `build_orchestrator_md()`, context file write | Modify: add metrics section |
+| `src/commands/ui.rs` | `App` state, connect-per-refresh loop, ratatui draw | Modify: reflect live clone addition |
+| `src/commands/helpers.rs` | Status colorization, reconcile utilities | No change |
 | `src/commands/diagram.rs` | ASCII agent fleet diagram | No change |
-| `npm-package/bin/run.js` | `npx squad-station install` handler + binary proxy | Modify (optional): delegate scaffolding to Rust binary |
-| `install.sh` | curl install path; TTY check + exec handoff | Modify (optional): change exec target |
 
 ---
 
 ## v1.8 Feature Integration Analysis
 
-### Feature 1: `squad-station install [--tui]`
+### Feature 1: Agent Role Templates in Wizard
 
-**Current state:** `npx squad-station install` is handled entirely in `npm-package/bin/run.js` (Node.js). There is no `install` subcommand in the Rust `Commands` enum. The curl `install.sh` auto-launches the bare binary after install.
+**Current state:** The wizard `WorkerPage` has four text/selector inputs: name, role (free-text or radio), provider, model. The `AgentInput` struct that exits the wizard carries `{ name, role, provider, model, description }`. There is no concept of a "template" — users type role and description manually.
+
+**What templates add:** A pre-selection step before the per-worker form. The user picks a template (e.g., "frontend-dev", "architect", "qa-engineer", "custom") from a list. Picking a non-custom template pre-fills `role`, `description`, and a suggested model. The user can still edit any field.
 
 **Integration points:**
 
-New Rust file: `src/commands/install.rs`
+New data in `src/commands/wizard.rs` — no new file needed:
 
 ```rust
-// src/commands/install.rs
-pub async fn run(tui: bool) -> anyhow::Result<()> {
-    // 1. Scaffold .squad/ project files (sdd playbooks + example configs)
-    // 2. If --tui: route to init wizard (no squad.yml) or dashboard (squad.yml exists)
-    //    - same logic as bare invocation None arm in main.rs
-    // 3. If no --tui: print next-steps text
+// src/commands/wizard.rs — new section, pure data (no I/O)
+pub struct RoleTemplate {
+    pub id: &'static str,        // "frontend-dev"
+    pub display: &'static str,   // "Frontend Developer"
+    pub role: &'static str,      // pre-fills AgentInput.role
+    pub description: &'static str,
+    pub suggested_model: Option<&'static str>, // pre-fills ModelSelector default
+    pub routing_hint: &'static str, // shown in template picker; not stored in DB
+}
+
+pub const ROLE_TEMPLATES: &[RoleTemplate] = &[
+    RoleTemplate { id: "architect", display: "Architect / Planner", role: "architect",
+        description: "Designs system architecture, creates technical specs, reviews PRs",
+        suggested_model: Some("opus"), routing_hint: "Reasoning, architecture, planning" },
+    RoleTemplate { id: "implementer", display: "Implementer", role: "implementer",
+        description: "Writes code, fixes bugs, implements features from specs",
+        suggested_model: Some("sonnet"), routing_hint: "Coding, build, fix, deploy" },
+    RoleTemplate { id: "qa", display: "QA Engineer", role: "qa",
+        description: "Writes tests, validates implementations, catches regressions",
+        suggested_model: Some("sonnet"), routing_hint: "Testing, validation, quality" },
+    RoleTemplate { id: "custom", display: "Custom (type your own)", role: "",
+        description: "", suggested_model: None, routing_hint: "Define your own role" },
+];
+```
+
+New wizard page state in `WizardState`:
+
+The `WorkerPage` flow becomes two steps:
+1. `TemplatePickerPage` — radio list of `ROLE_TEMPLATES`; Enter selects and advances
+2. `WorkerConfigPage` (existing) — fields pre-filled from selected template
+
+`WizardState` needs a new field: `worker_template: usize` (selected template index per worker). When user picks a template on step 1, the wizard pre-populates the `WorkerConfigPage` input fields and advances to step 2. "Custom" skips pre-fill (blank inputs, same as today).
+
+`WizardState::into_result()` — no change. Pre-fill is just initial state for text inputs; `AgentInput` is built from whatever the user typed.
+
+**System suggestions ("smart suggestions"):** After the user has configured at least one worker, the wizard can suggest complementary roles. E.g., if user has an architect, suggest adding an implementer. This is cosmetic hint text below the template picker ("Suggested: add an Implementer to pair with your Architect"). It requires no new state — just render logic based on `WizardState.agents.len()` and existing role names.
+
+**Files changed:**
+- `src/commands/wizard.rs` — add `RoleTemplate` struct + `ROLE_TEMPLATES` const, `TemplatePickerPageState` field on `WizardState`, pre-fill logic, new render branch, hint text
+
+No other files change. `AgentInput`, `WizardResult`, `generate_squad_yml`, and `init.rs` are untouched.
+
+---
+
+### Feature 2: Orchestrator Intelligence Data in `squad-orchestrator.md`
+
+**Current state:** `context.rs::build_orchestrator_md()` generates a static markdown file. It reads `agents` from DB and `sdd_configs` from `squad.yml`. The "Session Routing" section lists agents with model and description. There are no runtime metrics in the output.
+
+**What intelligence data adds:** The context file gains a "Fleet Status" section with live data: task-role alignment score, message counts per agent, estimated busy time. The orchestrator reads this file before acting and uses the data to decide routing (e.g., "agent-X has 5 pending tasks — clone or use agent-Y instead").
+
+**Metrics needed:**
+- Messages per agent: count of `processing` messages per `agent_name`
+- Busy duration: time since `status_updated_at` when status = `busy`
+- Misrouting hint: comparing `to_agent` role against task category keywords (heuristic, not ML)
+
+**Integration points:**
+
+New DB query functions in `src/db/messages.rs`:
+
+```rust
+// src/db/messages.rs
+pub struct AgentMetrics {
+    pub agent_name: String,
+    pub processing_count: i64,
+    pub completed_count: i64,
+}
+
+pub async fn agent_metrics(pool: &SqlitePool) -> anyhow::Result<Vec<AgentMetrics>> {
+    // GROUP BY agent_name with COUNT filtered by status
+    // Single query, no schema change — uses existing status column
+    sqlx::query_as::<_, AgentMetrics>(
+        "SELECT agent_name,
+                COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing_count,
+                COUNT(CASE WHEN status = 'completed'  THEN 1 END) as completed_count
+         FROM messages
+         GROUP BY agent_name"
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(Into::into)
 }
 ```
 
-`src/cli.rs` — add variant:
+New busy-duration calculation in `src/db/agents.rs`:
+
 ```rust
-Install {
+// src/db/agents.rs — pure function, no I/O, unit-testable
+pub fn busy_duration_seconds(agent: &Agent, now_rfc3339: &str) -> Option<i64> {
+    if agent.status != "busy" { return None; }
+    let updated = chrono::DateTime::parse_from_rfc3339(&agent.status_updated_at).ok()?;
+    let now = chrono::DateTime::parse_from_rfc3339(now_rfc3339).ok()?;
+    Some((now - updated).num_seconds())
+}
+```
+
+Changes to `src/commands/context.rs::build_orchestrator_md()`:
+
+The function signature changes to accept metrics:
+
+```rust
+pub fn build_orchestrator_md(
+    agents: &[Agent],
+    project_root: &str,
+    sdd_configs: &[SddConfig],
+    metrics: &[AgentMetrics],   // NEW parameter
+) -> String
+```
+
+New "Fleet Status" section generated before "Session Routing":
+
+```
+## Fleet Status
+
+| Agent | Role | Status | Queue | Busy For |
+|-------|------|--------|-------|----------|
+| my-project-claude-code-implementer | implementer | busy | 2 pending | 4m 12s |
+| my-project-claude-code-architect   | architect   | idle | 0 pending | — |
+
+**Routing guidance:**
+- implementer has 2 queued tasks. If parallelizable, consider cloning:
+  `squad-station clone my-project-claude-code-implementer`
+- architect is idle — ready for new work.
+```
+
+Call site in `context::run()` gains two async calls before `build_orchestrator_md`:
+
+```rust
+let metrics = db::messages::agent_metrics(&pool).await?;
+let now = chrono::Utc::now().to_rfc3339();
+// busy_duration_seconds called inside build_orchestrator_md for each agent
+let prompt_content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &metrics);
+```
+
+No schema migration needed. All data is derived from existing `messages.status`, `agents.status`, and `agents.status_updated_at` columns.
+
+**Files changed:**
+- `src/db/messages.rs` — add `AgentMetrics` struct + `agent_metrics()` async fn
+- `src/db/agents.rs` — add `busy_duration_seconds()` pure fn
+- `src/commands/context.rs` — update `build_orchestrator_md()` signature + add Fleet Status section + call `agent_metrics()`
+
+Test impact: `build_orchestrator_md` is already a `pub fn` imported directly by integration tests. Tests pass `&[]` for the new `metrics` parameter (empty metrics = no Fleet Status table rendered).
+
+---
+
+### Feature 3: Dynamic Agent Cloning (`squad-station clone <agent>`)
+
+**Current state:** `register.rs` inserts an agent into DB by name. `init.rs` calls `tmux::launch_agent()` after registration. There is no command that combines "copy an existing agent's config + auto-increment name + launch tmux session." Naming convention is `<project>-<tool>-<role>`.
+
+**What cloning adds:** A new subcommand `clone` that:
+1. Reads the source agent from DB (name, tool, role, model, description)
+2. Generates a new name using auto-increment suffix: `<source-name>-2`, `<source-name>-3`, etc.
+3. Inserts the new agent into DB with the same config
+4. Launches a new tmux session for the new agent
+
+**Auto-increment logic:** Query DB for all agent names matching `<source-name>-N` pattern, find highest N, use N+1. If source agent has no existing clones, use `-2` (original is implicitly -1/base). Implemented as a pure function for testability.
+
+**Integration points:**
+
+New file `src/commands/clone.rs`:
+
+```rust
+// src/commands/clone.rs
+pub async fn run(source_name: String, json: bool) -> anyhow::Result<()> {
+    // 1. Load config + connect DB
+    // 2. get_agent(&pool, &source_name) → bail if not found
+    // 3. generate_clone_name(&pool, &source_name).await → new_name
+    // 4. insert_agent(&pool, &new_name, tool, role, model, description)
+    // 5. tmux::launch_agent(&new_name, tool) → same as init does
+    // 6. update_agent_status(&pool, &new_name, "idle")
+    // 7. Output: clone created (new_name)
+}
+
+async fn generate_clone_name(pool: &SqlitePool, source: &str) -> anyhow::Result<String> {
+    // Query: SELECT name FROM agents WHERE name LIKE '<source>-%'
+    // Parse suffixes, find max N, return source + "-" + (N+1)
+    // If no clones exist: return source + "-2"
+}
+```
+
+`src/cli.rs` — add variant to `Commands` enum:
+
+```rust
+Clone {
+    /// Name of the agent to clone
+    agent: String,
     #[arg(long)]
-    tui: bool,
-}
+    json: bool,
+},
 ```
+
+`src/commands/mod.rs` — add `pub mod clone;`
 
 `src/main.rs` — add match arm:
+
 ```rust
-Install { tui } => commands::install::run(tui).await,
+Commands::Clone { agent, json } => commands::clone::run(agent, json).await,
 ```
 
-`src/commands/mod.rs` — add:
-```rust
-pub mod install;
-```
+**tmux session launch:** `tmux::launch_agent()` is called in `init.rs` after registering each agent. Clone uses the same function with the new name and the source agent's tool. No changes to `tmux.rs` needed.
 
-**npm-package/bin/run.js scope:** The existing `install()` function already works end-to-end. The architecture improvement is optional: move the `scaffoldProject()` logic into the Rust binary so that JS only handles binary download, then calls `spawnSync(destPath, ['install'])`. Doing so gives a single source of truth for what files are scaffolded. If deferred, the JS and Rust scaffold code must be kept in sync manually.
+**Squad.yml update:** Cloned agents are NOT written to `squad.yml`. The file is a human-edited config; runtime clones are ephemeral DB-only entries. This is consistent with `register.rs` which also does not update `squad.yml`. The context file (`squad-orchestrator.md`) is updated on next `squad-station context` invocation, which is lightweight and orchestrator-driven.
 
-**install.sh scope:** Currently ends with `exec "${INSTALL_DIR}/squad-station"` (bare invocation). Changing to `exec "${INSTALL_DIR}/squad-station" install --tui` makes intent explicit and consistent with the new subcommand. The bare invocation already works due to None-arm routing, so this is a polish change.
-
-**Files changed (Rust):**
-- `src/cli.rs` — add `Install` variant
-- `src/commands/install.rs` — NEW file
-- `src/commands/mod.rs` — `pub mod install;`
-- `src/main.rs` — new match arm
-
-**Files changed (distribution, optional):**
-- `npm-package/bin/run.js` — delegate scaffolding to binary
-- `install.sh` — change exec target
+**Files changed:**
+- `src/commands/clone.rs` — NEW file
+- `src/cli.rs` — add `Clone` variant
+- `src/commands/mod.rs` — add `pub mod clone;`
+- `src/main.rs` — add match arm
 
 ---
 
-### Feature 2: Folder Name as Project Name Default
+### Feature 4: TUI Live Update for Cloned Agents
 
-**Current state:** `WizardState.project_input` is `TextInputState::new()` with empty `value`. The `WizardState::into_result()` trims it and writes to `WizardResult.project`. No folder detection exists.
+**Current state:** `ui.rs::fetch_snapshot()` calls `db::agents::list_agents()` on every 3-second refresh. The `App.agents` vec is replaced completely on each tick. New agents appearing in DB between ticks are naturally picked up at next refresh.
 
-**Integration points:**
-
-`src/commands/wizard.rs` — in `WizardState::new()` or at `run()` call site:
-
-```rust
-// Pre-populate project input with CWD folder name
-let folder_default = std::env::current_dir()
-    .ok()
-    .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-    .unwrap_or_default();
-
-// In WizardState::new():
-let mut input = TextInputState::new();
-input.value = folder_default;
-input.cursor = input.value.chars().count();
-```
-
-`src/commands/ui.rs` — title bar in `draw_ui()`:
-- Currently hardcoded `" SQUAD-STATION "`.
-- Change: add `project: String` field to `App` struct, populated from `config.project` in `run()` (config is already loaded at the top of `ui::run()`).
-- `draw_ui()` renders `format!(" {} ", app.project)` in the title bar Paragraph.
-
-`src/commands/init.rs` — `generate_squad_yml()`:
-- No change. It already uses `result.project` verbatim. The value arrives pre-populated from wizard.
-
-**Data flow:**
+**What live update requires:** No architectural change. The connect-per-refresh pattern already handles this:
 
 ```
-std::env::current_dir()
-    → PathBuf::file_name()
-    → String (e.g., "my-project")
-        ↓
-WizardState.project_input.value = "my-project"  (cursor at end)
-        ↓
-User edits or accepts on wizard Project page
-        ↓
-WizardState::into_result() → WizardResult.project = "my-project"
-        ↓
-generate_squad_yml() → "project: my-project\n"
-        ↓
-squad.yml written → config loaded → ui.rs App.project = "my-project"
-        ↓
-draw_ui() title bar shows " my-project "
+clone command writes agent to DB
+    ↓ (within 3 seconds)
+TUI refresh tick → fetch_snapshot() → list_agents() returns new clone
+    ↓
+App.agents updated → draw_ui() renders new row in agent list
 ```
+
+The selected-agent cursor may need a guard: if the agent at `selected_index` is replaced by a different agent (list reordered), the selection tracks by index not name. This is the existing behavior for any status change. If the list grows by one entry, the user's selection stays on the same index (which points to the same logical agent unless the clone sorts alphabetically before the selection).
+
+**Optional polish:** Highlight newly-appeared agents in the TUI agent list for one refresh cycle (e.g., with a different background color). This requires storing a `HashSet<String>` of "previously seen agent names" in `App` state and comparing on each fetch. This is additive, isolated to `ui.rs`, and has no DB or schema impact.
 
 **Files changed:**
-- `src/commands/wizard.rs` — pre-populate `project_input` in `WizardState::new()` or `run()`
-- `src/commands/ui.rs` — add `project: String` to `App`; render in title bar
+- `src/commands/ui.rs` — optionally add `seen_agents: HashSet<String>` to `App` for new-agent highlight
 
 ---
 
-### Feature 3: Orchestrator "Processing" State Detection
+### Feature 5: Seamless Agent Coordination
 
-**Current state:** Agent status values in use: `idle`, `busy`, `dead`, `frozen`. `tmux.rs` has no `capture_pane` function — it exists only as documentation text in `context.rs` instructing the orchestrator AI how to use it manually. The TUI `status_color()` function has an `idle`/`busy`/catch-all pattern. `helpers.rs::colorize_agent_status()` handles `idle`, `busy`, `dead`, `frozen`.
+**What this means in practice:** Original + clone agents share the same DB and project directory. They receive tasks via `send`, complete them via `signal`, and are listed in the roster. The orchestrator routes to them by name. No special coordination mechanism is needed in the CLI — the existing stateless architecture handles N agents naturally.
 
-**What "processing" means:** The orchestrator's tmux pane is actively showing output — tools running, model generating — distinct from `busy` (task assigned, may be idle in pane) and `idle` (waiting for next task). Detected by polling `tmux capture-pane` output for activity markers in the TUI refresh loop.
+**The orchestrator.md update (Feature 2) is the coordination mechanism:** When the context file shows a clone with idle status, the orchestrator knows to use it. When the context file shows an overloaded agent, the orchestrator knows to clone. The CLI provides the data; the AI makes the decision.
 
-**Integration points:**
-
-`src/tmux.rs` — new public function following existing arg-builder pattern:
-
-```rust
-fn capture_pane_args(session_name: &str) -> Vec<String> {
-    vec!["capture-pane".into(), "-t".into(), session_name.into(), "-p".into()]
-}
-
-pub fn capture_pane(session_name: &str) -> Option<String> {
-    let output = Command::new("tmux")
-        .args(capture_pane_args(session_name))
-        .output()
-        .ok()?;
-    if output.status.success() {
-        Some(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        None
-    }
-}
-```
-
-`src/commands/ui.rs` — inside the 3-second refresh loop:
-- After `fetch_snapshot()` returns agents, find the orchestrator agent
-- Call `tmux::capture_pane(&orch.name)` — synchronous, fits naturally in the async loop
-- If output contains activity markers: open a short-lived writable pool, call `update_agent_status("processing")`, drop pool
-- Add `"processing"` arm to `status_color()`: suggested color `Color::Cyan` or `Color::Magenta`
-
-`src/commands/helpers.rs`:
-- Add `"processing"` arm to `colorize_agent_status()` — keeps all colorize logic in one place
-
-**Key architectural decision — write pool in TUI:**
-
-The existing `fetch_snapshot()` uses `read_only(true)`. Introducing a write for status updates requires a separate writable pool. The pattern follows the existing convention: open writable `db::connect(&db_path)`, write, drop immediately. This matches what all non-TUI commands do and avoids holding a write lock across multiple refreshes.
-
-```
-TUI refresh tick (every 3s)
-    │
-    ├── fetch_snapshot(&db_path, selected_agent)   [read-only pool, drop on return]
-    │       Returns: Vec<Agent>, Vec<Message>
-    │
-    ├── for orchestrator in agents:
-    │       tmux::capture_pane(&orch.name) → Option<String>
-    │       classify_pane_output(output) → bool
-    │       if is_processing && orch.status != "processing":
-    │           pool = db::connect(&db_path).await   [writable pool]
-    │           update_agent_status(&pool, &orch.name, "processing").await
-    │           drop(pool)
-    │
-    └── terminal.draw(|f| draw_ui(f, &mut app))
-            status_color("processing") → Color::Cyan
-```
-
-**Activity marker classification:** Extract into a pure function for testability:
-
-```rust
-// Pure, no I/O — unit-testable without tmux
-pub fn classify_pane_output(output: &str) -> bool {
-    // Returns true if pane looks active (non-empty last lines, known markers)
-    let lines: Vec<&str> = output.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.is_empty() { return false; }
-    // Provider-specific: Claude shows "Thinking...", tool use lines, etc.
-    // Gemini shows model output incrementally
-    // Simple heuristic: non-empty + contains activity keywords
-    let last = lines.last().unwrap_or(&"");
-    last.contains("Thinking") || last.contains("Running") || last.contains("⣿")
-        || output.contains("tool_use") || output.contains("ToolUse")
-}
-```
-
-**Status value:** `"processing"` is a new string value in the existing free-form `TEXT` status column. No schema migration is needed. The column was always a free-form string — `status_updated_at` is updated alongside it by `update_agent_status()`.
-
-**Files changed:**
-- `src/tmux.rs` — add `capture_pane_args()` private fn + `capture_pane()` public fn
-- `src/commands/ui.rs` — add `processing` color + poll in refresh loop + writable pool for status write
-- `src/commands/helpers.rs` — add `"processing"` arm to `colorize_agent_status()`
+**No new CLI components required for this feature.**
 
 ---
 
 ## Complete File Change Matrix
 
 | File | Change Type | Feature | What Changes |
-|------|-------------|---------|-------------|
-| `src/cli.rs` | Modify | install | Add `Install { tui: bool }` variant to `Commands` enum |
-| `src/commands/mod.rs` | Modify | install | Add `pub mod install;` |
-| `src/commands/install.rs` | New | install | `run(tui: bool)` — scaffold `.squad/` files, optional TUI launch |
-| `src/main.rs` | Modify | install | Add `Install { tui }` match arm in `run()` |
-| `src/commands/wizard.rs` | Modify | folder default | Pre-populate `project_input.value` with `current_dir()` folder name |
-| `src/commands/ui.rs` | Modify | folder default + processing | Add `project: String` to `App`; title bar; add `processing` color; capture-pane poll + write |
-| `src/tmux.rs` | Modify | processing | Add `capture_pane_args()` + `capture_pane()` |
-| `src/commands/helpers.rs` | Modify | processing | Add `"processing"` arm to `colorize_agent_status()` |
-| `npm-package/bin/run.js` | Modify (optional) | install | Delegate scaffolding to `squad-station install`; keep binary download in JS |
-| `install.sh` | Modify (optional) | install | Change `exec` target to `squad-station install --tui` |
+|------|-------------|---------|--------------|
+| `src/commands/wizard.rs` | Modify | Templates | Add `RoleTemplate` struct + `ROLE_TEMPLATES` const; `TemplatePickerPageState` in `WizardState`; pre-fill logic; new render branch; hint text |
+| `src/db/messages.rs` | Modify | Intelligence | Add `AgentMetrics` struct + `agent_metrics()` async query |
+| `src/db/agents.rs` | Modify | Intelligence | Add `busy_duration_seconds()` pure fn |
+| `src/commands/context.rs` | Modify | Intelligence | Update `build_orchestrator_md()` signature; add Fleet Status section; call `agent_metrics()` |
+| `src/commands/clone.rs` | New | Cloning | `run()` + `generate_clone_name()` — full clone flow |
+| `src/cli.rs` | Modify | Cloning | Add `Clone { agent, json }` variant |
+| `src/commands/mod.rs` | Modify | Cloning | Add `pub mod clone;` |
+| `src/main.rs` | Modify | Cloning | Add `Clone` match arm |
+| `src/commands/ui.rs` | Modify (optional) | Live update | Add `seen_agents: HashSet<String>` to `App` for new-agent highlight |
+
+**No schema migrations needed.** All new DB operations use existing columns.
+
+---
+
+## Data Flow
+
+### Clone Flow
+
+```
+User: squad-station clone my-project-claude-code-implementer
+    ↓
+clone::run()
+    ├── config::load_config() + db::connect()
+    ├── db::agents::get_agent("my-project-claude-code-implementer")
+    │       → Agent { tool, role, model, description, ... }
+    ├── generate_clone_name(&pool, "my-project-claude-code-implementer")
+    │       → SELECT names matching pattern → "my-project-claude-code-implementer-2"
+    ├── db::agents::insert_agent("my-project-claude-code-implementer-2", same config)
+    ├── tmux::launch_agent("my-project-claude-code-implementer-2", tool)
+    │       → new tmux session created
+    └── stdout: "Cloned 'my-project-claude-code-implementer' as 'my-project-claude-code-implementer-2'"
+```
+
+### Intelligence Data Flow
+
+```
+User: squad-station context
+    ↓
+context::run()
+    ├── config::load_config() + db::connect()
+    ├── db::agents::list_agents() → Vec<Agent>
+    ├── db::messages::agent_metrics() → Vec<AgentMetrics>   [NEW]
+    ├── build_orchestrator_md(agents, root, sdd_configs, metrics)
+    │       ├── Fleet Status section: agents × metrics join → table rows
+    │       │       busy_duration_seconds(agent, now) → "4m 12s" or "—"
+    │       ├── routing guidance: if any agent.processing_count > 1 → clone hint
+    │       └── [existing sections unchanged]
+    └── write to .claude/commands/squad-orchestrator.md (or .gemini/commands/)
+```
+
+### Template Wizard Flow
+
+```
+User runs: squad-station init --tui
+    ↓
+wizard::run()  [existing entry point]
+    ↓
+ProjectPage → SddPage → OrchestratorConfigPage
+    ↓
+WorkerCountPage
+    ↓ (for each worker)
+TemplatePickerPage [NEW]
+    │   Radio list: Architect, Implementer, QA Engineer, Custom
+    │   Hint text: "Suggested: add Implementer to pair with Architect"
+    ↓
+WorkerConfigPage [MODIFIED: pre-filled from template]
+    │   Name, Role, Provider, Model, Description
+    │   (user can override any field)
+    ↓ (repeat for each worker)
+WizardResult { project, sdd, orchestrator, agents: Vec<AgentInput> }
+    ↓
+generate_squad_yml() → squad.yml (no change to output format)
+    ↓
+init::register_agents() → DB insert (no change)
+```
+
+---
+
+## Architectural Patterns in Use (and how v1.8 follows them)
+
+### Pattern 1: Command-per-file
+
+Each subcommand lives in `src/commands/<name>.rs` with `pub async fn run(...) -> anyhow::Result<()>`. Clone follows this exactly with `src/commands/clone.rs`.
+
+### Pattern 2: DB layer as thin CRUD + queries
+
+The DB modules (`agents.rs`, `messages.rs`) contain only SQL operations. Business logic (e.g., clone naming, busy duration formatting) lives in the command file or as pure functions in the DB module. New `agent_metrics()` query follows this: raw SQL, returns typed structs.
+
+### Pattern 3: Argument builder functions in tmux.rs
+
+`clone.rs` calls `tmux::launch_agent()` — the existing public API. No new tmux calls. The clone command does not inline `Command::new("tmux")`.
+
+### Pattern 4: Pure rendering and classification functions
+
+`busy_duration_seconds()` is a pure fn (no I/O). `build_orchestrator_md()` remains a pure fn — takes metrics as parameter, no DB calls inside. `generate_clone_name()` is async (DB query) but isolated and directly testable.
+
+### Pattern 5: Connect-per-refresh in TUI
+
+TUI live update for clones requires no new mechanism. The existing connect-per-refresh pattern picks up new DB rows naturally. Any new write (hypothetical status poll) would follow the established short-lived writable pool pattern.
 
 ---
 
 ## Suggested Build Order
 
-Dependencies flow: tmux layer → DB layer → commands → CLI → distribution.
+Dependencies flow: DB layer → command layer → CLI → TUI polish.
 
-### Phase 1: `capture_pane` + processing state (foundation for Feature 3)
+### Phase 1: Orchestrator Intelligence Data (foundation for orchestrator-guided cloning)
 
-**Why first:** Pure addition to `tmux.rs` with no side effects. Adding `processing` to colorize helpers and TUI color is an isolated display change. These touch foundational modules; landing them first reduces rebase risk on later changes.
-
-Work:
-- `src/tmux.rs` — `capture_pane_args()` + `capture_pane()` + unit tests for arg builder
-- `src/commands/helpers.rs` — `"processing"` arm in `colorize_agent_status()`
-- `src/commands/ui.rs` — `status_color("processing")` arm
-
-No DB write yet — just display infrastructure.
-
-### Phase 2: Processing detection in TUI refresh loop
-
-**Why second:** Requires Phase 1 `capture_pane()` to exist. Adds the actual polling logic and the writable-pool-per-status-change pattern to the TUI.
+**Why first:** `agent_metrics()` and `busy_duration_seconds()` are pure additions with no side effects. `build_orchestrator_md()` signature change affects integration tests but the fix is mechanical (pass `&[]` for metrics). Landing this first gives the orchestrator the data it needs to decide when to clone — which makes the clone command useful immediately upon delivery.
 
 Work:
-- `src/commands/ui.rs` — capture-pane call in refresh loop + `classify_pane_output()` pure fn + writable pool write
+- `src/db/messages.rs` — `AgentMetrics` + `agent_metrics()`
+- `src/db/agents.rs` — `busy_duration_seconds()`
+- `src/commands/context.rs` — updated `build_orchestrator_md()` + Fleet Status section
+- Update any existing tests that call `build_orchestrator_md()` directly (add `&[]` arg)
 
-### Phase 3: Folder name default (zero-risk UX improvement)
+### Phase 2: Dynamic Agent Cloning
 
-**Why third:** Entirely independent of Phases 1 and 2. Touches `wizard.rs` (one-liner) and `ui.rs` (title bar). Batching the `ui.rs` title bar change alongside Phase 2 `ui.rs` work is possible — either order is fine, but keeping them in separate phases reduces cognitive load in review.
-
-Work:
-- `src/commands/wizard.rs` — pre-populate in `WizardState::new()`
-- `src/commands/ui.rs` — `project: String` field + title bar render
-
-### Phase 4: `install` subcommand (most surface area)
-
-**Why last:** Adds a new file and modifies the CLI enum. Coordinates with distribution files. Self-contained and independent of Phases 1–3, but has the most review surface and distribution touchpoints. Landing it last keeps the core binary changes stable first.
+**Why second:** Requires DB layer (Phase 1 establishes pattern but is not a hard dependency). Clone is independent of templates. Shipping it before templates means the orchestrator can immediately use it from the updated context file.
 
 Work:
-- `src/commands/install.rs` — NEW
-- `src/cli.rs`, `src/commands/mod.rs`, `src/main.rs` — plumbing
-- `npm-package/bin/run.js`, `install.sh` — distribution updates
+- `src/commands/clone.rs` — NEW
+- `src/cli.rs` — `Clone` variant
+- `src/commands/mod.rs` — `pub mod clone;`
+- `src/main.rs` — match arm
+- Tests: `generate_clone_name()` unit tests (pure DB query, testable with `setup_test_db()`)
 
----
+### Phase 3: Agent Role Templates in Wizard
 
-## Architectural Patterns in Use
+**Why third:** Wizard changes are entirely self-contained to `wizard.rs`. They do not affect the clone command, metrics, or DB. They improve the onboarding experience for the v1.8 milestone but do not block orchestrator functionality. Landing last keeps wizard changes separate from the core runtime features.
 
-### Pattern 1: Command-per-file
+Work:
+- `src/commands/wizard.rs` — `RoleTemplate` struct + `ROLE_TEMPLATES` + `TemplatePickerPageState` + render branch + hint text
+- Tests: template pre-fill logic (can be tested without ratatui — pre-fill is just `TextInputState.value` assignment)
 
-**What:** Each subcommand lives in `src/commands/<name>.rs` with a `pub async fn run(...)` entry point. `mod.rs` re-exports via `pub mod` declarations. `main.rs` calls each `run()` directly.
+### Phase 4: TUI Live Update Polish (optional)
 
-**New file follows the same pattern:**
-```rust
-// src/commands/install.rs
-pub async fn run(tui: bool) -> anyhow::Result<()> { ... }
-```
+**Why last:** The live update already works via connect-per-refresh. This phase adds optional new-agent highlight only if time allows. It is purely cosmetic, isolated to `ui.rs`, and has zero impact on other features.
 
-Reconciliation logic is duplicated ~10 lines per file where needed — this is the established project decision. Do not introduce shared infrastructure for a single new command.
-
-### Pattern 2: Connect-per-refresh in TUI (WAL checkpoint prevention)
-
-**What:** `ui.rs::fetch_snapshot()` creates a read-only `SqlitePool` on every 3-second refresh and explicitly `drop(pool)` at function end. This releases WAL reader locks so the checkpoint can proceed.
-
-**Impact on v1.8:** The processing-state feature introduces a write inside the TUI loop. The write must use a separate short-lived writable pool — same pattern as all non-TUI commands. Never hold a writable pool across refresh cycles.
-
-### Pattern 3: Argument builder functions in tmux.rs
-
-**What:** Each tmux operation has a private `fn _args(...)` returning `Vec<String>` (unit-testable), plus a public function calling `Command::new("tmux").args(...)`. The separation means arg correctness is verified without spawning tmux.
-
-**The new `capture_pane` follows this exactly:**
-```rust
-fn capture_pane_args(session_name: &str) -> Vec<String> { ... }
-pub fn capture_pane(session_name: &str) -> Option<String> { ... }
-```
-
-### Pattern 4: Pure rendering and classification functions
-
-**What:** `diagram::render_diagram()` returns `String`; `welcome::routing_action()` returns `Option<WelcomeAction>`. No side effects, directly unit-testable.
-
-**Impact on v1.8:** `classify_pane_output(output: &str) -> bool` must be pure — no I/O, no tmux calls. Keeps the detection logic testable without tmux running.
+Work:
+- `src/commands/ui.rs` — `seen_agents: HashSet<String>` + per-tick diff + highlight rendering
 
 ---
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Persistent writable pool in TUI
+### Anti-Pattern 1: Writing clones to squad.yml
 
-**What people do:** Open a writable pool once at TUI startup and keep it for the session duration.
-**Why it's wrong:** Holds a WAL write-eligible connection indefinitely. Blocks `signal` hooks from completing writes. Causes `SQLITE_BUSY` under concurrent hook fires.
-**Do this instead:** Open a writable `db::connect()` only when a write is needed (status change detected), drop it immediately.
+**What people do:** After cloning, append the new agent to squad.yml so the team is "persisted."
+**Why it's wrong:** Squad.yml is the human-authored source of truth. Clones are runtime scaling decisions. If the user re-inits, clones are discarded — which is correct behavior. Writing them to squad.yml makes re-init destructive and confusing.
+**Do this instead:** Clones live in DB only (same as `register` behavior). Orchestrator discovers them via `squad-station agents` or `squad-orchestrator.md`.
 
-### Anti-Pattern 2: Scaffolding logic duplicated across install paths
+### Anti-Pattern 2: Putting metrics calculation in build_orchestrator_md
 
-**What people do:** Maintain parallel scaffolding code in `npm-package/bin/run.js` (JS) and `src/commands/install.rs` (Rust).
-**Why it's wrong:** When SDD playbook files or example configs change, both files must be updated in sync. The JS copy is not compiled, has no tests, and is easy to forget.
-**Do this instead:** Keep binary download in JS (inherently JS territory). Delegate `scaffoldProject()` to `spawnSync(destPath, ['install'])`. One source of truth for what files get scaffolded.
+**What people do:** Pass only `&[Agent]` to `build_orchestrator_md()` and make DB calls inside the function.
+**Why it's wrong:** Makes `build_orchestrator_md()` impure (async, I/O). Breaks the existing test pattern where it is imported as a pure `pub fn`. All existing tests call it synchronously.
+**Do this instead:** Fetch `Vec<AgentMetrics>` in `context::run()` before calling `build_orchestrator_md()`. Pass as parameter. Function stays pure, stays unit-testable.
 
-### Anti-Pattern 3: Hardcoded processing marker strings in UI code
+### Anti-Pattern 3: Hardcoded clone suffix "-clone"
 
-**What people do:** `output.contains("Thinking...")` scattered through the event loop.
-**Why it's wrong:** Provider output formats change between versions. Makes testing fragile. Different providers have different indicators.
-**Do this instead:** Isolate in `classify_pane_output(output: &str) -> bool` — single pure function, directly testable, easy to update when providers change.
+**What people do:** Name clones `<source>-clone`, `<source>-clone-2`, etc.
+**Why it's wrong:** The existing naming convention is `<project>-<tool>-<role>`. A `-clone` suffix breaks pattern matching in `signal.rs`, hook scripts, and orchestrator routing rules (which match on role, not suffix).
+**Do this instead:** Auto-increment numeric suffix: `<source>-2`, `<source>-3`. The role and tool remain the same. Orchestrator knows it's a clone by the identical role + model, not by name.
 
-### Anti-Pattern 4: Overwriting agent status on every refresh
+### Anti-Pattern 4: Storing routing hints in the DB
 
-**What people do:** Call `update_agent_status("processing")` on every tick regardless of current status.
-**Why it's wrong:** Creates unnecessary DB writes; overrides `idle`/`busy` incorrectly when the pane shows stale output from a completed task.
-**Do this instead:** Only write `"processing"` when `orch.status != "processing"` and the pane genuinely shows live activity. Let signal hooks (which call `update_agent_status("idle")`) remain the authoritative completion signal.
+**What people do:** Add a `routing_hint` column to agents table to persist template metadata.
+**Why it's wrong:** Routing hints are advisory text for the orchestrator document. They change as the team composition changes. Storing them in DB creates a sync problem with the generated markdown.
+**Do this instead:** Routing hints are constants in `ROLE_TEMPLATES` (compile-time data). They are rendered into `squad-orchestrator.md` based on agent role, not stored in DB. The orchestrator file is the integration surface.
+
+### Anti-Pattern 5: Polling agent busy state from the TUI for clone decisions
+
+**What people do:** TUI detects an overloaded agent and auto-clones.
+**Why it's wrong:** The CLI is stateless by design. Auto-cloning decisions belong to the orchestrator AI, not to a monitoring TUI. The TUI's job is to display state, not to act on it.
+**Do this instead:** TUI displays agent queue depth (visible if metrics are in the DB). Orchestrator reads `squad-orchestrator.md`, sees the queue depth, and invokes `squad-station clone` explicitly.
 
 ---
 
@@ -387,32 +505,33 @@ pub fn capture_pane(session_name: &str) -> Option<String> { ... }
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| `commands/` ↔ `tmux.rs` | Direct function calls | All tmux ops go through `tmux.rs` — no inline `Command::new("tmux")` in command files |
-| `commands/` ↔ `db/` | Async function calls with `&SqlitePool` | Pool lifetime managed by caller; TUI uses connect-per-refresh |
-| `commands/install.rs` ↔ `commands/welcome.rs` | Call `run_welcome_tui()` when `--tui` flag set | Same path as bare invocation |
-| `commands/wizard.rs` ↔ `std::env` | `current_dir()` call in `WizardState::new()` | Graceful fallback to empty string on failure |
-| `commands/ui.rs` ↔ `tmux.rs` | `capture_pane()` per refresh | Returns `Option<String>` — TUI continues on `None`; no crash on missing session |
+| `commands/clone.rs` ↔ `db/agents.rs` | `get_agent()` + `insert_agent()` | No new DB functions needed; clone reuses existing CRUD |
+| `commands/clone.rs` ↔ `tmux.rs` | `launch_agent()` | Same function init.rs uses; no tmux.rs changes |
+| `commands/context.rs` ↔ `db/messages.rs` | `agent_metrics()` [new] | Thin query fn, typed return |
+| `commands/context.rs` ↔ `db/agents.rs` | `busy_duration_seconds()` [new pure fn] | Called inside `build_orchestrator_md()` per agent |
+| `commands/wizard.rs` ↔ `std` | `ROLE_TEMPLATES` const data | No I/O — compile-time constant slice |
 
 ### External Surfaces
 
 | Surface | v1.8 Change | Notes |
 |---------|-------------|-------|
-| `npm-package/bin/run.js` `install()` | Optional: delegate scaffolding to Rust binary | Reduces JS/Rust drift risk |
-| `install.sh` exec target | Optional: change to `squad-station install --tui` | Explicit subcommand vs bare invocation |
-| `squad.yml` `project:` field | Pre-populated with folder name as default | No format change — same YAML structure |
-| SQLite `agents.status` column | New string value `"processing"` | No schema migration — free-form `TEXT` column, always was |
-| CLI surface | New `install [--tui]` subcommand | Replaces JS-only install path with Rust-native one |
+| `squad-orchestrator.md` | New "Fleet Status" table + clone hints | Orchestrator reads this on every task; additive change, safe |
+| CLI surface | New `clone <agent> [--json]` subcommand | Documented in context file; orchestrator uses it |
+| SQLite `agents` table | New rows from clone | Same schema; `INSERT` uses same path as `register` |
+| SQLite `messages` table | New `agent_metrics()` read query | Read-only GROUP BY query; no write, no schema change |
+| `squad.yml` | No change | Clones are DB-only, not written to config |
+| TUI dashboard | Clones appear in agent list within 3 seconds | No protocol change; connect-per-refresh handles it |
 
 ---
 
 ## Sources
 
-- Direct source inspection: `src/cli.rs`, `src/main.rs`, `src/commands/ui.rs`, `src/commands/wizard.rs`, `src/commands/init.rs`, `src/commands/helpers.rs`, `src/tmux.rs`, `src/db/agents.rs`, `src/db/migrations/0001_initial.sql`, `src/db/migrations/0002_agent_status.sql`
-- Direct source inspection: `npm-package/bin/run.js`, `install.sh`
-- Project history in `.planning/PROJECT.md`
-- Existing patterns: connect-per-refresh in `ui.rs`; arg-builder in `tmux.rs`; pure-fn in `diagram.rs`/`welcome.rs`
+- Direct source inspection: `src/commands/wizard.rs`, `src/commands/context.rs`, `src/commands/register.rs`, `src/commands/send.rs`, `src/commands/ui.rs`, `src/db/agents.rs`, `src/db/messages.rs`, `src/tmux.rs`, `src/cli.rs`, `src/main.rs`
+- Direct source inspection: all migration files `src/db/migrations/000{1-4}_*.sql`
+- Project history and decisions: `.planning/PROJECT.md`
+- Established patterns: connect-per-refresh in `ui.rs`; arg-builder in `tmux.rs`; pure-fn in `diagram.rs`/`welcome.rs`; command-per-file in `commands/`
 
 ---
 
-*Architecture research for: Squad Station v1.8 — Install subcommand, folder name default, orchestrator processing state*
-*Researched: 2026-03-18*
+*Architecture research for: Squad Station v1.8 — Agent Role Templates, Orchestrator Intelligence Data, Dynamic Agent Cloning*
+*Researched: 2026-03-19*

@@ -1,20 +1,20 @@
 # Feature Research
 
-**Domain:** Rust CLI — AI agent fleet orchestration (squad-station v1.8)
-**Researched:** 2026-03-18
-**Confidence:** HIGH (features are well-defined, ecosystem patterns verified, existing code reviewed directly)
+**Domain:** Rust CLI — AI agent fleet management (squad-station v1.8 Smart Agent Management)
+**Researched:** 2026-03-19
+**Confidence:** HIGH (milestone features are explicitly defined in PROJECT.md; ecosystem patterns verified against CrewAI, AutoGen, LangGraph, Microsoft multi-agent patterns, and the existing squad-station codebase)
 
 ---
 
-## Context: What v1.8 Adds
+## Context: What v1.8 Smart Agent Management Adds
 
-Three features layered on top of v1.7 (which already ships: init wizard, TUI dashboard, welcome TUI, npm + curl install, welcome auto-launch on TTY detection).
+This milestone adds three capabilities on top of the existing v1.7 + v1.8-pre foundation (which already ships: init wizard with `--tui` flag, TUI dashboard, welcome TUI, npm + curl install, agent lifecycle detection, hook-driven completion signals, orchestrator context generation).
 
-The three v1.8 features:
+The three v1.8 Smart Agent Management features:
 
-1. `squad-station install [--tui]` — new Rust subcommand; bare = silent confirmation; `--tui` = launch welcome TUI. npm postinstall and curl installer call this instead of launching the binary directly.
-2. Folder name as default project name — pre-fill in wizard page 1, dashboard title bar, squad.yml generation fallback.
-3. Orchestrator "processing" state — TUI polls orchestrator tmux pane via `tmux capture-pane -p`, detects mid-input activity, renders a status indicator in the dashboard.
+1. **Agent role templates in init wizard** — pre-built packages (role string, model suggestion, description, routing hints) selectable from a list during worker configuration; includes a custom option and a mechanism for system-suggested roles.
+2. **Orchestrator intelligence data** — CLI provides task-role alignment metrics, messages-per-agent counts, and busy-time tracking surfaced in `squad-orchestrator.md` so the orchestrator AI can detect overload and misrouting without external tooling.
+3. **Dynamic agent cloning** — `squad-station clone <agent-name>` creates a duplicate agent (same role/model/description, auto-incremented name, new tmux session); orchestrator decides when and how many to spawn; cloned agents appear immediately in the TUI dashboard.
 
 ---
 
@@ -22,103 +22,119 @@ The three v1.8 features:
 
 ### Table Stakes (Users Expect These)
 
-Features users assume exist. Missing these = product feels incomplete or broken.
+Features users assume exist in agent management tooling. Missing these makes the product feel unfinished relative to comparable systems (CrewAI, AutoGen, LangGraph multi-agent setups).
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| `install` subcommand with silent mode | Every serious CLI has a discrete install command; bare invocation = quiet/scriptable is assumed (git, npm, cargo init all follow this). Users running install in CI expect zero interactivity unless they explicitly opt in. | LOW | Bare `squad-station install` must produce one-line confirmation and exit 0. The JS layer in run.js already has an `install` handler — this moves the post-binary-install UX ownership to Rust. No scaffold logic moves; that stays in JS. |
-| `--tui` flag for opt-in interactive path | Standard flag pattern for opt-in interactivity. clig.dev: "Only use prompts or interactive elements if stdin is a TTY. Never require a prompt — always provide a way of passing input with flags." | LOW | `--tui` must be guarded with the same `is_terminal()` check already used in welcome.rs. Non-TTY with `--tui` falls back silently — does not error. |
-| Folder name pre-filled in wizard | `cargo init`, `npm create vite`, `create-next-app`, and virtually all scaffolding tools use `basename $PWD` as the default project name. Users expect to press Enter and get a sensible default. | LOW | `std::env::current_dir()` + `.file_name()` + `to_string_lossy()` for UTF-8 safety. This is a UI default only — user can still override in the input field. |
-| Dashboard title reflects project name | TUI dashboards (Ralph TUI, TUICommander, tmuxcc) all show a project/session label. A dashboard without a title reads as a debug tool, not a product. | LOW | Read `project` field from squad.yml via existing `config::load()`. Folder name fallback when config is absent or field is empty. |
-| squad.yml generation uses folder name fallback | When the user blanks the project name field in the wizard, the generated YAML must be valid. An empty `project:` field breaks agent auto-naming (`<project>-<tool>-<role>` convention). | LOW | Safety net for the programmatic path. The wizard already enforces non-empty input with inline error feedback (v1.5); the fallback covers edge cases in `generate_squad_yml()`. |
-| npm + curl installers call `install --tui` | These are the actual install entry points for end users. If they still bypass the Rust `install` subcommand after v1.8, the install subcommand is a dead letter. | LOW | One-line change each: run.js replaces `spawnSync(destPath, [])` with `spawnSync(destPath, ['install', '--tui'])`; install.sh replaces `exec "${INSTALL_DIR}/squad-station"` with `exec "${INSTALL_DIR}/squad-station" install --tui`. |
+| Feature | Why Expected | Complexity | Dependencies on Existing |
+|---------|--------------|------------|--------------------------|
+| Predefined role menu in wizard | Every multi-agent framework (CrewAI, MetaGPT, AutoGen) provides role templates. Users setting up a software team expect to select "frontend engineer" or "QA" rather than type free-form strings. Typing a role from scratch for every agent is friction that degrades the wizard experience. | LOW | `wizard.rs` WorkerPage already has a radio-selector component (used for Provider and Model). Role templates are a new data structure + a new radio/list input on the same page. No new crate. |
+| Custom role option in wizard | Any templating system must offer escape hatch. Users with unusual team structures (data engineer, security auditor, technical writer) need to define their own role. Forcing templates removes legitimate use cases. | LOW | Custom option is an additional list item that activates a free-text input field — pattern already exists in wizard.rs for model input. |
+| Template includes model suggestion | When a user selects "backend engineer," they expect a sensible default model pre-filled (e.g., claude-code/sonnet). Having to separately select a model that is already implied by the role is unnecessary friction. | LOW | Template data structure carries `default_model` field; wizard pre-fills the model radio selector when template is chosen. User can override. |
+| Template includes routing hints | Orchestrator needs to know which agent to route tasks to. Without routing hints embedded in `squad-orchestrator.md`, the orchestrator has no signal about specialization beyond a free-text description. CrewAI and MetaGPT both embed role goals/descriptions into their orchestration context. | LOW | `context.rs` `build_orchestrator_md()` already writes a "Session Routing" section iterating agents. Templates add structured `routing_hints` to the description field written there. |
+| `squad-station clone <agent>` command | Dynamic scaling is a core expectation in any workload-aware multi-agent system. Microsoft's multi-agent patterns and the "master-clone" architecture both identify runtime agent duplication as a first-class operation. Without a CLI command for it, the orchestrator cannot scale the team. | MEDIUM | Requires: new `Commands::Clone` in `cli.rs`, new `src/commands/clone.rs`, existing `tmux.rs` session launch, existing `db::agents::insert_agent()` with auto-incremented name, existing TUI refresh loop (picks up new agents automatically via DB poll). No schema changes needed. |
+| Cloned agent appears in TUI dashboard immediately | The TUI polls DB for agents on every refresh (existing behavior). A newly cloned agent registered in DB is visible on the next poll cycle with no additional work. Users expect the monitoring view to reflect fleet state without manual refresh. | LOW | Zero new code: existing `ui.rs` polling loop already does `list_agents()` on every interval. Clone command writes to DB; TUI reads on next poll. |
+| Message-per-agent count in orchestrator context | The orchestrator needs to know how many tasks each agent has received to detect overload. Standard observability practice: track request count per service. Without this, the orchestrator must guess at agent load. | LOW | `messages.rs` already has `list_messages()` with agent filter. New aggregate query: `SELECT to_agent, COUNT(*) FROM messages WHERE status = 'processing' GROUP BY to_agent`. Appended to `squad-orchestrator.md` in a new "Fleet Metrics" section. |
+| Busy-time tracking | When an agent has been in "busy" status for an unusually long time, the orchestrator should know. Without a `status_updated_at` field, this is impossible. The field already exists in the `agents` DB schema (`status_updated_at` column). | LOW | `status_updated_at` is already in `agents` table and set on every `update_agent_status()` call. No schema migration needed. Context command reads it and derives busy duration. |
 
 ### Differentiators (Competitive Advantage)
 
-Features that set the product apart. Not required, but valued.
+Features that distinguish squad-station from generic multi-agent frameworks. Competitors handle these poorly or not at all in a CLI-native, tmux-based model.
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Orchestrator "processing" state in TUI | No competing tool (tmuxcc, NTM, Ralph TUI, TUICommander) distinguishes between "orchestrator idle at shell prompt" and "orchestrator mid-response composing a task." This lets agents and human observers see whether the orchestrator is actively working — reduces unnecessary interrupts. | MEDIUM | `tmux capture-pane -p -t <orchestrator_session>`, parse last non-empty line, match against AI prompt/spinner patterns. Standard approach across ecosystem (tmuxcc, NTM use identical pattern-matching strategy). |
-| Install subcommand centralizes post-install UX in Rust | Currently npm postinstall (JS) and curl installer (sh) each independently contain TUI launch logic. Moving to `install --tui` means one canonical path — easier to test, no JS/sh divergence, version-stable behavior. | LOW | All terminal interaction already lives in Rust. The install subcommand becomes the single authoritative welcome entry point. |
-| Context-aware install confirmation | `squad-station install` (bare) prints a single confirmation line to stdout and exits. Clean for CI, piped environments, and postinstall log capture. Consistent with `--json` global flag already in the CLI. | LOW | Distinct from current npm `install` which prints a multi-line banner. Silent mode = one line. |
+| Feature | Value Proposition | Complexity | Dependencies on Existing |
+|---------|-------------------|------------|--------------------------|
+| Task-role alignment hints in orchestrator context | Most orchestration frameworks provide routing only at setup time. Squad-station can surface "agent X has received 8 tasks, 3 of which appear misrouted based on role description mismatch." This is qualitative intelligence the orchestrator AI can act on — not just counters. Implementing even a lightweight version (role keyword vs. task body keyword overlap) gives the orchestrator a signal no competing tool provides in a file-based context. | MEDIUM | Requires lightweight text matching in context.rs: compare recent task bodies against agent role/description keywords. Pure Rust string ops, no NLP crate. Output as bullet list in `squad-orchestrator.md`. |
+| Orchestrator-controlled cloning (not auto-scaling) | Unlike Kubernetes-style auto-scaling based on CPU metrics, squad-station deliberately keeps the scaling decision with the orchestrator AI. The CLI provides the mechanism (`clone`); the AI decides when. This is the correct abstraction: AI orchestrators reason about task semantics, not resource metrics. No competing tool surfaces this distinction cleanly. | LOW | Design decision enforced by API surface: `clone` takes an agent name and returns the new name. No threshold config, no auto-trigger. The orchestrator calls `clone` when it decides to, based on workload data from `squad-orchestrator.md`. |
+| Auto-incremented clone naming with project prefix | `<project>-<tool>-<role>-2`, `-3`, etc. Names are deterministic, unique per project, and follow the existing `<project>-<tool>-<role>` convention. The orchestrator can parse clone names without additional metadata. Most frameworks use UUIDs or timestamps, which are opaque to the AI. | LOW | Name generation: query DB for agents matching `<project>-<tool>-<role>-*`, find max suffix, increment. Pure string/integer logic. Existing naming convention from v1.1 already in init.rs. |
+| System-suggested roles based on project context | When the wizard detects an SDD workflow (bmad, gsd, superpower) from the first wizard page, it can suggest role templates appropriate to that workflow. This is proactive guidance that competitors do not offer in a setup wizard. | MEDIUM | SDD workflow value (`WizardResult.sdd`) is already set on page 1 of the wizard. Role template list shown on the WorkerPage can filter or reorder based on `sdd` value. No new state needed. |
+| Fleet metrics without daemon | Other tools require a running daemon to collect metrics. Squad-station derives metrics on-demand from SQLite at `context` generation time. Stateless, zero overhead, instant for any project size at team scale (tens of agents). | LOW | Pure DB aggregate queries in a single `context` command invocation. No background process, no metric store, no time-series DB. Correct for the stateless CLI design constraint. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| "User is typing" detection via pane buffer diff | Seems logical: diff two capture-pane snapshots between polls and conclude typing happened | tmux capture-pane returns the static rendered screen, not a keystroke stream. AI tool animations (spinners, streaming response output) produce diff noise that creates false positives. Buffer content resets between visible screen refreshes — diffs are not stable indicators. | Heuristic pattern-match on last-line content: shell prompt regex = idle; AI tool response marker = processing. Combine with `pane_current_command` check to confirm the AI process is actually running. |
-| Block `send` when orchestrator is "processing" | Sounds safe — don't interrupt a busy orchestrator | Stateless CLI model means `send` has no live visibility into orchestrator state. Adding a blocking check couples a write path to a read-only TUI heuristic. Race conditions guaranteed. Violates the "stateless, event-driven" design principle. | Surface processing state only in TUI dashboard as a visual indicator. Let `send` proceed normally. The orchestrator AI handles interruptions. |
-| Auto-detect project name from git remote URL | Seems more authoritative than folder name | git remote URL parsing is brittle (SSH vs HTTPS, monorepos, forks, detached HEAD). Adds `git` subprocess dependency. Folder name is sufficient and universally available. | Use folder name as default; let user override in wizard. |
-| Persist install state to `.squad/` | Track installed version in `.squad/station.db` or a lockfile | `squad-station install` is a one-shot binary operation, not a project-scoped command. Writing to `.squad/` implies the user is in a project directory, which is not guaranteed during binary install. | Binary install writes to system PATH only. Project-scoped `.squad/` writes belong to `init`. |
-| Show orchestrator processing state in `send` output | Would give feedback to orchestrator when dispatching a task | `send` is called by the orchestrator AI itself, which already knows it is processing. Adding tmux pane polling to `send` adds latency to every task dispatch. | Processing state is a monitoring feature for the human observer in the TUI dashboard, not a feedback mechanism for the orchestrator. |
+| Auto-scaling: clone agents automatically when queue depth exceeds threshold | Sounds powerful — fewer manual decisions. Some orchestration platforms (Kubernetes, Ray) do this. | Squad-station is a stateless CLI. Auto-scaling requires a persistent observer process polling queue depth and firing `clone` commands. That is a daemon — explicitly out of scope. Additionally, task queue depth is a poor proxy for whether cloning is the right action (the orchestrator may be intentionally serializing work). | Surface queue depth in `squad-orchestrator.md`. Let the orchestrator AI decide. This keeps decision-making with the entity that understands task semantics. |
+| Agent-to-agent communication routing through the CLI | Users want workers to communicate directly: agent A sends a message to agent B. Makes sense in theory. | Squad-station's design has all communication routed through the orchestrator. Direct agent-to-agent messaging creates untracked state, breaks the orchestrator's situational awareness, and requires a message routing layer the CLI does not have. This is explicitly called out as out-of-scope in PROJECT.md. | Orchestrator receives signal from agent A, evaluates output, forwards relevant context to agent B in the next task. This keeps routing centralized and auditable. |
+| Role-based access control (which agent can receive which task type) | Users want to enforce that QA agents can only receive test tasks. Sounds like guardrails. | RBAC enforcement at the CLI layer adds complexity, breaks the send command's simplicity, and moves task-semantics decisions from the AI to the CLI tool. The AI is better positioned to enforce routing via its own reasoning. | Role templates + routing hints in `squad-orchestrator.md` guide the orchestrator AI to route correctly. The AI can self-enforce. CLI does not police content. |
+| Template marketplace / community role registry | Users want to download community-curated role templates. Seems like a feature win. | Requires a network call, a registry service, versioning, and trust verification — all for what amounts to a few strings (role name, description, model suggestion). Network dependency in a stateless CLI that currently has zero runtime dependencies is a regression. | Embed a curated set of 8–12 role templates directly in the binary (compile-time constants). Small teams cover 90% of use cases. Custom option covers the rest. |
+| Cloning with modified configuration (different model or description) | User wants `clone --model opus` to clone but upgrade the model. More power, more control. | Creates divergence from the source agent. The orchestrator's mental model of "this agent is a clone of that agent" breaks. Fleet coordination relies on clones being identical workers. Divergent clones must be treated as distinct agents — better served by `init --tui` add-agents flow or `register`. | Clone = identical copy. For a different configuration, use `squad-station register` (existing command) to create a fully new agent. |
+| Task-role alignment scoring with ML embeddings | For richer misrouting detection, vector similarity between task body and role description. | Binary size would increase dramatically with embedding models. Adds inference latency to the `context` command. Correctness depends on embedding quality. Overkill for team-scale multi-agent coordination where the orchestrator AI already has full semantic understanding. | Keyword overlap heuristic (pure Rust string ops): extract nouns from task body, check against role/description keywords. Sufficient signal for orchestrator guidance. Flag tasks where no keyword overlap exists. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[install subcommand (Rust)]
-    └──replaces──> [npm postinstall direct TUI launch (JS)]
-    └──replaces──> [curl installer direct TUI launch (sh)]
-    └──calls (--tui path)──> [welcome.rs run_welcome_tui()] (already exists)
-    └──depends on──> [is_terminal() TTY guard] (already in welcome.rs)
-    └──requires──> [new Commands::Install variant in cli.rs]
-    └──requires──> [new src/commands/install.rs handler]
+[Role templates in wizard]
+    └──requires──> [template data structure: role, description, default_model, routing_hints]
+    └──feeds──> [wizard.rs WorkerPage: radio/list template selector]
+    └──feeds──> [wizard.rs WorkerPage: model pre-fill from template.default_model]
+    └──feeds──> [init.rs generate_squad_yml(): description field from template]
+    └──feeds──> [context.rs build_orchestrator_md(): routing hints in Session Routing section]
+    └──optional: SDD-aware template filtering]
+        └──depends on──> [WizardResult.sdd from page 1 of wizard] (already exists)
 
-[folder name as default]
-    └──feeds──> [wizard.rs ProjectPage: pre-fill project name input]
-    └──feeds──> [ui.rs App: title bar display]
-    └──feeds──> [init.rs generate_squad_yml(): fallback when project is empty]
-    └──depends on──> [std::env::current_dir()] (stdlib, no new deps)
+[Orchestrator intelligence data in squad-orchestrator.md]
+    └──requires──> [DB aggregate query: pending message count per agent]
+        └──depends on──> [messages table with status='processing' and to_agent column] (already exists)
+    └──requires──> [busy-time derivation from status_updated_at]
+        └──depends on──> [agents table, status + status_updated_at columns] (already exists)
+    └──optional: task-role alignment keyword check]
+        └──depends on──> [recent completed messages per agent] (already in messages table)
+        └──depends on──> [agent description field] (already in agents table)
+    └──feeds──> [context.rs build_orchestrator_md(): new "Fleet Metrics" section]
+    └──requires no DB schema changes
 
-[orchestrator "processing" state]
-    └──depends on──> [tmux capture-pane] (already called in tmux.rs)
-    └──depends on──> [config::load() to resolve orchestrator session name]
-    └──feeds──> [ui.rs App render: orchestrator row status indicator]
-    └──depends on──> [TUI polling loop in ui.rs] (already polls agents + messages)
-    └──requires no new DB schema changes]
+[Dynamic agent cloning: squad-station clone <agent-name>]
+    └──requires──> [new Commands::Clone { agent: String } in cli.rs]
+    └──requires──> [new src/commands/clone.rs]
+        └──reads──> [db::agents::get_agent(name)] (already exists)
+        └──writes──> [db::agents::insert_agent(new_name, ...)] (already exists)
+        └──calls──> [tmux::launch_session(new_name)] (existing tmux session launch)
+        └──derives──> [auto-incremented name: query DB for existing clones, max suffix + 1]
+    └──feeds──> [TUI dashboard: picks up new agent on next poll cycle automatically]
+        └──depends on──> [ui.rs existing list_agents() poll loop] (already exists)
 
-[install subcommand] ──independent of──> [folder name default]
-[install subcommand] ──independent of──> [orchestrator processing state]
-[folder name default] ──independent of──> [orchestrator processing state]
+[Role templates] ──independent of──> [orchestrator intelligence data]
+[Role templates] ──independent of──> [dynamic cloning]
+[Orchestrator intelligence data] ──independent of──> [dynamic cloning]
+
+[Cloned agent] ──appears in──> [TUI dashboard] (zero new code: existing poll loop)
+[Orchestrator intelligence data] ──informs──> [orchestrator decision to clone]
+[Clone command] ──called by──> [orchestrator AI based on fleet metrics]
 ```
 
 ### Dependency Notes
 
-- **install subcommand requires a new cli.rs Commands variant:** Currently `Install` does not exist in the `Commands` enum. The JS run.js handles `install` before it reaches the binary. Adding the Rust subcommand means adding `Commands::Install { tui: bool }` to cli.rs and a matching `src/commands/install.rs`. The JS and sh files then delegate to `squad-station install [--tui]` instead of launching the binary bare.
-- **install subcommand does not duplicate scaffold logic:** The JS install function in run.js still handles binary download and `.squad/` scaffold. The new Rust `install` subcommand handles only the post-install confirmation/welcome UX. No Rust code downloads or copies files.
-- **folder name default requires no new crate dependencies:** `std::env::current_dir()` is stdlib. The three injection points (wizard pre-fill, dashboard title, squad.yml fallback) are already in the correct modules — minimal diff in each.
-- **orchestrator processing state requires adding a capture-pane call to ui.rs polling:** ui.rs currently polls DB only. This adds one `tmux capture-pane -p -t <orchestrator_session>` call per refresh cycle for the orchestrator pane. The orchestrator session name comes from config (already loaded). This is the only architectural addition — no new crate, no schema change, no new tmux abstraction layer needed.
-- **all three features are independent of each other:** They can be developed in parallel or sequentially in any order. No feature blocks another.
+- **Role templates require no new DB columns:** Template selection in the wizard sets the existing `role`, `description`, and `model` fields. The template data structure lives only in Rust source (compile-time constants). Zero schema migration.
+- **Orchestrator intelligence data requires no DB schema migration:** `status_updated_at` and `to_agent` already exist. The only addition is aggregate SELECT queries in `context.rs` and a new section appended to the generated markdown.
+- **Clone command requires one new subcommand file:** `src/commands/clone.rs` is the only new file. It reuses `get_agent`, `insert_agent`, and tmux session launch — all existing functions. Name auto-increment logic is a DB query + integer arithmetic, no new crate.
+- **TUI live update for cloned agents is free:** The existing `ui.rs` poll loop calls `list_agents()` on every refresh interval. A clone registered in DB appears on the next cycle. No TUI changes needed for the "agents appear immediately" requirement.
+- **All three features are independent:** No feature blocks another. They can be developed in parallel or in any sequential order.
 
 ---
 
 ## MVP Definition
 
-### This Milestone (v1.8)
+### This Milestone (v1.8 Smart Agent Management)
 
-Minimum set to ship v1.8 as a coherent release.
+Minimum set to ship v1.8 as a coherent release. All five items from PROJECT.md active requirements.
 
-- [ ] `Commands::Install { tui: bool }` added to cli.rs — new clap variant with `--tui` flag
-- [ ] `src/commands/install.rs` — bare path: print one-line "squad-station installed" confirmation + exit 0; `--tui` path: call `run_welcome_tui()` from welcome.rs with TTY guard
-- [ ] Update run.js postinstall: replace `spawnSync(destPath, [])` with `spawnSync(destPath, ['install', '--tui'])` when `process.stdout.isTTY`
-- [ ] Update install.sh: replace `exec "${INSTALL_DIR}/squad-station"` with `exec "${INSTALL_DIR}/squad-station" install --tui`
-- [ ] Folder name default in wizard.rs ProjectPage: `current_dir()` basename set as initial value of project name text field
-- [ ] Folder name fallback in init.rs `generate_squad_yml()`: use folder name when project name is empty or whitespace-only
-- [ ] Dashboard title in ui.rs: display `project` from loaded config; fall back to folder name when config absent or project field empty
-- [ ] Orchestrator pane capture in ui.rs polling loop: call `tmux capture-pane -p -t <orchestrator_session>`, pattern-match last non-empty line, derive `OrchestratorState::Idle | Processing`
-- [ ] Render orchestrator processing state in TUI agent list — visual indicator (e.g., status tag or row highlight for the orchestrator entry)
+- [ ] Role template data structure — Rust const array of `RoleTemplate { role, description, default_model, routing_hints }` structs, compiled into binary. Minimum 8 templates covering: orchestrator, frontend-engineer, backend-engineer, fullstack-engineer, qa-engineer, devops-engineer, architect, code-reviewer. Plus `custom` option.
+- [ ] Template selector in wizard WorkerPage — radio/list UI, populates role + description + model fields on selection. Custom option activates free-text role input.
+- [ ] SDD-aware template ordering — when SDD workflow is known, show most-relevant templates first (not strict filter — all templates remain accessible). Ordering only.
+- [ ] Fleet metrics in `squad-orchestrator.md` — new "Fleet Metrics" section: pending message count per agent, agent busy-time duration. Generated by `context` command on each invocation. No daemon, no schema change.
+- [ ] `squad-station clone <agent-name>` command — reads source agent config, generates auto-incremented name, registers in DB, launches tmux session with same tool/role/model/description. Prints new agent name to stdout. Exits non-zero if source agent not found.
 
 ### Add After Validation (post-v1.8)
 
-- [ ] Richer orchestrator state: distinguish "thinking" (streaming response) vs "waiting for approval" vs "idle at shell" — requires provider-specific content keyword patterns beyond the basic prompt regex
-- [ ] `squad-station install --silent` as explicit synonym for bare, for scripts that want clarity without relying on default behavior
+- [ ] Task-role alignment hint in `squad-orchestrator.md` — lightweight keyword overlap check between recent task bodies and role/description keywords. Add when orchestrators report misrouting confusion in practice. Trigger: user feedback on misrouting.
+- [ ] Clone count limit guardrail — `clone` warns (does not error) when more than N agents with same role exist. N configurable in squad.yml or hardcoded default of 5. Add when teams hit resource/terminal real estate limits.
+- [ ] `squad-station clone --n 3 <agent-name>` — batch clone shorthand. Add after single clone is validated. Reduces manual invocation for scale-up scenarios.
 
 ### Future Consideration (v2+)
 
-- [ ] Install subcommand with version pinning (`squad-station install --version x.y.z`) — relevant only when users need to pin versions across projects
-- [ ] TUI dashboard project switcher — navigate between multiple `squad.yml` projects — requires significant ui.rs refactor
+- [ ] Template versioning — as squad-station evolves, embedded templates will need updates without breaking existing squad.yml files. Only relevant at larger user scale.
+- [ ] User-defined template registry — local file (e.g., `.squad/templates.toml`) that augments built-in templates. Addresses power users with recurring custom roles.
+- [ ] Metrics history — persist fleet metrics snapshots in SQLite for trend analysis over a session. Only relevant if orchestrators need to see degradation over time, not just current state.
 
 ---
 
@@ -126,49 +142,55 @@ Minimum set to ship v1.8 as a coherent release.
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| `install` subcommand (Rust, bare + `--tui`) | HIGH — unifies install UX, removes JS/sh divergence, single canonical path | LOW — new clap variant + thin dispatch to existing welcome.rs | P1 |
-| Update npm + curl installers to call `install --tui` | HIGH — required for install subcommand to replace current auto-launch logic | LOW — one-line change each in run.js and install.sh | P1 |
-| Folder name default in wizard pre-fill | HIGH — reduces friction for the common case (project in its own directory) | LOW — `current_dir().file_name()` + one-line pre-fill in wizard | P1 |
-| Folder name fallback in squad.yml generation | HIGH — prevents broken YAML with empty `project:` field, which breaks agent naming | LOW — guard clause in existing `generate_squad_yml()` | P1 |
-| Dashboard title shows project name | MEDIUM — cosmetic but makes TUI feel complete and scoped | LOW — read existing config field, folder name fallback | P1 |
-| Orchestrator "processing" state in TUI | MEDIUM — useful signal for human observers; differentiator vs competing tools | MEDIUM — new capture-pane call in poll loop, heuristic regex, new UI state in render | P2 |
+| Role templates (data structure + compile-time constants) | HIGH — eliminates free-form role entry for 90% of users; reduces wizard friction immediately | LOW — Rust const array, no DB change, no new crate | P1 |
+| Template selector UI in wizard WorkerPage | HIGH — required for templates to be usable; without UI, templates are dead code | LOW — extends existing radio-selector pattern in wizard.rs | P1 |
+| Model pre-fill from template | HIGH — removes a manual step for common role/model pairings | LOW — set `model_input` default when template selected | P1 |
+| Pending message count per agent in `squad-orchestrator.md` | HIGH — fundamental signal for overload detection; orchestrator cannot reason about queue depth without it | LOW — one aggregate SQL query, one new section in build_orchestrator_md() | P1 |
+| Busy-time in `squad-orchestrator.md` | HIGH — detects stuck agents; `status_updated_at` already exists | LOW — timestamp diff, string formatting, appended to fleet metrics section | P1 |
+| `squad-station clone <agent-name>` | HIGH — enables dynamic scale-up; orchestrator has no mechanism to expand fleet otherwise | MEDIUM — new subcommand file, name auto-increment query, tmux session launch | P1 |
+| SDD-aware template ordering in wizard | MEDIUM — quality-of-life for SDD workflow users; all templates remain accessible regardless | LOW — sort/reorder template list based on WizardResult.sdd, no new state | P2 |
+| Routing hints from templates in `squad-orchestrator.md` | MEDIUM — richer orchestrator guidance; depends on templates being selected in wizard | LOW — template routing_hints field appended to agent description in context generation | P2 |
+| Task-role alignment hint | MEDIUM — high value when misrouting occurs; low value before misrouting is observed | MEDIUM — keyword extraction, overlap check across messages + agent descriptions | P3 |
 
 ---
 
 ## Ecosystem Patterns Observed
 
-### `install` Subcommand Conventions (MEDIUM confidence — clig.dev + codebase)
+### Role Templates in Multi-Agent Frameworks (HIGH confidence — CrewAI docs + MetaGPT patterns)
 
-The existing codebase already has a JS-layer `install` subcommand in run.js. The v1.8 feature moves post-install welcome UX to a Rust subcommand. Patterns verified:
+CrewAI defines agents with `role`, `goal`, and `backstory` fields. Common software team roles: Engineering Lead, Senior Software Engineer, QA Engineer, Backend Engineer, Frontend Engineer, Test Engineer. MetaGPT encodes roles like Product Manager, Architect, Engineer, QA. The consistent pattern across frameworks: 6–12 predefined roles covering a standard software development team, plus a mechanism to override with custom definitions.
 
-- clig.dev: "Only use prompts or interactive elements if stdin is a TTY. Never require a prompt — always provide a way of passing input with flags." — supports bare-silent + `--tui`-opt-in design.
-- Oracle/Git for Windows: silent mode via flag is the established convention for scripted installs.
-- `--tui` flag with TTY guard is consistent with OpenCode CLI (bare invocation = TUI) and with existing squad-station welcome TUI pattern.
-- The split between "download + scaffold" (JS responsibility) and "welcome UX" (Rust responsibility) is clean: no ownership confusion.
+For squad-station, the equivalent is a `RoleTemplate` struct with `role` (stored in DB), `description` (stored in DB as agent description), `default_model` (pre-fills wizard model selector), and `routing_hints` (appended to agent description for orchestrator context). This maps cleanly to existing DB fields — no schema change.
 
-### Folder Name as Default (HIGH confidence — cargo init official docs)
+### Dynamic Agent Cloning (MEDIUM confidence — Microsoft multi-agent patterns, frontiersin.org DRTAG research)
 
-`cargo init` uses the directory name as the package name by default (overridable with `--name`). `npm create vite@latest` supports `.` for current directory scaffolding. `create-next-app` prompts with the directory basename pre-filled. This is the universal scaffolding convention — users expect it and are surprised when it is absent.
+The "master-clone" architecture in Microsoft's multi-agent patterns describes a single orchestrator spinning off copies of a worker agent for parallel subtasks. DRTAG (Dynamic Real-Time Agent Generation) research confirms this as a viable pattern for scaling without human intervention. The consistent behavior: clone inherits the source agent's full configuration (role, model, context), gets a unique name, operates identically to the source.
 
-### Pane Content State Detection (MEDIUM confidence — tmuxcc, NTM, TUICommander)
+For squad-station, the natural implementation: `clone` reads source agent record from DB, generates name `<source-name>-2` (or `-N` for the next available suffix), registers in DB, launches a new tmux session. The orchestrator AI receives the new agent name via stdout and can route tasks to it immediately.
 
-tmuxcc (Rust) uses agent-specific parsers that scan the last N lines of captured pane content for status markers (`@` = processing, `*` = idle, `!` = awaiting approval). NTM strips ANSI sequences and checks lines against patterns with recency weighting. TUICommander uses provider-specific regex for rate-limit and idle detection. The standard approach across all tools: `capture-pane -p`, strip ANSI, regex-match last non-empty line. No tmux API exists for "user is typing." `pane_current_command` via `tmux display-message` confirms the process is running without parsing content — useful as a secondary check.
+### Workload Metrics for Orchestrator Intelligence (MEDIUM confidence — multi-agent observability papers, IBM agent orchestration docs)
 
-For Claude Code and Gemini CLI specifically: the shell prompt regex `\$\s*$` or `%\s*$` signals idle (shell returned control). AI tool activity is signaled by response stream content (`>`, `◆`, `ℹ`, or any non-prompt line on the last visible row). This heuristic is reliable enough for a visual dashboard indicator but should not gate write operations.
+Multi-agent observability research identifies these key metrics for orchestrator decision-making: (1) pending task queue depth per agent, (2) agent utilization (busy vs. idle ratio over time), (3) task completion time. Squad-station can surface (1) directly from the messages table and (2) from `status_updated_at` duration. Task completion time requires completed_at minus created_at — also available in the existing schema.
+
+The correct delivery mechanism for squad-station: append to `squad-orchestrator.md` at each `context` command invocation. The orchestrator AI reads this file as part of its pre-flight and has current metrics without polling. No daemon, no push notification — consistent with the stateless CLI design.
+
+### Auto-Increment Naming (HIGH confidence — existing squad-station convention)
+
+The `<project>-<tool>-<role>` naming convention is already established (v1.1). For clones, the natural extension is `<project>-<tool>-<role>-2`, `...-3`, etc. The original agent has no numeric suffix (not `-1`). This mirrors standard replica naming in systems like Kubernetes (pod-xxxx suffixes) but uses sequential integers for human readability. The orchestrator AI can parse this pattern to understand the team structure.
 
 ---
 
 ## Sources
 
-- [Command Line Interface Guidelines (clig.dev)](https://clig.dev/) — interactive/silent modes, flag conventions
-- [cargo init — The Cargo Book](https://doc.rust-lang.org/cargo/commands/cargo-init.html) — folder-name-as-default convention (HIGH confidence)
-- [tmuxcc GitHub](https://github.com/nyanko3141592/tmuxcc) — pane content pattern detection for AI agent state (MEDIUM confidence)
-- [TUICommander](https://tuicommander.com/) — agent status detection patterns (MEDIUM confidence)
-- [Ralph TUI](https://ralph-tui.com/) — task execution state visualization (MEDIUM confidence)
-- [tmux man page](https://man7.org/linux/man-pages/man1/tmux.1.html) — `capture-pane`, `display-message`, `pane_current_command` format variables
-- Codebase (verified directly): `src/commands/welcome.rs`, `src/commands/ui.rs`, `src/commands/wizard.rs`, `src/commands/init.rs`, `src/cli.rs`, `src/tmux.rs`, `npm-package/bin/run.js`, `install.sh`
+- [CrewAI Agents Documentation](https://docs.crewai.com/en/concepts/agents) — role, goal, backstory field patterns; software team role examples (HIGH confidence)
+- [Microsoft ISE Blog: Patterns for Building a Scalable Multi-Agent System](https://devblogs.microsoft.com/ise/multi-agent-systems-at-scale/) — dynamic agent spawning patterns, orchestrator coordination (MEDIUM confidence)
+- [Frontiers in AI: Auto-scaling LLM-based multi-agent systems through dynamic integration](https://www.frontiersin.org/journals/artificial-intelligence/articles/10.3389/frai.2025.1638227/full) — DRTAG pattern, dynamic agent generation (MEDIUM confidence)
+- [IBM: AI Agent Orchestration](https://www.ibm.com/think/topics/ai-agent-orchestration) — orchestrator metrics, workload balancing (MEDIUM confidence)
+- [Microsoft Azure: AI Agent Design Patterns](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) — multi-agent architecture patterns (MEDIUM confidence)
+- [Agentic AI Systems Guide: Scaling Multi-Agent AI Systems](https://agenticaiguide.ai/ch_8/sec_8-3.html) — elastic scaling, stateless cloning patterns (MEDIUM confidence)
+- Codebase (verified directly): `src/commands/wizard.rs`, `src/commands/context.rs`, `src/db/agents.rs`, `src/db/messages.rs`, `src/cli.rs`, `src/tmux.rs`, `src/commands/register.rs` — existing structure for all dependency claims (HIGH confidence)
 
 ---
 
-*Feature research for: squad-station v1.8 — Install subcommand, folder name defaults, orchestrator processing state*
-*Researched: 2026-03-18*
+*Feature research for: squad-station v1.8 Smart Agent Management — Role templates, orchestrator intelligence data, dynamic agent cloning*
+*Researched: 2026-03-19*

@@ -1,443 +1,318 @@
 # Pitfalls Research
 
-**Domain:** Rust CLI feature additions — `squad-station install` subcommand, folder-name-as-default, orchestrator pane polling (v1.8 milestone)
-**Researched:** 2026-03-18
-**Confidence:** HIGH — based on direct codebase inspection (`cli.rs`, `main.rs`, `init.rs`, `config.rs`, `tmux.rs`, `ui.rs`, `npm-package/bin/run.js`, `install.sh`) plus patterns established in v1.5–v1.7 development
-
----
-
-## Scope of This Document
-
-This file covers pitfalls **specific to v1.8**: adding three features to the existing, stable v1.7 codebase.
-
-**Feature 1 — `squad-station install [--tui]` subcommand:**
-The npm postinstall (run.js) and curl installer (install.sh) currently call the bare binary directly (`spawnSync(destPath, [])` and `exec "$INSTALL_DIR/squad-station"`). v1.8 replaces these bare calls with `squad-station install --tui` so the install path becomes explicit and testable.
-
-**Feature 2 — Folder name as project name default:**
-`std::env::current_dir()` basename is used as a fallback value for the project name field in the wizard's first page, the TUI dashboard title, and `squad.yml` generation. Currently the project name field is empty-string by default.
-
-**Feature 3 — Orchestrator "processing" state via pane polling:**
-The TUI dashboard (`ui.rs`) polls `tmux capture-pane -p` on each refresh interval to inspect the content of the orchestrator's tmux pane. If the captured content indicates active work (heuristic pattern match), the orchestrator's status is surfaced as "processing" in the UI — supplementing the existing `idle`/`busy`/`dead` states tracked in the DB.
-
-The v1.7 codebase already has: a working welcome TUI with TTY guards, a multi-page ratatui wizard, npm/curl install auto-launch with `isTTY` / `[ -t 1 ]` checks, and 241 passing tests. The pitfalls below are additive — they do NOT repeat v1.7 pitfalls already documented.
+**Domain:** Stateless CLI with SQLite + tmux — adding agent templates, orchestrator intelligence metrics, and dynamic agent cloning
+**Researched:** 2026-03-19
+**Confidence:** HIGH — all findings grounded in direct codebase inspection (`signal.rs`, `db/agents.rs`, `tmux.rs`, `config.rs`, `context.rs`, `ui.rs`) and the existing CONCERNS.md audit
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: `install` Subcommand Name Conflicts With npm `install` Command
+### Pitfall 1: Clone Name Collision — DB Sees Only DB, Not tmux Reality
 
 **What goes wrong:**
-Adding `Install` to the `Commands` enum in `cli.rs` means `squad-station install` now parses as a Rust subcommand. However, `npm-package/bin/run.js` currently intercepts `install` at the Node level before any binary call: `if (subcommand === 'install') { install(); }`. This means `npx squad-station install` routes to the JavaScript install function — it never reaches the Rust binary.
-
-After v1.8, the intent is for `npx squad-station install` to eventually call the Rust `install` subcommand (or a variant of it). If `run.js` is updated to pass `install` through to the binary while also keeping the JS install logic, the two code paths conflict. The JS `install()` function downloads the binary; the Rust `install --tui` subcommand launches the welcome TUI. Calling the Rust binary before it exists (pre-download) causes a crash.
-
-More immediately: changing `run.js` to pass `install` arguments through to the binary changes the contract for any user who currently runs `npx squad-station install`. This is a breaking change to a shipped, documented command.
+`squad-station clone <agent>` must derive a unique name like `proj-claude-code-implement-2`. A naive implementation queries the DB for the highest existing suffix and increments by one. After a re-init with overwrite (`delete_all_agents()` clears the DB), the DB resets but orphaned tmux sessions `<name>-2`, `<name>-3` still exist. The next `clone` derives `-2`, then calls `tmux new-session -d -s proj-claude-code-implement-2`. tmux returns exit code 1 (session already exists). The clone command either errors out or silently no-ops, but the orchestrator believes a new agent was registered.
 
 **Why it happens:**
-The `install` word is overloaded: it means "download binary + scaffold files" in npm context and "finish setup + show TUI" in Rust context. The two meanings are at the same subcommand level without a clear boundary.
+Agent name = tmux session name is a foundational design decision. The DB and tmux state can diverge after a re-init. The DB reflects declared intent; tmux reflects live reality. The auto-increment logic only has visibility into the DB.
 
 **How to avoid:**
-Keep the split clean. The Rust subcommand should be named `install` but its purpose is narrowly defined as "first-run setup assistant that can be called post-binary-install." The JS `install()` in run.js remains the binary download step and explicitly calls `squad-station install --tui` (the Rust subcommand) as its last step, gated on `isTTY`. This means `npx squad-station install` follows the JS path (download + scaffold + optionally call binary), while `squad-station install` (binary already present) runs the Rust setup flow. These are two different invocation contexts.
-
-Document this split explicitly in code comments so future maintainers do not merge the two paths. The Rust subcommand should fail gracefully if called before `squad.yml` context is available (do not assume a project directory).
+The clone command must check both `db::agents::get_agent(pool, candidate_name)` AND `tmux::session_exists(candidate_name)` before committing to a derived name. Keep incrementing until a name is free in both. Explicitly document: `squad-station clone` does not kill existing sessions; use `squad-station close <clone>` to fully remove a clone.
 
 **Warning signs:**
-- `npx squad-station install` silently skips the TUI because run.js intercepts it and the binary call never happens
-- Users who already have the binary and run `squad-station install` hit a "command not found" error because `install` was not in the enum prior to v1.8
-- `cargo test` must include a test for `Commands::Install` parsing to prevent regression
+- `tmux new-session` returns non-zero during a clone attempt
+- `squad-station agents` shows clones as `dead` (DB says they exist, tmux sessions are gone)
+- Re-init with overwrite followed by clone produces "session already exists" errors
 
-**Phase to address:** Phase 1 of v1.8 — the subcommand boundary between JS and Rust must be decided before any code is written.
+**Phase to address:**
+Phase implementing the `clone` command. Double-check logic must be specified in the implementation plan before the name resolution loop is written.
 
 ---
 
-### Pitfall 2: `std::env::current_dir()` Returns an Unusable Basename in Edge Cases
+### Pitfall 2: Clone Partially Succeeds — tmux Session Created But DB Registration Failed
 
 **What goes wrong:**
-`std::env::current_dir()` can return a path whose `file_name()` component is:
+The clone command has two sequential steps: (1) register the agent in the DB, (2) launch a new tmux session. If the implementation reverses the order — launch tmux first, then write to DB — and the DB write fails (busy_timeout under write contention, or a bug), the tmux session is running with no DB record. The stop hook fires `squad-station signal <clone-name>`, hits GUARD 3 (`get_agent` returns `None`), silently exits. The orchestrator is never notified of the clone's task completion. The clone works in tmux but is invisible to the squad.
 
-1. **Empty or `"."`** — when the process is launched from the filesystem root (`/`) or a path that ends in `/`. `Path::file_name()` returns `None` for paths ending in `/` or for the root `/`.
-2. **Non-UTF-8 bytes** — Linux allows directory names with arbitrary byte sequences. `OsStr::to_str()` returns `None` for non-UTF-8 directory names. `to_string_lossy()` replaces invalid bytes with `U+FFFD` (replacement character), producing a name like `my-proj???backend` which is accepted by the wizard but generates an ugly `squad.yml` and broken tmux session names.
-3. **tmux-unsafe characters** — directory names can contain spaces, parentheses, brackets, slashes, and other characters that `sanitize_session_name()` does not currently handle. The existing sanitizer only replaces `.`, `:`, and `"` with `-`. A directory named `my project (v2)` would become `my project (v2)-orchestrator` as a tmux session name, which tmux rejects because spaces are not valid session name characters.
-4. **Very long names** — tmux has a session name length limit (typically 127 characters on most systems, but the actual limit varies). A deeply nested directory with a long basename can exceed this limit, causing `tmux new-session` to fail silently or with a confusing error.
-5. **Unicode names** — directory names like `我的项目` are valid UTF-8 and `to_str()` succeeds, but `sanitize_session_name()` passes them through unchanged. tmux on macOS handles Unicode session names in many cases, but the behavior is not guaranteed across versions and platforms.
+Alternatively: if DB registration succeeds but `tmux new-session` fails, the DB contains a ghost record that the TUI shows as `idle` but the session does not exist. This will flip to `dead` on next reconciliation, but the user sees a phantom agent in the list.
 
 **Why it happens:**
-The wizard's project name field is user-editable, so developers test the happy path (user types a clean ASCII name). The auto-populated default is never tested with adversarial directory names because test environments use clean temp directories.
+tmux and SQLite are separate systems with no shared transaction boundary. Developers write the "happy path" sequentially without considering partial failure. The existing pattern in `register.rs` does DB-only registration with no tmux involvement, so there is no established precedent for the two-step pattern.
 
 **How to avoid:**
-Apply a two-stage defense:
-
-1. **Derive the default safely:** Use `std::env::current_dir()?.file_name()?.to_string_lossy().into_owned()` but immediately sanitize the result with an extended sanitizer that also strips or replaces spaces, parentheses, brackets, and any character not in `[a-z0-9A-Z_-]`. This sanitized value is the default, not the raw basename.
-
-2. **Let the user see and edit it:** The wizard pre-populates the field with the sanitized default but requires the user to confirm (or the field is already editable, which it is). A bad default does not corrupt `squad.yml` because the wizard is interactive.
-
-3. **Handle the `None` case explicitly:** If `current_dir()` fails or `file_name()` is `None`, fall back to an empty string (existing behavior) or the string `"my-project"`. Do not panic or propagate the error — a missing default is a cosmetic issue, not a fatal one.
+Always register in DB first, launch tmux second. If the DB write fails, return an error before touching tmux. If the tmux launch fails after a successful DB write, immediately call `db::agents::delete_agent_by_name(pool, &clone_name)` (a compensating transaction). Log the compensating action to stderr. This is the closest thing to atomicity achievable without a shared transaction.
 
 **Warning signs:**
-- `squad-station init` crashes with "panicked at 'called `Option::unwrap()` on a `None` value'" when run from `/`
-- tmux session names with spaces cause `tmux new-session` to fail with "invalid session name"
-- Generated `squad.yml` contains `project: my project (v2)` which is valid YAML but breaks agent naming
+- `squad-station agents` shows a clone as `idle` but `tmux ls` does not show its session
+- Clone completes a task but no `[SQUAD SIGNAL]` notification reaches the orchestrator
+- The DB contains agents with suffix names that do not correspond to live tmux sessions
 
-**Phase to address:** Phase 1 of v1.8 (folder name default) — the sanitization and None handling must be part of the initial implementation. Do not add the default without the guards.
+**Phase to address:**
+Phase implementing the `clone` command. The DB-first ordering and compensating rollback must be explicit requirements in the implementation plan.
 
 ---
 
-### Pitfall 3: `capture-pane` Polling Breaks When Orchestrator Is Not in a tmux Session
+### Pitfall 3: Clone Does Not Update squad-orchestrator.md — Orchestrator Never Learns About the Clone
 
 **What goes wrong:**
-`tmux capture-pane -p -t <session-name>` requires that a tmux session with that name exists in the current tmux server. Three conditions cause it to fail:
-
-1. **Orchestrator has `antigravity` provider:** The DB-only orchestrator never has a tmux session. `session_exists()` returns false, but the TUI polling logic needs to know NOT to attempt capture-pane for this agent. If the polling code looks up the orchestrator by role from the DB and issues capture-pane without checking `is_db_only()`, every poll cycle produces a tmux error.
-
-2. **Orchestrator session was killed (status = `dead`):** The squad was `close`d or crashed. The orchestrator agent row still exists in the DB with status `dead`. If polling is based on the DB row's name (which it must be, since that's how the TUI gets agent data), the capture-pane call targets a non-existent session and fails. The TUI must handle `tmux capture-pane` failures gracefully without surfacing an error to the user.
-
-3. **TUI is launched outside of tmux:** `squad-station ui` can be run directly in a terminal, not inside a tmux session. In this case, calling `Command::new("tmux").args(["capture-pane", ...])` spawns a tmux client that connects to the default server, which may or may not have the orchestrator's session. This works if tmux is running; it fails (with exit code 1) if tmux is not available at all, which is a recoverable situation the TUI already handles for session listing.
+After `squad-station clone <agent>` successfully registers the clone and launches its session, the orchestrator's routing instructions in `squad-orchestrator.md` still only list the original agents. The orchestrator never routes tasks to the clone. The clone idles. Workload is not distributed. From the user's perspective, cloning did nothing useful.
 
 **Why it happens:**
-The existing TUI data path (`fetch_snapshot`) only reads from SQLite. Adding a `tmux capture-pane` call introduces a new external dependency on tmux availability inside the data refresh loop. Developers who test with a running tmux server never see the failure case.
+`context` is a separate, read-only command that regenerates `squad-orchestrator.md` from the current DB state. It is not called automatically after `clone`. The orchestrator loads the playbook once at session start via `/squad-orchestrator`. Without a re-invocation, the orchestrator has no mechanism to detect new agents.
 
 **How to avoid:**
-Wrap capture-pane in an explicit guard chain before any call:
-
-```rust
-// 1. Skip if orchestrator is DB-only (antigravity)
-if agent.tool == "antigravity" { return None; }
-
-// 2. Skip if session does not exist
-if !tmux::session_exists(&agent.name) { return None; }
-
-// 3. Run capture-pane; treat any error as "unknown" (not "processing")
-let output = Command::new("tmux")
-    .args(["capture-pane", "-p", "-t", &agent.name])
-    .output()
-    .ok()?;
-if !output.status.success() { return None; }
-```
-
-The return value of `None` means "could not determine processing state" — the TUI shows the existing DB-derived status (`idle`/`busy`/`dead`), not an error state. Never surface capture-pane failures as user-visible errors.
+The `clone` command must call the `context` regeneration logic internally as its final step — equivalent to running `squad-station context` after the agent is registered. The `build_orchestrator_md` function is already exported from `context.rs` as a `pub fn`; call it directly rather than shelling out to the binary. Additionally, the clone command output must instruct the user: "Orchestrator playbook updated at `.claude/commands/squad-orchestrator.md`. Reload `/squad-orchestrator` in your orchestrator session."
 
 **Warning signs:**
-- TUI shows error messages for every refresh cycle when using antigravity provider
-- TUI shows spurious error messages after `squad-station close` kills sessions
-- `squad-station ui` panics when tmux is not running at all
+- `squad-orchestrator.md` contains only original agents after a clone
+- TUI shows the clone as `idle` but the orchestrator never sends it tasks
+- No call to `build_orchestrator_md` or equivalent in the clone command's implementation
 
-**Phase to address:** Phase 2 of v1.8 (pane polling) — guard chain must be written first, before pattern matching on captured content.
+**Phase to address:**
+Phase implementing the `clone` command. The auto-context-regeneration must be a stated requirement in the plan, not an afterthought.
 
 ---
 
-### Pitfall 4: False Positive "Processing" Detection From Pane Content
+### Pitfall 4: Metrics Data Is Stale the Moment squad-orchestrator.md Is Written
 
 **What goes wrong:**
-`tmux capture-pane -p` returns the visible text content of the pane — up to the terminal scroll buffer limit. Determining whether the orchestrator is "actively processing" from this raw text is inherently heuristic. Common false positive sources:
-
-1. **Idle prompt lines that look like activity:** Claude Code's idle prompt shows `>` and a cursor. Gemini CLI's idle prompt shows `$` or a spinner that pauses. A naive heuristic like "content is non-empty" or "last line is not empty" always returns true because both tools show persistent prompt lines.
-
-2. **Captured content includes old output:** `capture-pane` by default returns the last N lines of the pane. If the orchestrator finished a task 10 minutes ago and the pane shows the completed task output, a naive "contains active-looking text" heuristic returns true for a session that is actually idle.
-
-3. **Tool-version-dependent patterns:** Claude Code's active state indicator (spinner, "Thinking...", etc.) changes between tool versions. A regex written against one version silently fails against another, causing the "processing" state to never appear for users on a different version.
-
-4. **Multiple tool simultaneous output patterns:** Gemini CLI, Claude Code, and potentially future providers each have different UI text patterns for "thinking" vs. "idle." A single heuristic that works for one provider misclassifies the other.
+The orchestrator intelligence feature computes task-role alignment scores, busy time, and messages-per-agent counts and embeds them as a static table in `squad-orchestrator.md`. By the time the orchestrator reads this file — potentially minutes or many tasks later — the data is stale. The orchestrator makes routing decisions ("agent A is overloaded, send to agent B") based on past state, causing misrouting in the opposite direction (avoiding an agent that has since become idle).
 
 **Why it happens:**
-Scraping terminal UI output for semantic state is fundamentally unreliable. The tmux pane content is designed for human consumption, not machine parsing. Developers prototype the heuristic with their own active session and it "looks good" in testing, but real-world patterns are more varied.
+`squad-station context` is a stateless snapshot command by design (the decision to make it read-only was explicit in v1.0). There is no push mechanism, no daemon, no file watcher. The orchestrator loads the playbook once. Static metrics in a once-loaded document are definitionally stale.
 
 **How to avoid:**
-Use a conservative, provider-aware approach:
-
-1. **Prefer the DB state over pane content.** If the DB says `idle` and pane content is ambiguous, show `idle`. Only override to `processing` if a high-confidence signal is present.
-
-2. **Use provider-specific patterns, not a universal heuristic.** For `claude-code`, look for the "Thinking" or spinner ANSI sequences specific to that version. For `gemini-cli`, look for the running indicators. For unknown providers, do not attempt classification — show the DB state.
-
-3. **Add a "last changed" timestamp check.** If `status_updated_at` changed in the last N seconds (e.g., 30 seconds), the DB state is fresh and trustworthy. Pane polling adds value mainly when the DB state has been `idle` for a long time but visual activity suggests the agent is running something not yet reflected in the DB.
-
-4. **Expose the heuristic as a labeled annotation, not a status replacement.** Instead of changing the agent's `status` field to `processing`, add a separate TUI annotation: `[idle + active in pane]`. This prevents the display from overriding the authoritative DB state.
-
-**Warning signs:**
-- Orchestrator always shows "processing" even when idle (false positive loop)
-- Orchestrator never shows "processing" even during active task execution (heuristic mismatch)
-- Different behavior for Claude Code vs. Gemini CLI users (provider-specific pattern failure)
-- After `squad-station close`, "processing" state persists in the TUI because the old pane content is cached
-
-**Phase to address:** Phase 2 of v1.8 (pane polling) — the heuristic approach must be decided and documented before implementation. The decision whether to replace or annotate the DB status is an architectural choice, not an implementation detail.
-
----
-
-### Pitfall 5: Pane Polling Adds tmux Subprocess Overhead to Every TUI Refresh Cycle
-
-**What goes wrong:**
-The existing TUI refresh loop in `ui.rs` has a 3-second interval. Each refresh calls `fetch_snapshot()` which opens a SQLite connection, reads two tables, and drops the connection. This is a purely local I/O operation with predictable latency (typically <10ms).
-
-Adding `tmux capture-pane -p -t <session>` per refresh cycle spawns a child process for every agent that needs polling. For a squad with 5 agents, this is 5 `Command::new("tmux")` spawns every 3 seconds. Each spawn:
-
-- Forks a process
-- Connects to the tmux server socket
-- Captures pane content (which can be several kilobytes)
-- Exits
-
-On macOS with tmux, this is approximately 20-40ms per call. Five calls = 100-200ms overhead per refresh cycle. At a 3-second interval, this is tolerable but visible as UI lag. If the polling target is only the orchestrator (not all agents), the overhead is one subprocess per refresh — acceptable.
-
-A more serious issue: if tmux is slow to respond (under load, server busy), `capture-pane` can block for several hundred milliseconds. The TUI event loop is async, but `Command::output()` is a blocking call on the thread. In the current architecture (`fetch_snapshot` is `async fn` but uses `Command::new("tmux")` blocking calls), this blocks the async executor thread for the duration of the subprocess call.
-
-**Why it happens:**
-The existing `tmux::session_exists()` and related functions in `tmux.rs` all use `Command::new("tmux").output()` — blocking subprocess calls. The pattern is established and consistent. Adding capture-pane follows the same pattern without thinking about cumulative latency.
-
-**How to avoid:**
-1. **Poll only the orchestrator, not all agents.** The "processing" state is specifically for the orchestrator's pane. Workers' completion is detected via the hook-driven `signal` command, which is already authoritative. No worker pane polling is needed.
-
-2. **Use a longer polling interval for pane content than for DB state.** DB state refreshes every 3 seconds (already implemented). Pane content can refresh every 10-15 seconds — the processing state is not time-critical at sub-10-second granularity. Separate the two refresh timers.
-
-3. **Use `tokio::process::Command` instead of `std::process::Command` for the capture-pane call.** The codebase currently uses blocking `std::process::Command` for all tmux calls. This is acceptable for fast operations but risky for operations that might block. Using `tokio::process::Command::output().await` keeps the async executor unblocked.
-
-4. **Cache the last captured pane content.** If the capture fails or is slow, use the previous captured content. Do not block the render cycle waiting for fresh pane content — stale data is better than a frozen TUI.
-
-**Warning signs:**
-- TUI refresh visibly lags (>500ms) after adding pane polling
-- `squad-station ui` CPU usage spikes when tmux is under load
-- TUI event loop drops key presses during refresh (key events handled after long blocking call)
-
-**Phase to address:** Phase 2 of v1.8 (pane polling) — performance constraints must be specified before implementation. The two-timer approach (DB at 3s, pane at 10-15s) is a design decision that affects the App state struct and event loop structure.
-
----
-
-### Pitfall 6: Backward Compatibility Break When npm/curl Call `install --tui` on Old Binary
-
-**What goes wrong:**
-After v1.8, `install.sh` and `run.js` will call `squad-station install --tui` instead of `squad-station` (bare). Users who have an older binary (pre-v1.8) installed at the same path will get a clap parse error:
+Do not embed pre-computed metric values in `squad-orchestrator.md`. Instead, embed **CLI commands** the orchestrator must run to get live data:
 
 ```
-error: unrecognized subcommand 'install'
+## Workload Check (run before routing a task)
+\`\`\`bash
+squad-station status --json
+squad-station agents
+\`\`\`
 ```
 
-This breaks the install flow for users upgrading from v1.7 via `npx squad-station install` because:
-1. `run.js` downloads the new v1.8 binary to `destPath`
-2. `run.js` calls `spawnSync(destPath, ['install', '--tui'], ...)` — this calls the NEW binary, which does support `install`
+If a static snapshot is valuable (e.g., at session initialization), include it with a clearly labeled timestamp and an advisory TTL:
 
-So actually the forward direction is fine — the new binary is downloaded first, then called. The backward direction — running old `install.sh` or old `run.js` with a new binary — is also fine.
-
-The problematic case is: **the auto-launch call in the EXISTING run.js (v1.7)** runs `spawnSync(destPath, [])` (bare, no subcommand). If a user has already downloaded the new v1.8 binary (e.g., via curl) but still has the old npm package, the old run.js calls the new binary bare, which still works (bare invocation routes to the welcome TUI). No issue.
-
-The actual risk is in the OTHER direction: if run.js is updated to call `squad-station install --tui` but is published BEFORE the binary binary is published (npm and GitHub Releases get out of sync), users who `npm install squad-station` get the new run.js, download the old binary, then run.js tries `squad-station install --tui` on the old binary — and gets a clap parse error.
-
-**Why it happens:**
-npm package versions and GitHub Release binary versions can diverge during the release process. The npm package is published via `npm publish` (manual or CI), and the binary is published via `softprops/action-gh-release` on tag push. If only one of the two is published (partial release), users hit version mismatches.
-
-**How to avoid:**
-In run.js, make the `install --tui` call conditional on the binary version supporting it:
-
-```javascript
-// Check if the binary supports the install subcommand
-var versionResult = spawnSync(destPath, ['--version'], { encoding: 'utf8' });
-var supportsInstall = /* parse major version >= 1.8 */;
-var launchArgs = supportsInstall ? ['install', '--tui'] : [];
-if (process.stdout.isTTY) {
-    spawnSync(destPath, launchArgs, { stdio: 'inherit' });
-}
+```
+<!-- Snapshot generated: 2026-03-19T10:00:00Z — refresh by running `squad-station context` -->
 ```
 
-Or: keep the bare call (`spawnSync(destPath, [], ...)`) in run.js and let the Rust binary route bare invocation to the correct flow (which it already does in v1.7+). The `install --tui` subcommand is then only called from documented manual usage, not from the auto-launch path. This eliminates the version coupling risk entirely.
+The orchestrator is an AI with tool access. Give it commands to run, not data to memorize.
 
 **Warning signs:**
-- `npx squad-station install` fails with "error: unrecognized subcommand 'install'" after an npm-only release
-- CI reports a mismatch between npm package version and GitHub Release binary version
-- Users on partial upgrades see clap errors instead of the welcome TUI
+- `squad-orchestrator.md` contains a table of metrics with no timestamp
+- `squad-orchestrator.md` contains no CLI command to re-query current workload
+- Orchestrator systematically avoids idle agents because the stale metrics label them busy
 
-**Phase to address:** Phase 1 of v1.8 — release coordination must be planned before changing the auto-launch call in run.js. The simplest mitigation (keep bare invocation) should be the default unless there is a clear reason to use the subcommand form.
+**Phase to address:**
+Phase implementing orchestrator intelligence data. This is a UX design decision — the generated playbook text must be drafted carefully before any metric computation code is written.
 
 ---
 
-## Moderate Pitfalls
-
-### Pitfall 7: Wizard Project Name Field With Pre-Populated Default Bypasses Validation
+### Pitfall 5: busy_time Metric Resets on Re-Init — Looks Like Zero for All Agents
 
 **What goes wrong:**
-Currently, the project name field in the wizard starts empty and the user must type something. Validation runs when the user attempts to proceed: empty string is rejected.
+Computing "busy time" uses `status_updated_at` timestamps from the `agents` table. When a user runs re-init with overwrite, `delete_all_agents()` clears the table and `insert_agent()` re-inserts all agents with fresh `status_updated_at = now`. All agents show 0 busy time immediately after re-init, even if they have been running for hours. The metrics report an agent fleet that looks freshly started, regardless of actual runtime.
 
-With v1.8, the field is pre-populated with the sanitized folder basename. A user can simply press Enter on the first page without reviewing the pre-populated value. If the sanitized default produces a project name that is technically valid (non-empty) but semantically bad — e.g., a temp directory like `tmp` or `a` — the user proceeds without noticing.
-
-More critically: if the pre-populated default has NOT been properly sanitized (due to a sanitizer gap — see Pitfall 2), the wizard accepts it at the UI level but it later breaks tmux session creation.
-
-**How to avoid:**
-- Show the pre-populated value highlighted (distinct color or `[default: <value>]` label) so users notice and consciously accept it
-- Run the tmux session name validation (not just "non-empty" check) at wizard submit time, before writing `squad.yml`. The `sanitize_session_name()` function exists in `config.rs`; use it to pre-validate the default.
-- Consider adding a minimum length check (project name ≥ 3 characters) to prevent single-character project names from passing.
-
-**Warning signs:**
-- Users create squads named `tmp`, `a`, or `1` because the default was from a temp directory
-- tmux session creation fails after wizard completes successfully because the project name has unsafe characters
-
-**Phase to address:** Phase 1 of v1.8 (folder name default) — validation must be reviewed when the default is introduced.
-
----
-
-### Pitfall 8: `current_dir()` Returns Different Values in Test vs. Production Context
-
-**What goes wrong:**
-In `cargo test`, `std::env::current_dir()` returns the crate root (the directory containing `Cargo.toml`). Tests that exercise the folder-name-as-default logic will pick up `squad-station` (the repo name) as the default project name, not a test-specific name. This can produce:
-
-1. Tests that appear to pass but are testing the wrong default
-2. Tests that fail when run from a different directory (e.g., CI checks out to a different path)
-3. Tests that write files to the real project directory instead of a temp directory, polluting the workspace
-
-The existing wizard tests in `init.rs` use hardcoded `WizardResult` values (`make_wizard_result()`), so they are isolated. But any new test that exercises the "derive default from current_dir" code path must explicitly set the current directory or mock the call.
-
-**How to avoid:**
-- Extract the "derive project name default" logic to a pure function that accepts a `&Path` argument instead of calling `current_dir()` internally. Tests pass a controlled path; production code passes `std::env::current_dir()`.
-- Never call `std::env::current_dir()` from inside a function that is tested in the unit test suite. Keep the current_dir call at the call site in the wizard's page initialization, and pass the result as a parameter.
-
-**Warning signs:**
-- Tests for folder-name-default pass locally but fail in CI (different working directory)
-- `generate_squad_yml` tests produce different output depending on where `cargo test` is run
-- Files are created in the repo root during tests (test wrote to `cwd` instead of a temp dir)
-
-**Phase to address:** Phase 1 of v1.8 (folder name default) — the pure-function extraction must be done before tests are written, not as a refactor afterward.
-
----
-
-### Pitfall 9: Pane Polling Introduces "Processing" State Into DB Status Contract
-
-**What goes wrong:**
-The current DB-level agent statuses are `idle`, `busy`, and `dead`. These are authoritative and written by the `signal` command (via `update_agent_status`). The `reconcile_agent_statuses` helper also updates them by checking tmux session liveness.
-
-If `processing` becomes a fourth status string written to the DB (instead of just a TUI display label), it must be:
-- Validated by `status_color()` in ui.rs (currently only handles `idle`, `busy`, and the default `dead`/unknown case)
-- Handled by `colorize_agent_status` in helpers.rs
-- Handled by the `status` command output
-- Handled by the `agents` command JSON output (which external consumers might parse)
-- Covered by migration if the DB schema adds a constraint on status values
-
-If `processing` is only a TUI display annotation and is never written to the DB, none of the above applies — but this must be an explicit design decision, not an accident.
-
-**How to avoid:**
-Decide explicitly: is `processing` a DB status or a TUI-only overlay?
-
-The recommended approach: **TUI-only overlay**. The DB status tracks hook-driven lifecycle (`idle`/`busy`/`dead`). The TUI optionally overlays a `processing` indicator from pane polling, displayed alongside but not replacing the DB status. This keeps the DB contract clean and avoids migration.
-
-If `processing` must be in the DB (e.g., for the `status` command to report it), add it as a distinct DB status with a migration, update all status-handling code paths, and update the JSON output schema. Do this in a single change, not incrementally.
-
-**Warning signs:**
-- `squad-station status` shows a blank or `[unknown]` for agents in `processing` state because `status_color()` does not handle it
-- External tools parsing `squad-station agents --json` fail to handle the new status string
-- The TUI shows `processing` after the task completes because the DB was written with this value and `reconcile_agent_statuses` does not know how to transition out of it
-
-**Phase to address:** Phase 2 of v1.8 (pane polling) — the DB status contract decision must be made before writing any pane polling code.
-
----
-
-### Pitfall 10: `install` Subcommand Without a `squad.yml` Context May Hit DB Errors
-
-**What goes wrong:**
-Most existing subcommands (e.g., `ui`, `agents`, `status`) call `config::load_config()` to find `squad.yml` and then `config::resolve_db_path()` to get the SQLite path. If no `squad.yml` exists, these fail with "squad.yml not found."
-
-The new `install` subcommand is designed to run in a project directory that does NOT yet have `squad.yml` — it is a pre-init step. If the implementation accidentally calls any code path that requires the config (e.g., if `install --tui` routes to the welcome TUI which then checks `std::path::Path::new("squad.yml").exists()`), it must handle the `None`/missing-config case gracefully, not panic or propagate an error.
-
-The current welcome TUI flow in `main.rs` already handles this: `let has_config = std::path::Path::new("squad.yml").exists();` — it does not call `load_config()`. Any code in the `install` subcommand handler must follow the same pattern.
+More subtly: `insert_agent` uses `ON CONFLICT(name) DO UPDATE SET tool = excluded.tool, role = excluded.role, model = excluded.model, description = excluded.description`. It does NOT reset `status_updated_at`. But the overwrite re-init path calls `delete_all_agents()` followed by fresh inserts — so `status_updated_at` is reset to the re-init timestamp.
 
 **Why it happens:**
-Developers copy the `init` subcommand's handler as a starting point for `install`. `init` calls `config::load_config()` (after wizard generates the file). If the copy-paste is incomplete, `install` inherits the config-loading call before the file exists.
+`status_updated_at` was designed to track the most recent status transition, not total accumulated busy time. Using it as a busy-time proxy works for "how long has this agent been in its current state" but is unreliable across re-inits and status updates triggered by duplicate signals.
 
 **How to avoid:**
-The `install` handler must explicitly NOT call `config::load_config()` or any function that transitively calls it. The only DB operations allowed in the install flow are those that come AFTER the wizard generates `squad.yml` — which is the same flow as `init`. If `install` delegates to `init` internally (e.g., `commands::init::run()` is called from `commands::install::run()`), this is safe. If `install` tries to do something before calling init, it must stay config-free.
+Define busy_time explicitly as "elapsed time since `status_updated_at` if current status is `busy`." Document clearly in the generated playbook that this metric represents "time in current state since last transition," not "total busy time since deployment." Do NOT attempt to compute historical busy time from existing schema — it is not available. For v1.8, this simple metric is sufficient and honest. Defer trend analytics (total busy time over 24h) to a future milestone that would require an `agent_events` table.
 
 **Warning signs:**
-- `squad-station install` in a fresh directory fails with "squad.yml not found"
-- `squad-station install --tui` shows an error before the TUI appears
-- Integration test for install fails when run in a temp directory with no squad.yml
+- All agents show 0 busy time immediately after a re-init
+- An agent that has been idle for 3 hours shows 0 busy time after a status update from a duplicate signal
+- Metrics claim an agent is "newly idle" when it has been idle since deployment
 
-**Phase to address:** Phase 1 of v1.8 (install subcommand) — the install handler must be designed config-free from the start.
+**Phase to address:**
+Phase implementing orchestrator intelligence data. The metric definition and its limitations must be documented in the generated playbook to prevent orchestrator misinterpretation.
+
+---
+
+### Pitfall 6: Agent Template Suggests Model Not in Validation Allowlist
+
+**What goes wrong:**
+Agent role templates embed suggested model identifiers (e.g., for an "Architect" role, suggest `claude-opus`). When the wizard pre-fills the model field from the template and the user proceeds, the model string flows through `generate_squad_yml` into the YAML and then through `config::validate()` at init time. If the template embeds a model string not in `VALID_PROVIDERS` / `valid_models_for()` — for example `"claude-opus-4"` instead of the valid alias `"opus"` — validation rejects it. The user selected a template that Squad Station itself offered and immediately gets a cryptic validation error.
+
+This is especially insidious because the templates are compiled into the binary. A mismatch between template model strings and the validation allowlist cannot be caught at runtime — only by tests.
+
+**Why it happens:**
+The model validation allowlist in `src/config.rs` is maintained separately from the template definitions in the wizard. If a new model alias is added to the allowlist (e.g., `"claude-sonnet-4-7"`) but existing templates still reference an old format, or vice versa, the two diverge silently until a user hits the validation error.
+
+**How to avoid:**
+Templates must reference model aliases drawn from the same `valid_models_for()` function used in `validate_agent_config`. The simplest approach: templates do not specify a model at all — they set role and description, and leave the model field empty for the user to choose from the radio selector (which is already bound to the allowlist). If templates do suggest models, embed a test that calls `validate_agent_config` on each template's generated agent config and asserts it passes. This test runs in CI and catches drift before release.
+
+**Warning signs:**
+- No test validates template-generated configs against `validate_agent_config`
+- Template embeds a string literal for a model (e.g., `"claude-opus"`) rather than referencing the allowlist constant
+- A template passes wizard smoke tests but fails when `init` writes squad.yml and re-validates
+
+**Phase to address:**
+Phase implementing agent role templates in wizard. Template validation against the allowlist must be a test requirement, not an afterthought.
+
+---
+
+### Pitfall 7: Cloning the Orchestrator Creates a Routing Loop
+
+**What goes wrong:**
+If the `clone` command does not explicitly reject orchestrator agents, a user (or a confused orchestrator) can run `squad-station clone <orchestrator-name>`. The clone is registered with `role = "orchestrator"`. Now there are two orchestrators in the DB. GUARD 4 in `signal.rs` checks `agent_record.role == "orchestrator"` and silently exits for both. Neither orchestrator receives task completion signals. More dangerously: `get_orchestrator` in `db/agents.rs` returns the most recent non-dead orchestrator. The original orchestrator may stop receiving signals if the cloned orchestrator appears "more recent." The routing chain silently breaks.
+
+**Why it happens:**
+The `clone` command will copy the source agent's `role` field from the DB. The DB does not enforce any uniqueness constraint on `role = "orchestrator"`. There is no guard at the DB level or in the signal chain to detect duplicate orchestrators at routing time.
+
+**How to avoid:**
+The `clone` command must explicitly reject agents with `role == "orchestrator"` with a clear error message: "Cannot clone the orchestrator agent. Only worker agents can be cloned." This is a one-line guard at the top of the clone handler, before any DB writes.
+
+**Warning signs:**
+- `squad-station agents` shows two agents with `role = "orchestrator"`
+- `squad-station signal <worker>` succeeds (rows > 0) but no notification reaches the orchestrator
+- `get_orchestrator` query is returning the wrong agent (cloned orchestrator shadows the original)
+
+**Phase to address:**
+Phase implementing the `clone` command. The orchestrator rejection guard must be the first guard in the clone handler.
 
 ---
 
 ## Technical Debt Patterns
 
+Shortcuts that seem reasonable but create long-term problems.
+
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Use raw `current_dir().file_name()` without sanitization for the default | Simpler code | Spaces and tmux-unsafe chars break session creation silently | Never — sanitize at derivation time |
-| Write `processing` to the DB without updating all status-handling code | Quick TUI label | Breaks status command, agents command JSON, and any external consumer | Never without a complete audit of all status consumers |
-| Poll all agent panes, not just the orchestrator | Feature parity | 5x subprocess overhead per refresh; blocks async executor | Never — scope to orchestrator only |
-| Use blocking `std::process::Command` for capture-pane in async TUI loop | Consistent with existing tmux.rs patterns | Blocks tokio executor thread during slow tmux calls | Acceptable only with a separate, longer poll interval (>10s) |
-| Pre-populate project name from current_dir AND keep "non-empty" as the only validation | Quick feature | Users proceed with bad defaults like `tmp`, `1`, or names with unsafe chars | Never — add tmux-safe validation alongside the default |
-| Call bare `squad-station` from run.js/install.sh instead of `squad-station install --tui` | Backward compatible auto-launch | Loose coupling — install path does not benefit from future install subcommand improvements | Acceptable as a conservative v1.8 approach |
+| Auto-increment clone names by scanning DB only | Simple implementation | Diverges from tmux reality after re-init; causes collision bugs | Never — always check tmux too |
+| Launch tmux session before DB registration in clone | Fewer rollback cases | Orphaned sessions if DB write fails; signal chain breaks silently | Never — DB first, always |
+| Skip context regeneration after clone | Simpler clone command | Orchestrator never learns about new clones; cloning has no effect on routing | Never — regeneration is mandatory |
+| Embed static metric tables in squad-orchestrator.md | Easier to read at a glance | Stale by the time the orchestrator reads it; causes misrouting | Never — embed CLI commands, not values |
+| Templates hard-code model strings as string literals | Fast to write | Drift from validation allowlist; user sees validation errors on their own selections | Never — reference the allowlist or omit the model |
+| Use status_updated_at as proxy for total busy time | No new schema needed | Resets on re-init; not historical; misleads on long-running squads | Acceptable for v1.8 with documented caveats in the playbook |
+| Allow cloning any agent including orchestrators | No special-case code | Two orchestrators break the signal routing chain silently | Never — orchestrator clone must be explicitly rejected |
 
 ---
 
 ## Integration Gotchas
 
+Common mistakes when connecting new features to the existing system.
+
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| npm run.js install + new `install` subcommand | Change `spawnSync(destPath, [])` to `spawnSync(destPath, ['install', '--tui'])` before verifying binary version support | Gate the subcommand call on version detection OR keep bare invocation |
-| curl install.sh + new `install` subcommand | Append `exec "$INSTALL_DIR/squad-station" install --tui` at end of install.sh | If binary may be pre-v1.8 (cached download), keep bare exec; only use subcommand form if version check passes |
-| `tmux capture-pane` in async TUI loop | Call `std::process::Command::output()` (blocking) inside an async fn | Use `tokio::process::Command` or ensure the call is on a separate timer with longer interval |
-| Antigravity orchestrator + pane polling | Attempt capture-pane on orchestrator that has no tmux session | Check `agent.tool == "antigravity"` before any capture-pane call |
-| `current_dir()` in unit tests | Test code calls the default-derivation function directly | Extract to pure fn accepting `&Path`; tests pass a controlled temp path |
-| `processing` status in DB | Add status value without updating `status_color()`, `colorize_agent_status()`, JSON output | Treat `processing` as TUI-only OR update all status consumers atomically |
+| clone command → signal chain | Launch tmux session before DB registration | Register in DB first; roll back DB record if tmux launch fails |
+| clone command → orchestrator context | Assume orchestrator will reload `/squad-orchestrator` manually | Auto-regenerate squad-orchestrator.md inside the clone command as the last step |
+| metrics → context command | Compute metric values and embed as static table | Embed CLI commands for live re-query; timestamp any static snapshot |
+| templates → config validation | Template suggests model not in `valid_models_for()` allowlist | Templates omit model field, or reference the allowlist constant; CI test validates |
+| clone → name resolution | Check DB only for name collision | Check both `get_agent(pool, candidate)` and `tmux::session_exists(candidate)` |
+| clone → orchestrator role | Allow cloning any agent | Reject `role == "orchestrator"` with clear error before any DB writes |
+| clone → TUI live update | TUI must poll at a different cadence for new agents | TUI already polls DB every 3s via connect-per-refresh; clone registers in DB; TUI picks it up automatically within one cycle |
+| busy_time metric → re-init | Assume status_updated_at persists across re-inits | Document the reset behavior; define metric as "time in current state" not "total runtime" |
 
 ---
 
 ## Performance Traps
 
+Patterns that work at small scale but fail as usage grows.
+
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Polling all agents via capture-pane every 3 seconds | TUI refresh lag >200ms; CPU spike on refresh | Scope polling to orchestrator only; use 10–15s interval for pane content | Immediately with >3 agents |
-| Blocking `std::process::Command` for capture-pane in tokio async fn | Key press events dropped during long tmux calls | Use tokio::process::Command or a dedicated OS thread via tokio::task::spawn_blocking | When tmux is under load (>100ms response) |
-| Calling `session_exists()` before capture-pane when session list is stale | Extra subprocess overhead; no actual safety benefit if list was cached | Session existence check is cheap; keep it as first guard | Not a performance trap — keep the check |
-| Caching pane content in App state without expiry | "Processing" state persists after session is killed | Include a capture timestamp; invalidate cache on session death | After `squad-station close` |
+| `tmux has-session` called once per agent during reconciliation (pre-existing issue) | `agents`, `status`, `context` commands slow with many agents | Use `list_live_session_names()` once + HashSet lookup (flagged in CONCERNS.md) | 10+ agents |
+| Context regeneration called once per clone in a rapid clone loop | Slow if user clones 5 agents sequentially | Each clone triggers one `build_orchestrator_md` call; cost is proportional to agent count (already O(N)) | Not a concern at v1.8 agent counts (<10) |
+| Metrics query runs a full table scan per `context` call | `context` slow for large agent fleets | Metrics are derived from existing `list_agents` result — no extra query needed if implementation shares the data | Not a trap if implementation reuses the existing query |
+| Clone creates many agents that all signal orchestrator simultaneously | Rapid-fire `send_keys_literal` calls overlap in the orchestrator session | Each `send_keys_literal` call includes a 2s sleep (built into `tmux.rs`); naturally serialized by single-writer pool | 5+ agents completing simultaneously |
+
+---
+
+## Security Mistakes
+
+Domain-specific security issues.
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| Clone name derived from user input without sanitization | Spaces or tmux-unsafe chars in the derived name break session targeting | Apply `config::sanitize_session_name()` to any derived clone name before passing to `tmux::launch_agent` |
+| Template description field contains markdown or backticks | Markdown injection could confuse orchestrator's parsing of squad-orchestrator.md | Template descriptions are plain text only; no markdown formatting, no backtick blocks |
+| Clone command allows cloning the orchestrator | Two orchestrators break signal routing silently | Reject `role == "orchestrator"` at the start of the clone handler |
+| Metrics expose internal agent state to squad-orchestrator.md | Low risk (same file already contains agent names/descriptions) | No new exposure beyond what the existing `context` command generates |
+
+---
+
+## UX Pitfalls
+
+Common user experience mistakes in this domain.
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| Template list has no guidance on when to use each role | User picks "Architect" for a 2-agent squad that doesn't need one | Each template includes a one-line "Use when:" hint in the wizard list item |
+| Clone succeeds but orchestrator routing is unchanged | User expects load balancing; nothing changes | Print explicit confirmation: "Clone registered. Playbook updated. Reload `/squad-orchestrator` in your orchestrator session." |
+| Metrics in playbook presented as routing rules, not hints | Orchestrator over-trusts stale data; refuses to route to an idle agent | Frame as "run this command to check current load" not "this agent is busy" |
+| TUI shows clone agents indistinguishable from originals | User cannot identify which agents are clones | Derive clone status from naming convention (suffix `-2`, `-3`); or add a "clone of X" note in the role/description field |
+| No confirmation prompt before creating a clone | User accidentally clones the wrong agent | Print what will be cloned and prompt for confirmation, or at minimum print "Created clone: <name>" with rollback instructions |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **`install` subcommand in cli.rs:** Verify `squad-station install --help` works; verify `squad-station install` in a directory with no squad.yml does not panic or error on config load
-- [ ] **Folder name default — None safety:** Verify `squad-station init` when run from `/` (root) does not panic; `file_name()` returns `None` for root path
-- [ ] **Folder name default — tmux safety:** Verify project name derived from a directory with spaces (e.g., `/tmp/my project`) produces a valid tmux session name (no spaces in session name after sanitization)
-- [ ] **Folder name default — UTF-8 edge case:** Verify non-UTF-8 directory name falls back gracefully without replacement-character artifacts in squad.yml
-- [ ] **Pane polling — antigravity guard:** Verify TUI does not attempt capture-pane when orchestrator has `tool = "antigravity"`; no error logged during refresh
-- [ ] **Pane polling — dead session guard:** Verify TUI does not attempt capture-pane when orchestrator has `status = "dead"`; no error logged during refresh
-- [ ] **Pane polling — `processing` scope:** Verify `processing` state does not appear in `squad-station agents --json` output unless explicitly designed to do so
-- [ ] **npm install backward compat:** Run `npx squad-station install` with the updated run.js against a v1.7 binary — must not fail with clap parse error
-- [ ] **241 existing tests still pass:** Run `cargo test` after all v1.8 changes; no new test failures; test output is not garbled
+Things that appear complete but are missing critical pieces.
+
+- [ ] **Clone command — name resolution:** Does the implementation check `tmux::session_exists(candidate)` in addition to querying the DB? Verify with a test where a tmux session exists but no DB record for that name.
+- [ ] **Clone command — DB-first ordering:** Is the DB `insert_agent` call made BEFORE `tmux::launch_agent`? Verify by code review of the implementation order.
+- [ ] **Clone command — rollback:** If `tmux::launch_agent` fails after DB registration, is the DB record removed? Verify with a unit test that simulates tmux failure.
+- [ ] **Clone command — orchestrator rejection:** Does `clone <orchestrator-name>` return a non-zero exit and clear error message? Verify with an integration test.
+- [ ] **Clone command — context regeneration:** Is `squad-orchestrator.md` updated after a successful clone? Verify by reading the file after a clone and confirming the clone's name appears.
+- [ ] **Agent templates — allowlist compliance:** Does every template's suggested model pass `validate_agent_config()`? Verify with a CI test that runs each template through config validation.
+- [ ] **Orchestrator intelligence — no static values:** Does the generated `squad-orchestrator.md` contain CLI commands for live queries, not just a static metric table? Read the generated file and confirm.
+- [ ] **Orchestrator intelligence — timestamp:** If any static metric snapshot is included, does it have a generated-at timestamp? Verify by reading the generated file.
+- [ ] **TUI live update:** After a clone, does the TUI show the new agent within one refresh cycle (3 seconds)? The TUI polls DB; the clone registers in DB; this should work automatically. Verify by inspection.
+- [ ] **busy_time caveats:** Does the generated playbook include a note explaining that busy_time resets on re-init and represents "time in current state," not "total runtime"? Verify by reading the generated playbook text.
+- [ ] **Signal roundtrip for clone:** After a clone completes a task, does the orchestrator receive a `[SQUAD SIGNAL]`? Full roundtrip: DB registration → hook fires → `signal` finds DB record → `get_orchestrator` succeeds → `send_keys_literal` to orchestrator.
 
 ---
 
 ## Recovery Strategies
 
+When pitfalls occur despite prevention, how to recover.
+
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Install subcommand breaks npx auto-launch (clap parse error) | MEDIUM | Revert run.js to bare `spawnSync(destPath, [])` call; republish npm package; binary stays unchanged |
-| Wizard populates bad folder-name default, breaks tmux session | LOW | User edits project name in wizard before proceeding; sanitizer fix in next patch |
-| Pane polling causes TUI lag | LOW | Increase poll interval from 3s to 15s for capture-pane; no DB or API changes needed |
-| `processing` written to DB without updating status consumers | HIGH | DB migration to remove or rename the status; update all consumers; re-release |
-| False positive "processing" confuses users | LOW | Remove or restrict the heuristic patterns; add provider check; no schema changes |
-| current_dir() panic from None file_name | LOW | Add `?` / `.unwrap_or_default()` at derivation; patch release |
+| Clone name collision with orphaned tmux session | LOW | `tmux kill-session -t <name>` then re-run `squad-station clone` |
+| Ghost DB record (clone in DB, no tmux session) | LOW | Runs `squad-station agents` — reconciliation marks it dead; optionally run `squad-station clean` or `reset` to purge dead agents |
+| Orchestrator has stale playbook (no clone in routing) | LOW | Run `squad-station context` manually; orchestrator reloads `/squad-orchestrator` |
+| Two orchestrators in DB (orchestrator was cloned) | HIGH | Kill clone session (`tmux kill-session -t <clone>`); no CLI command to delete a single agent record — requires direct SQLite or a future `squad-station remove` command; run `squad-station context` to rebuild playbook |
+| Template validation error at init time | LOW | Edit the template's model field in squad.yml manually to a valid alias; re-run `init` without `--tui` to re-validate |
+| Metrics mislead orchestrator (stale data misrouting) | MEDIUM | Run `squad-station status` to get current state; manually inform orchestrator via a direct send; adjust playbook text to instruct live re-query |
 
 ---
 
 ## Pitfall-to-Phase Mapping
 
+How roadmap phases should address these pitfalls.
+
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| `install` subcommand name conflict with npm `install` | Phase 1: subcommand design — decide JS vs Rust boundary before writing code | `npx squad-station install` and `squad-station install` both work without conflict |
-| `current_dir()` edge cases (None, non-UTF-8, unsafe chars) | Phase 1: folder-name default — sanitizer and None guard at derivation | Tests with `/`, space-in-path, non-UTF-8 path all pass without panic or corrupted output |
-| capture-pane called when no tmux session exists | Phase 2: pane polling — guard chain as first code written | `squad-station ui` with antigravity provider shows no errors; `squad-station ui` after `close` shows no errors |
-| False positive "processing" from pane content | Phase 2: pane polling — heuristic design document before implementation | Manual test: idle orchestrator shows `idle`, not `processing`; active orchestrator shows `processing` within 15s |
-| capture-pane blocking async TUI executor | Phase 2: pane polling — separate interval timer for pane content | TUI refresh lag <100ms during capture-pane call; key press events not dropped |
-| Backward compat break: old binary + new run.js | Phase 1: install subcommand — version check or keep bare invocation | `npm upgrade squad-station` does not produce clap errors; tested with both v1.7 and v1.8 binaries |
-| Wizard project name default bypasses validation | Phase 1: folder-name default — validation review when default is introduced | Wizard rejects names with tmux-unsafe characters even when pre-populated |
-| `processing` status breaks DB contract | Phase 2: pane polling — DB vs TUI-only decision before any code written | `squad-station agents --json` output schema unchanged unless DB approach is chosen |
-| `install` handler calls config::load_config() before squad.yml exists | Phase 1: install subcommand — design handler as config-free | `squad-station install` in empty temp directory exits cleanly or launches TUI |
+| Clone name collision (DB vs. tmux) | Phase: `clone` command | Integration test: create orphaned tmux session, run `clone`, verify name skipped |
+| Partial clone success (tmux without DB, or DB without tmux) | Phase: `clone` command | Unit test: simulate tmux failure after DB write; verify DB record removed |
+| Missing context regeneration after clone | Phase: `clone` command | Integration test: run `clone`, read `squad-orchestrator.md`, verify clone name present |
+| Cloning the orchestrator | Phase: `clone` command | Unit test: `clone <orchestrator-name>` returns error, no DB write |
+| Stale metrics in orchestrator playbook | Phase: orchestrator intelligence data | Manual review: generated file contains CLI commands for live re-query, not static values |
+| busy_time misleads after re-init | Phase: orchestrator intelligence data | Generated playbook includes caveats; no test needed |
+| Template model drift from validation allowlist | Phase: agent role templates | CI test: each template's agent config passes `validate_agent_config()` |
+| Clone agent invisible to TUI | Phase: TUI live update | Integration test: register clone in DB, wait one TUI refresh cycle, verify agent appears |
+| Signal lost from clone (unregistered agent) | Phase: `clone` command | E2E or integration test: full roundtrip from clone registration to signal notification |
 
 ---
 
 ## Sources
 
-- Squad Station codebase — direct inspection: `src/cli.rs`, `src/main.rs`, `src/commands/init.rs`, `src/commands/ui.rs`, `src/commands/wizard.rs`, `src/config.rs`, `src/tmux.rs`, `src/db/agents.rs`, `npm-package/bin/run.js`, `install.sh`
-- Rust `std::path::Path::file_name()` docs — returns `None` for root paths and paths ending in `..`
-- Rust `std::ffi::OsStr::to_str()` docs — returns `None` for non-UTF-8 byte sequences
-- tmux man page — session name restrictions: no spaces, limited character set, max length implementation-defined (typically 127 chars)
-- clap docs — unrecognized subcommand error behavior
-- tokio `process::Command` vs `std::process::Command` — blocking behavior in async runtimes
-- Existing v1.7 PITFALLS.md — TTY guard, npm postinstall, and curl stdin pitfalls (do not re-address here)
+- `src/commands/signal.rs` — GUARD 3 (missing agent = silent exit) and GUARD 4 (orchestrator self-signal) document the exact silent-failure modes for unregistered agents and duplicate orchestrators
+- `src/db/agents.rs` — `insert_agent` upsert semantics (ON CONFLICT DO UPDATE); `delete_all_agents` for re-init; `status_updated_at` behavior; `get_orchestrator` role-based lookup (shows dual-orchestrator risk)
+- `src/tmux.rs` — `launch_agent` ordering; `session_exists` availability; `list_live_session_names` for bulk session detection
+- `src/config.rs` — `VALID_PROVIDERS`, `valid_models_for()`, `sanitize_session_name()` — defines validation and naming constraints templates must conform to
+- `src/commands/context.rs` — `build_orchestrator_md` is a `pub fn` (callable from clone command); stateless snapshot design (no auto-refresh mechanism)
+- `src/commands/ui.rs` — connect-per-refresh pattern (3s interval, DB-only); TUI auto-picks up new DB records without special handling
+- `.planning/codebase/CONCERNS.md` — Pre-existing audit: reconciliation loop duplication, tmux/DB sync risks, single-writer pool limits, `status_updated_at` clock fragility, agent-name-as-FK risk
+- `.planning/PROJECT.md` — "agent name = tmux session name" key decision; stateless CLI constraint; `context` is read-only (reconciliation removed to reduce side effects); `delete_all_agents` on overwrite re-init
 
 ---
-*Pitfalls research for: Squad Station v1.8 — install subcommand, folder-name default, orchestrator pane polling*
-*Researched: 2026-03-18*
+
+*Pitfalls research for: Squad Station v1.8 — agent templates, orchestrator intelligence metrics, dynamic agent cloning*
+*Researched: 2026-03-19*
