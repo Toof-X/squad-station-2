@@ -142,6 +142,57 @@ pub fn build_orchestrator_md(
     out.push_str("```\n\n");
     out.push_str("Only proactively check (`capture-pane`) if you suspect the agent is stuck for an unusually long time.\n\n");
 
+    // ── Fleet Status ──────────────────────────────────────────────────────
+    // Only render if metrics were provided (caller fetched from DB)
+    let fleet_metrics: Vec<&AgentMetrics> = metrics
+        .iter()
+        .filter(|m| {
+            // Exclude orchestrator and dead agents
+            agents.iter().any(|a| {
+                a.name == m.agent_name && a.role != "orchestrator" && a.status != "dead"
+            })
+        })
+        .collect();
+
+    if !fleet_metrics.is_empty() {
+        out.push_str("## Fleet Status\n\n");
+        out.push_str("| Agent | Pending | Busy For | Alignment |\n");
+        out.push_str("|-------|---------|----------|-----------|\n");
+        for m in &fleet_metrics {
+            let alignment_str = match &m.alignment {
+                AlignmentResult::Ok => "\u{2705}".to_string(),
+                AlignmentResult::Warning { task_preview, role } => {
+                    format!(
+                        "\u{26a0}\u{fe0f} '{}' \u{2192} {}",
+                        task_preview, role
+                    )
+                }
+                AlignmentResult::None => "\u{2014}".to_string(),
+            };
+            out.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                m.agent_name, m.pending_count, m.busy_for, alignment_str
+            ));
+        }
+        out.push_str("\n");
+
+        // Routing hints
+        out.push_str("- Prefer agents with 0 pending tasks\n");
+        out.push_str(
+            "- \u{26a0}\u{fe0f} alignment = task may be misrouted \u{2014} verify before sending\n",
+        );
+        out.push_str("- Re-query if this context is >5 minutes old\n\n");
+
+        // Re-query commands blockquote (INTEL-04)
+        out.push_str("> **Live re-query commands:**\n");
+        out.push_str("> ```\n");
+        out.push_str("> squad-station agents          # agent status + busy duration\n");
+        out.push_str("> squad-station list --status processing  # pending queue\n");
+        out.push_str("> squad-station status          # fleet overview\n");
+        out.push_str("> squad-station context         # regenerate this file\n");
+        out.push_str("> ```\n\n");
+    }
+
     // ── Session Routing ──────────────────────────────────────────────────
     out.push_str("## Session Routing\n\n");
     out.push_str("Based on the nature of the work, independently decide the correct agent:\n\n");

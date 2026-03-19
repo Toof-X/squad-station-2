@@ -548,3 +548,305 @@ fn test_agent_metrics_struct() {
     assert_eq!(m.busy_for, "5m");
     assert_eq!(m.alignment, AlignmentResult::Ok);
 }
+
+// ============================================================
+// Fleet Status rendering tests — INTEL-01..05
+// ============================================================
+
+#[tokio::test]
+async fn test_build_orchestrator_md_fleet_status_table() {
+    use squad_station::commands::context::{build_orchestrator_md, AgentMetrics, AlignmentResult};
+
+    let db = helpers::setup_test_db().await;
+    db::agents::insert_agent(
+        &db,
+        "proj-orchestrator",
+        "claude-code",
+        "orchestrator",
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    db::agents::insert_agent(
+        &db,
+        "proj-frontend",
+        "claude-code",
+        "worker",
+        Some("claude-sonnet"),
+        Some("Frontend engineer"),
+    )
+    .await
+    .unwrap();
+    db::agents::insert_agent(
+        &db,
+        "proj-backend",
+        "claude-code",
+        "worker",
+        Some("claude-sonnet"),
+        Some("Backend engineer"),
+    )
+    .await
+    .unwrap();
+
+    let agents = db::agents::list_agents(&db).await.unwrap();
+    let metrics = vec![
+        AgentMetrics {
+            agent_name: "proj-frontend".to_string(),
+            pending_count: 3,
+            busy_for: "5m".to_string(),
+            alignment: AlignmentResult::Ok,
+        },
+        AgentMetrics {
+            agent_name: "proj-backend".to_string(),
+            pending_count: 0,
+            busy_for: "idle".to_string(),
+            alignment: AlignmentResult::None,
+        },
+    ];
+
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
+
+    assert!(
+        content.contains("## Fleet Status"),
+        "Fleet Status header should be present"
+    );
+    assert!(
+        content.contains("| Agent | Pending | Busy For | Alignment |"),
+        "Fleet Status table header should be present"
+    );
+    assert!(
+        content.contains("proj-frontend"),
+        "proj-frontend worker should appear in Fleet Status"
+    );
+    assert!(
+        content.contains("proj-backend"),
+        "proj-backend worker should appear in Fleet Status"
+    );
+    assert!(content.contains("| 3 |"), "pending_count=3 should appear");
+    assert!(content.contains("| 5m |"), "busy_for='5m' should appear");
+}
+
+#[tokio::test]
+async fn test_build_orchestrator_md_fleet_status_excludes_orchestrator() {
+    use squad_station::commands::context::{build_orchestrator_md, AgentMetrics, AlignmentResult};
+
+    let db = helpers::setup_test_db().await;
+    db::agents::insert_agent(
+        &db,
+        "proj-orchestrator",
+        "claude-code",
+        "orchestrator",
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let agents = db::agents::list_agents(&db).await.unwrap();
+    let metrics = vec![AgentMetrics {
+        agent_name: "proj-orchestrator".to_string(),
+        pending_count: 0,
+        busy_for: "idle".to_string(),
+        alignment: AlignmentResult::None,
+    }];
+
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
+
+    // Fleet Status section should not appear if only orchestrator metrics provided
+    // (orchestrator is excluded from the table)
+    let fleet_section_exists = content.contains("## Fleet Status");
+    if fleet_section_exists {
+        // If Fleet Status section exists, the orchestrator agent should NOT appear in the table
+        let fleet_start = content.find("## Fleet Status").unwrap();
+        let fleet_end = content[fleet_start..]
+            .find("\n## ")
+            .map(|i| fleet_start + i)
+            .unwrap_or(content.len());
+        let fleet_section = &content[fleet_start..fleet_end];
+        assert!(
+            !fleet_section.contains("proj-orchestrator"),
+            "Orchestrator should NOT appear in Fleet Status table rows"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_build_orchestrator_md_fleet_status_excludes_dead() {
+    use squad_station::commands::context::{build_orchestrator_md, AgentMetrics, AlignmentResult};
+
+    let db = helpers::setup_test_db().await;
+    db::agents::insert_agent(
+        &db,
+        "proj-dead-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    // Mark worker as dead
+    db::agents::update_agent_status(&db, "proj-dead-worker", "dead")
+        .await
+        .unwrap();
+
+    let agents = db::agents::list_agents(&db).await.unwrap();
+    let metrics = vec![AgentMetrics {
+        agent_name: "proj-dead-worker".to_string(),
+        pending_count: 0,
+        busy_for: "idle".to_string(),
+        alignment: AlignmentResult::None,
+    }];
+
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
+
+    // Dead agent should not appear in Fleet Status table
+    let fleet_section_exists = content.contains("## Fleet Status");
+    if fleet_section_exists {
+        let fleet_start = content.find("## Fleet Status").unwrap();
+        let fleet_end = content[fleet_start..]
+            .find("\n## ")
+            .map(|i| fleet_start + i)
+            .unwrap_or(content.len());
+        let fleet_section = &content[fleet_start..fleet_end];
+        assert!(
+            !fleet_section.contains("proj-dead-worker"),
+            "Dead agent should NOT appear in Fleet Status table rows"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_build_orchestrator_md_fleet_status_empty_metrics() {
+    use squad_station::commands::context::build_orchestrator_md;
+
+    let db = helpers::setup_test_db().await;
+    db::agents::insert_agent(&db, "proj-worker", "claude-code", "worker", None, None)
+        .await
+        .unwrap();
+
+    let agents = db::agents::list_agents(&db).await.unwrap();
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &[]);
+
+    assert!(
+        !content.contains("## Fleet Status"),
+        "Fleet Status section should NOT appear when metrics is empty"
+    );
+}
+
+#[tokio::test]
+async fn test_build_orchestrator_md_fleet_status_alignment_warning() {
+    use squad_station::commands::context::{build_orchestrator_md, AgentMetrics, AlignmentResult};
+
+    let db = helpers::setup_test_db().await;
+    db::agents::insert_agent(
+        &db,
+        "proj-worker",
+        "claude-code",
+        "worker",
+        None,
+        Some("Backend engineer"),
+    )
+    .await
+    .unwrap();
+
+    let agents = db::agents::list_agents(&db).await.unwrap();
+    let metrics = vec![AgentMetrics {
+        agent_name: "proj-worker".to_string(),
+        pending_count: 1,
+        busy_for: "2m".to_string(),
+        alignment: AlignmentResult::Warning {
+            task_preview: "fix CSS...".to_string(),
+            role: "Backend engineer".to_string(),
+        },
+    }];
+
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
+
+    assert!(
+        content.contains("## Fleet Status"),
+        "Fleet Status should appear with warning metric"
+    );
+    // Warning emoji \u{26a0}\u{fe0f} = ⚠️
+    assert!(
+        content.contains('\u{26a0}'),
+        "Warning emoji should appear for Warning alignment"
+    );
+    assert!(
+        content.contains("fix CSS"),
+        "task_preview text should appear in Fleet Status"
+    );
+}
+
+#[tokio::test]
+async fn test_build_orchestrator_md_fleet_status_requery_commands() {
+    use squad_station::commands::context::{build_orchestrator_md, AgentMetrics, AlignmentResult};
+
+    let db = helpers::setup_test_db().await;
+    db::agents::insert_agent(&db, "proj-worker", "claude-code", "worker", None, None)
+        .await
+        .unwrap();
+
+    let agents = db::agents::list_agents(&db).await.unwrap();
+    let metrics = vec![AgentMetrics {
+        agent_name: "proj-worker".to_string(),
+        pending_count: 0,
+        busy_for: "idle".to_string(),
+        alignment: AlignmentResult::None,
+    }];
+
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
+
+    assert!(
+        content.contains("squad-station agents"),
+        "Re-query commands should include 'squad-station agents'"
+    );
+    assert!(
+        content.contains("squad-station list --status processing"),
+        "Re-query commands should include 'squad-station list --status processing'"
+    );
+    assert!(
+        content.contains("squad-station status"),
+        "Re-query commands should include 'squad-station status'"
+    );
+    assert!(
+        content.contains("squad-station context"),
+        "Re-query commands should include 'squad-station context'"
+    );
+}
+
+#[tokio::test]
+async fn test_build_orchestrator_md_fleet_status_section_order() {
+    use squad_station::commands::context::{build_orchestrator_md, AgentMetrics, AlignmentResult};
+
+    let db = helpers::setup_test_db().await;
+    db::agents::insert_agent(&db, "proj-worker", "claude-code", "worker", None, None)
+        .await
+        .unwrap();
+
+    let agents = db::agents::list_agents(&db).await.unwrap();
+    let metrics = vec![AgentMetrics {
+        agent_name: "proj-worker".to_string(),
+        pending_count: 0,
+        busy_for: "idle".to_string(),
+        alignment: AlignmentResult::None,
+    }];
+
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
+
+    let preflight_pos = content.find("## PRE-FLIGHT").expect("PRE-FLIGHT section must exist");
+    let fleet_pos = content.find("## Fleet Status").expect("Fleet Status section must exist");
+    let routing_pos = content
+        .find("## Session Routing")
+        .expect("Session Routing section must exist");
+
+    assert!(
+        preflight_pos < fleet_pos,
+        "Fleet Status must appear after PRE-FLIGHT"
+    );
+    assert!(
+        fleet_pos < routing_pos,
+        "Fleet Status must appear before Session Routing"
+    );
+}
