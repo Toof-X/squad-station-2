@@ -36,13 +36,14 @@ function install() {
   console.log('     \x1b[36mcp .squad/examples/orchestrator-claude.yml squad.yml\x1b[0m');
   console.log('  2. Edit \x1b[36msquad.yml\x1b[0m — set project name, providers, models');
   if (tui) {
-    console.log('  3. Run  \x1b[36msquad-station --tui\x1b[0m — explore the welcome screen, or \x1b[36msquad-station init\x1b[0m to launch tmux sessions\n');
+    console.log('  3. Run  \x1b[36msquad-station\x1b[0m — explore the welcome screen, or \x1b[36msquad-station init --tui\x1b[0m to launch the wizard\n');
   } else {
     console.log('  3. Run  \x1b[36msquad-station init\x1b[0m — launch tmux sessions\n');
   }
 
   // Launch welcome TUI after install when --tui flag is passed
-  if (tui && process.stdout.isTTY) {
+  // The Rust binary has its own is_terminal() guard — safe to always try
+  if (tui) {
     spawnSync(destPath, [], { stdio: 'inherit' });
   }
 }
