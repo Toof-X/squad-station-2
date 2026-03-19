@@ -1,6 +1,7 @@
 use crate::config::SddConfig;
 use crate::db::agents::Agent;
 use crate::{config, db};
+use serde_json;
 
 // ── Fleet Status types ────────────────────────────────────────────────────────
 
@@ -205,6 +206,31 @@ pub fn build_orchestrator_md(
     out.push_str("- Reasoning, architecture, planning, review → brainstorm/planning agent\n");
     out.push_str("- Coding, implement, fix, build, deploy → implementation agent\n");
     out.push_str("- **Parallel** only when tasks are independent. **Sequential** when one output feeds another.\n\n");
+
+    // -- Routing Matrix --
+    out.push_str("## Routing Matrix\n\n");
+    let hinted_agents: Vec<(&Agent, Vec<String>)> = agents
+        .iter()
+        .filter(|a| a.role != "orchestrator")
+        .filter_map(|a| {
+            a.routing_hints.as_ref().and_then(|h| {
+                serde_json::from_str::<Vec<String>>(h).ok().map(|kws| (a, kws))
+            })
+        })
+        .collect();
+
+    if hinted_agents.is_empty() {
+        out.push_str("No routing hints configured — use templates during init for keyword-based routing\n\n");
+    } else {
+        out.push_str("| Keyword | Route to |\n");
+        out.push_str("|---------|----------|\n");
+        for (agent, keywords) in &hinted_agents {
+            for kw in keywords {
+                out.push_str(&format!("| {} | {} |\n", kw, agent.name));
+            }
+        }
+        out.push_str("\n");
+    }
 
     // ── SDD Orchestration ────────────────────────────────────────────────
     if !sdd_configs.is_empty() {
