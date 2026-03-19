@@ -2,6 +2,7 @@
 // Multi-page ratatui form that collects project name, agent count, and per-agent
 // configuration (name, role, provider, model, description) with inline validation.
 
+use crate::commands::templates;
 use crossterm::{
     event::{self, KeyCode, KeyEventKind, KeyModifiers},
     execute,
@@ -362,6 +363,7 @@ impl Default for TextInputState {
 #[derive(Clone, Copy, PartialEq)]
 pub enum AgentField {
     Name,
+    Template, // NEW — between Name and Provider
     Provider,
     Model,
     Description,
@@ -369,22 +371,28 @@ pub enum AgentField {
 
 pub struct AgentDraft {
     pub name: TextInputState,
+    pub template_index: usize,                          // NEW — index into template list (last = Custom)
+    pub is_orchestrator: bool,                          // NEW — selects which template list to use
     pub provider: Provider,
     pub model: ModelSelector,
-    pub custom_model: TextInputState, // used when model is "other"
+    pub custom_model: TextInputState,                   // used when model is "other"
     pub description: TextInputState,
     pub focused_field: AgentField,
+    pub routing_hints: Option<Vec<&'static str>>,       // NEW — set by template selection
 }
 
 impl AgentDraft {
     pub fn new() -> Self {
         Self {
             name: TextInputState::new(),
+            template_index: 0,
+            is_orchestrator: false,
             provider: Provider::ClaudeCode,
             model: ModelSelector::new(),
             custom_model: TextInputState::new(),
             description: TextInputState::new(),
             focused_field: AgentField::Name,
+            routing_hints: None,
         }
     }
 }
@@ -430,12 +438,14 @@ struct WizardState {
 
 impl WizardState {
     fn new() -> Self {
+        let mut orchestrator = AgentDraft::new();
+        orchestrator.is_orchestrator = true; // orchestrator uses ORCHESTRATOR_TEMPLATES
         Self {
             page: WizardPage::Project,
             project_field: ProjectField::Name,
             project_input: TextInputState::new(),
             sdd: SddWorkflow::Bmad,
-            orchestrator: AgentDraft::new(),
+            orchestrator,
             worker_count_input: TextInputState::new(),
             worker_count: 0,
             workers: Vec::new(),
@@ -499,13 +509,16 @@ fn draft_to_agent_input(d: AgentDraft, role: &str) -> AgentInput {
     } else {
         Some(d.description.value.trim().to_string())
     };
+    let routing_hints = d.routing_hints.as_ref().map(|hints| {
+        serde_json::to_string(hints).unwrap_or_default()
+    });
     AgentInput {
         name: d.name.value.trim().to_string(),
         role: role.to_string(),
         provider: d.provider.as_str().to_string(),
         model,
         description,
-        routing_hints: None,
+        routing_hints,
     }
 }
 
@@ -683,14 +696,76 @@ fn handle_agent_key(
 ) -> PageTransition {
     match draft.focused_field {
         AgentField::Name => match key {
-            KeyCode::Enter => {
-                draft.focused_field = AgentField::Provider;
+            KeyCode::Enter | KeyCode::Tab => {
+                draft.focused_field = AgentField::Template;
             }
             KeyCode::Backspace => draft.name.pop(),
             KeyCode::Left => draft.name.cursor_left(),
             KeyCode::Right => draft.name.cursor_right(),
             KeyCode::Char(c) => draft.name.push(c),
             KeyCode::Esc => return PageTransition::Go(on_back()),
+            _ => {}
+        },
+        AgentField::Template => match key {
+            KeyCode::Enter | KeyCode::Tab => {
+                let tmpl_list = if draft.is_orchestrator {
+                    templates::ORCHESTRATOR_TEMPLATES
+                } else {
+                    templates::WORKER_TEMPLATES
+                };
+                let custom_idx = tmpl_list.len();
+                if draft.template_index < custom_idx {
+                    let t = &tmpl_list[draft.template_index];
+                    // Auto-fill name — always overwrite (per UI-SPEC)
+                    draft.name.value = t.slug.to_string();
+                    draft.name.cursor = draft.name.value.chars().count();
+                    // Auto-fill provider
+                    draft.provider = match t.default_provider {
+                        "gemini-cli" => Provider::GeminiCli,
+                        _ => Provider::ClaudeCode,
+                    };
+                    // Auto-fill model index
+                    let model_opts = ModelSelector::options_for(draft.provider);
+                    let target_model = match draft.provider {
+                        Provider::ClaudeCode => t.claude_model,
+                        Provider::GeminiCli => t.gemini_model,
+                        Provider::Antigravity => "",
+                    };
+                    draft.model.index = model_opts.iter().position(|&m| m == target_model).unwrap_or(0);
+                    // Auto-fill description
+                    draft.description.value = t.description.to_string();
+                    draft.description.cursor = draft.description.value.chars().count();
+                    // Store routing hints
+                    draft.routing_hints = Some(t.routing_hints.to_vec());
+                } else {
+                    // Custom — clear all fields
+                    draft.name = TextInputState::new();
+                    draft.provider = Provider::ClaudeCode;
+                    draft.model = ModelSelector::new();
+                    draft.custom_model = TextInputState::new();
+                    draft.description = TextInputState::new();
+                    draft.routing_hints = None;
+                }
+                draft.focused_field = AgentField::Provider;
+            }
+            KeyCode::Up => {
+                if draft.template_index > 0 {
+                    draft.template_index -= 1;
+                }
+            }
+            KeyCode::Down => {
+                let max = if draft.is_orchestrator {
+                    templates::ORCHESTRATOR_TEMPLATES.len()
+                } else {
+                    templates::WORKER_TEMPLATES.len()
+                };
+                if draft.template_index < max {
+                    draft.template_index += 1;
+                }
+            }
+            KeyCode::Esc => {
+                draft.focused_field = AgentField::Name;
+            }
             _ => {}
         },
         AgentField::Provider => match key {
@@ -711,7 +786,7 @@ fn handle_agent_key(
                 draft.model.reset();
                 draft.custom_model = TextInputState::new();
             }
-            KeyCode::Esc => draft.focused_field = AgentField::Name,
+            KeyCode::Esc => draft.focused_field = AgentField::Template,
             _ => {}
         },
         AgentField::Model => match key {
@@ -814,6 +889,9 @@ fn render_page(frame: &mut Frame, state: &WizardState) {
 
     // Footer
     let agent_footer = |draft: &AgentDraft| match draft.focused_field {
+        AgentField::Template => {
+            "↑↓: select template   Enter/Tab: apply   Esc: back   Ctrl+C: cancel"
+        }
         AgentField::Provider => {
             "↑↓: select provider   Enter/Tab: next   Esc: back   Ctrl+C: cancel"
         }
