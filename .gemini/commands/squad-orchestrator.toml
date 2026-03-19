@@ -13,6 +13,13 @@ Only proceed after reading. The playbook defines your workflow.
 
 - [ ] Project root: `/Users/tranquoctoan/Workspaces/Contributes/squad-station`
 - [ ] Verify agents are alive: `squad-station agents`
+- [ ] **Clear context for fresh execution** — before any delegation:
+  - Run `/clear` in your own session.
+  - Send `/clear` to each worker agent:
+    ```bash
+    squad-station send <agent-name> --body "/clear"
+    ```
+  - Wait for each agent's `[SQUAD SIGNAL]` confirming the clear completed before proceeding.
 
 ## Completion Notification (Automatic)
 
