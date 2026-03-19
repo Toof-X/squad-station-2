@@ -294,9 +294,39 @@ pub async fn run() -> anyhow::Result<()> {
 
     let agents = db::agents::list_agents(&pool).await?;
 
+    // Build per-agent metrics for Fleet Status (INTEL-01 through INTEL-03)
+    let mut metrics = Vec::new();
+    for agent in &agents {
+        // Skip orchestrator and dead agents — they won't render anyway,
+        // but skipping avoids unnecessary DB queries
+        if agent.role == "orchestrator" || agent.status == "dead" {
+            continue;
+        }
+
+        // INTEL-01: Pending message count
+        let pending_count = db::messages::count_processing(&pool, &agent.name).await?;
+
+        // INTEL-02: Busy duration
+        let busy_for = format_busy_duration(&agent.status, &agent.status_updated_at);
+
+        // INTEL-03: Task-role alignment from most recent processing message
+        let alignment = match db::messages::peek_message(&pool, &agent.name).await? {
+            Some(msg) => compute_alignment(&msg.task, agent.description.as_deref()),
+            None => AlignmentResult::None,
+        };
+
+        metrics.push(AgentMetrics {
+            agent_name: agent.name.clone(),
+            pending_count,
+            busy_for,
+            alignment,
+        });
+    }
+
     let project_root_str = project_root.to_string_lossy().to_string();
     let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);
-    let prompt_content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[]);
+    // INTEL-05: metrics passed as parameter — build_orchestrator_md remains pure
+    let prompt_content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &metrics);
 
     // Write slash command in provider-specific format and directory
     let (cmd_subdir, filename, file_content) = match config.orchestrator.provider.as_str() {
