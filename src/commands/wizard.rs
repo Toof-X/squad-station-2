@@ -22,6 +22,7 @@ use ratatui::{
 // ----------------------------------------------------------------------------
 
 pub struct WizardResult {
+    pub install_dir: String,
     pub project: String,
     pub sdd: SddWorkflow,
     pub orchestrator: AgentInput,
@@ -283,6 +284,15 @@ impl TextInputState {
         }
     }
 
+    pub fn with_value(value: String) -> Self {
+        let cursor = value.chars().count();
+        Self {
+            value,
+            cursor,
+            error: None,
+        }
+    }
+
     fn char_to_byte(&self, char_pos: usize) -> usize {
         self.value
             .char_indices()
@@ -409,6 +419,7 @@ impl Default for AgentDraft {
 
 #[derive(Clone, Copy, PartialEq)]
 enum ProjectField {
+    InstallDir,
     Name,
     Sdd,
 }
@@ -424,6 +435,7 @@ enum WizardPage {
 struct WizardState {
     page: WizardPage,
     project_field: ProjectField,
+    install_dir_input: TextInputState,
     project_input: TextInputState,
     sdd: SddWorkflow,
     orchestrator: AgentDraft,
@@ -440,10 +452,23 @@ impl WizardState {
     fn new() -> Self {
         let mut orchestrator = AgentDraft::new();
         orchestrator.is_orchestrator = true; // orchestrator uses ORCHESTRATOR_TEMPLATES
+
+        // Default install_dir to current working directory
+        let cwd = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string());
+
+        // Default project name to current directory name
+        let dir_name = std::path::Path::new(&cwd)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
         Self {
             page: WizardPage::Project,
-            project_field: ProjectField::Name,
-            project_input: TextInputState::new(),
+            project_field: ProjectField::InstallDir,
+            install_dir_input: TextInputState::with_value(cwd),
+            project_input: TextInputState::with_value(dir_name),
             sdd: SddWorkflow::Bmad,
             orchestrator,
             worker_count_input: TextInputState::new(),
@@ -457,6 +482,7 @@ impl WizardState {
 
     fn into_result(self) -> WizardResult {
         WizardResult {
+            install_dir: self.install_dir_input.value.trim().to_string(),
             project: self.project_input.value.trim().to_string(),
             sdd: self.sdd,
             orchestrator: draft_to_agent_input(self.orchestrator, "orchestrator"),
@@ -577,11 +603,22 @@ enum KeyAction {
 fn handle_key(state: &mut WizardState, key: KeyCode) -> KeyAction {
     match &state.page {
         WizardPage::Project => match state.project_field {
+            ProjectField::InstallDir => match key {
+                KeyCode::Enter | KeyCode::Tab => {
+                    state.project_field = ProjectField::Name;
+                }
+                KeyCode::Esc => {} // first field, first page — no-op
+                KeyCode::Backspace => state.install_dir_input.pop(),
+                KeyCode::Left => state.install_dir_input.cursor_left(),
+                KeyCode::Right => state.install_dir_input.cursor_right(),
+                KeyCode::Char(c) => state.install_dir_input.push(c),
+                _ => {}
+            },
             ProjectField::Name => match key {
                 KeyCode::Enter | KeyCode::Tab => {
                     state.project_field = ProjectField::Sdd;
                 }
-                KeyCode::Esc => {} // first page — no-op
+                KeyCode::Esc => state.project_field = ProjectField::InstallDir,
                 KeyCode::Backspace => state.project_input.pop(),
                 KeyCode::Left => state.project_input.cursor_left(),
                 KeyCode::Right => state.project_input.cursor_right(),
@@ -906,7 +943,8 @@ fn render_page(frame: &mut Frame, state: &WizardState) {
     };
     let footer_text = match &state.page {
         WizardPage::Project => match state.project_field {
-            ProjectField::Name => "Enter/Tab: next field   Ctrl+C: cancel",
+            ProjectField::InstallDir => "Enter/Tab: next field   Ctrl+C: cancel",
+            ProjectField::Name => "Enter/Tab: next field   Esc: back   Ctrl+C: cancel",
             ProjectField::Sdd => "↑↓: select workflow   Enter: next page   Esc/Tab: back   Ctrl+C: cancel",
         },
         WizardPage::OrchestratorConfig => agent_footer(&state.orchestrator),
@@ -998,17 +1036,28 @@ fn render_radio_list(
     frame.render_widget(list, area);
 }
 
-/// Render the combined Project Name + SDD Workflow page.
+/// Render the combined Installation Directory + Project Name + SDD Workflow page.
 fn render_project_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &WizardState) {
     let sdd_h = SddWorkflow::ALL.len() as u16 + 2; // options + 2 border lines
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(3),     // Installation Directory text input
             Constraint::Length(3),     // Project Name text input
             Constraint::Length(sdd_h), // SDD radio list
             Constraint::Min(0),        // spacer
         ])
         .split(area);
+
+    let dir_focused = state.project_field == ProjectField::InstallDir;
+    let dir_color = if dir_focused { Color::Cyan } else { Color::DarkGray };
+    let dir_widget = Paragraph::new(state.install_dir_input.display(dir_focused)).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(dir_color))
+            .title(" Installation Directory "),
+    );
+    frame.render_widget(dir_widget, chunks[0]);
 
     let name_focused = state.project_field == ProjectField::Name;
     let name_color = if name_focused { Color::Cyan } else { Color::DarkGray };
@@ -1018,11 +1067,11 @@ fn render_project_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
             .border_style(Style::default().fg(name_color))
             .title(" Project Name "),
     );
-    frame.render_widget(name_widget, chunks[0]);
+    frame.render_widget(name_widget, chunks[1]);
 
     render_radio_list(
         frame,
-        chunks[1],
+        chunks[2],
         "SDD Workflow",
         &SddWorkflow::ALL,
         state.sdd.index(),
@@ -1291,6 +1340,7 @@ fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
     let mut items: Vec<ListItem> = Vec::new();
 
     if !state.worker_only {
+        items.push(ListItem::new(format!("Dir     : {}", state.install_dir_input.value.trim())));
         items.push(ListItem::new(format!("Project : {}", state.project_input.value.trim())));
         items.push(ListItem::new(format!("SDD     : {}", state.sdd.as_str())));
         items.push(ListItem::new(""));

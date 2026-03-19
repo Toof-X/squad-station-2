@@ -85,7 +85,7 @@ fn append_workers_to_yaml(
     result
 }
 
-pub async fn run(config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<()> {
+pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<()> {
     let mut purge_db_on_init = false;
     // Carries routing_hints from wizard result to DB insertion.
     // routing_hints are NOT stored in squad.yml, so they must be kept separately.
@@ -96,12 +96,19 @@ pub async fn run(config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<
             // --tui: run interactive wizard to generate squad.yml
             match crate::commands::wizard::run().await? {
                 Some(result) => {
+                    // Change to install directory if different from CWD
+                    let install_dir = std::path::PathBuf::from(&result.install_dir);
+                    if install_dir.is_absolute() || install_dir.exists() {
+                        std::fs::create_dir_all(&install_dir)?;
+                        std::env::set_current_dir(&install_dir)?;
+                        config_path = install_dir.join("squad.yml");
+                    }
                     // Capture routing hints before result fields are moved into yaml generation
                     wizard_routing_hints = Some(extract_routing_hints(&result));
                     let yaml = generate_squad_yml(&result);
                     std::fs::write(&config_path, &yaml)?;
                     create_sdd_playbook(&config_path, &result);
-                    println!("Generated squad.yml for project '{}'", result.project);
+                    println!("Generated squad.yml for project '{}' in {}", result.project, result.install_dir);
                     // Fall through to load_config below
                 }
                 None => {
@@ -736,6 +743,7 @@ mod tests {
 
     fn make_wizard_result() -> WizardResult {
         WizardResult {
+            install_dir: ".".to_string(),
             project: "my-project".to_string(),
             sdd: SddWorkflow::GetShitDone,
             orchestrator: AgentInput {
