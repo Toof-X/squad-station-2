@@ -87,12 +87,17 @@ fn append_workers_to_yaml(
 
 pub async fn run(config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<()> {
     let mut purge_db_on_init = false;
+    // Carries routing_hints from wizard result to DB insertion.
+    // routing_hints are NOT stored in squad.yml, so they must be kept separately.
+    let mut wizard_routing_hints: Option<std::collections::HashMap<String, Option<String>>> = None;
 
     if !config_path.exists() {
         if tui {
             // --tui: run interactive wizard to generate squad.yml
             match crate::commands::wizard::run().await? {
                 Some(result) => {
+                    // Capture routing hints before result fields are moved into yaml generation
+                    wizard_routing_hints = Some(extract_routing_hints(&result));
                     let yaml = generate_squad_yml(&result);
                     std::fs::write(&config_path, &yaml)?;
                     create_sdd_playbook(&config_path, &result);
@@ -122,6 +127,8 @@ pub async fn run(config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<
                 purge_db_on_init = true;
                 match crate::commands::wizard::run().await? {
                     Some(result) => {
+                        // Capture routing hints before result fields are moved into yaml generation
+                        wizard_routing_hints = Some(extract_routing_hints(&result));
                         let yaml = generate_squad_yml(&result);
                         std::fs::write(&config_path, &yaml)?;
                         create_sdd_playbook(&config_path, &result);
@@ -154,6 +161,12 @@ pub async fn run(config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<
                     };
                 match crate::commands::wizard::run_worker_only(existing_orchestrator, existing_workers).await? {
                     Some(new_workers) => {
+                        // Carry routing hints for new workers by agent name
+                        let worker_hints: std::collections::HashMap<String, Option<String>> =
+                            new_workers.iter()
+                                .map(|w| (w.name.clone(), w.routing_hints.clone()))
+                                .collect();
+                        wizard_routing_hints = Some(worker_hints);
                         let updated = append_workers_to_yaml(&existing, &new_workers);
                         std::fs::write(&config_path, &updated)?;
                         println!("Added {} worker(s) to squad.yml", new_workers.len());
@@ -194,6 +207,10 @@ pub async fn run(config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<
         .as_deref()
         .unwrap_or("orchestrator");
     let orch_name = config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
+    // Look up routing hints by the raw role name (orch_role) not the sanitized session name
+    let orch_hints = wizard_routing_hints.as_ref()
+        .and_then(|m| m.get(orch_role).cloned())
+        .flatten();
     db::agents::insert_agent(
         &pool,
         &orch_name,
@@ -201,7 +218,7 @@ pub async fn run(config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<
         "orchestrator",
         config.orchestrator.model.as_deref(),
         config.orchestrator.description.as_deref(),
-        None,
+        orch_hints.as_deref(),
     )
     .await?;
 
@@ -241,6 +258,9 @@ pub async fn run(config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<
         let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
         let agent_name =
             config::sanitize_session_name(&format!("{}-{}", config.project, role_suffix));
+        let hints = wizard_routing_hints.as_ref()
+            .and_then(|m| m.get(role_suffix).cloned())
+            .flatten();
         if let Err(e) = db::agents::insert_agent(
             &pool,
             &agent_name,
@@ -248,7 +268,7 @@ pub async fn run(config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<
             &agent.role,
             agent.model.as_deref(),
             agent.description.as_deref(),
-            None,
+            hints.as_deref(),
         )
         .await
         {
@@ -895,6 +915,25 @@ mod tests {
         assert!(settings["hooks"]["Stop"].is_array());
         assert!(settings["hooks"]["Notification"].is_array());
     }
+}
+
+/// Extract routing_hints map from wizard result for DB insertion.
+/// Returns HashMap<raw_agent_name, Option<String>> for orchestrator + all workers.
+/// Keys are the raw names from the wizard (e.g. "orch", "coder") not sanitized session names.
+/// routing_hints are NOT stored in squad.yml so they must be captured before
+/// the WizardResult is consumed by generate_squad_yml.
+fn extract_routing_hints(
+    result: &crate::commands::wizard::WizardResult,
+) -> std::collections::HashMap<String, Option<String>> {
+    let mut map = std::collections::HashMap::new();
+    // Orchestrator: key is the raw name (matches orch_role variable in run())
+    let orch_name = result.orchestrator.name.clone();
+    map.insert(orch_name, result.orchestrator.routing_hints.clone());
+    for agent in &result.agents {
+        // Workers: key is the raw name (matches role_suffix variable in the agents loop)
+        map.insert(agent.name.clone(), agent.routing_hints.clone());
+    }
+    map
 }
 
 fn print_hook_instructions(settings_path: &str, event: &str, matcher: &str) {

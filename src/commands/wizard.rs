@@ -1037,17 +1037,26 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
     let model_h = if model_opts.is_empty() { 3u16 } else { model_opts.len() as u16 + 2 };
     let custom_model_h: u16 = if draft.model.is_other(draft.provider) { 3 } else { 0 };
 
+    // Compute template section height dynamically
+    let templates_list = if draft.is_orchestrator {
+        templates::ORCHESTRATOR_TEMPLATES
+    } else {
+        templates::WORKER_TEMPLATES
+    };
+    let template_h = (templates_list.len() + 1 + 2) as u16; // options + Custom + 2 border lines
+
     let agent_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),              // 0: Name field
             Constraint::Length(1),              // 1: Name hint
-            Constraint::Length(5),              // 2: Provider radio (3 options + 2 border)
-            Constraint::Length(model_h),        // 3: Model radio (dynamic)
-            Constraint::Length(custom_model_h), // 4: Custom model text input
-            Constraint::Length(3),              // 5: Description field
-            Constraint::Length(1),              // 6: Description hint
-            Constraint::Min(0),                 // 7: spacer
+            Constraint::Length(template_h),     // 2: Template selector (NEW — horizontal split)
+            Constraint::Length(5),              // 3: Provider radio (3 options + 2 border)
+            Constraint::Length(model_h),        // 4: Model radio (dynamic)
+            Constraint::Length(custom_model_h), // 5: Custom model text input
+            Constraint::Length(3),              // 6: Description field
+            Constraint::Length(1),              // 7: Description hint
+            Constraint::Min(0),                 // 8: spacer
         ])
         .split(area);
 
@@ -1065,10 +1074,49 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
         .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(name_hint, agent_chunks[1]);
 
+    // --- Template selector: horizontal split (45% list / 55% preview) ---
+    let template_pane = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(45),
+            Constraint::Percentage(55),
+        ])
+        .split(agent_chunks[2]);
+
+    // LEFT pane: radio list of template display names + "Custom"
+    let mut display_names: Vec<&str> = templates_list.iter().map(|t| t.display_name).collect();
+    display_names.push("Custom");
+    let template_focused = draft.focused_field == AgentField::Template;
+    render_radio_list(
+        frame,
+        template_pane[0],
+        " Role Template ",
+        &display_names,
+        draft.template_index,
+        template_focused,
+    );
+
+    // RIGHT pane: description preview
+    let preview_text = if draft.template_index < templates_list.len() {
+        templates_list[draft.template_index].description
+    } else {
+        "Enter role and description manually."
+    };
+    let preview_border_color = if template_focused { Color::Cyan } else { Color::DarkGray };
+    let preview = Paragraph::new(preview_text)
+        .wrap(ratatui::widgets::Wrap { trim: true })
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Preview ")
+                .border_style(Style::default().fg(preview_border_color)),
+        );
+    frame.render_widget(preview, template_pane[1]);
+
     // --- Provider radio list ---
     render_radio_list(
         frame,
-        agent_chunks[2],
+        agent_chunks[3],
         "Provider",
         &Provider::ALL,
         draft.provider.index(),
@@ -1087,11 +1135,11 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
                 .border_style(Style::default().fg(Color::DarkGray))
                 .title(" Model "),
         );
-        frame.render_widget(na, agent_chunks[3]);
+        frame.render_widget(na, agent_chunks[4]);
     } else {
         render_radio_list(
             frame,
-            agent_chunks[3],
+            agent_chunks[4],
             "Model",
             model_opts,
             draft.model.index,
@@ -1109,7 +1157,7 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
                 .border_style(Style::default().fg(color))
                 .title(" Custom Model "),
         );
-        frame.render_widget(custom_widget, agent_chunks[4]);
+        frame.render_widget(custom_widget, agent_chunks[5]);
     }
 
     // --- Description field ---
@@ -1121,10 +1169,10 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
             .border_style(Style::default().fg(desc_color))
             .title(" Description "),
     );
-    frame.render_widget(desc_widget, agent_chunks[5]);
+    frame.render_widget(desc_widget, agent_chunks[6]);
     let desc_hint = Paragraph::new("  optional — press Enter to continue")
         .style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(desc_hint, agent_chunks[6]);
+    frame.render_widget(desc_hint, agent_chunks[7]);
 }
 
 fn draft_summary_line(label: &str, d: &AgentDraft) -> String {
