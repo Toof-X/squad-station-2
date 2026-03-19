@@ -2,10 +2,108 @@ use crate::config::SddConfig;
 use crate::db::agents::Agent;
 use crate::{config, db};
 
+// ── Fleet Status types ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AlignmentResult {
+    Ok,                                                     // overlap found — checkmark
+    Warning { task_preview: String, role: String },         // zero overlap — warning
+    None,                                                   // no task or no description
+}
+
+#[derive(Debug, Clone)]
+pub struct AgentMetrics {
+    pub agent_name: String,
+    pub pending_count: i64,
+    pub busy_for: String,       // "idle", "<1m", "5m", "1h 30m", "2d 4h"
+    pub alignment: AlignmentResult,
+}
+
+/// Returns how long an agent has been busy as a human-readable string.
+/// Returns "idle" if status is not "busy". Returns "<1m", "Xm", "Xh Ym", or "Xd Yh".
+pub fn format_busy_duration(status: &str, status_updated_at: &str) -> String {
+    if status != "busy" {
+        return "idle".to_string();
+    }
+    match chrono::DateTime::parse_from_rfc3339(status_updated_at) {
+        Ok(t) => {
+            let dur = chrono::Utc::now().signed_duration_since(t);
+            let total_mins = dur.num_minutes();
+            let total_hours = dur.num_hours();
+            let days = total_hours / 24;
+            let hours = total_hours % 24;
+            let mins = total_mins % 60;
+            if total_mins < 1 {
+                "<1m".to_string()
+            } else if total_hours < 1 {
+                format!("{}m", total_mins)
+            } else if days < 1 {
+                format!("{}h {}m", total_hours, mins)
+            } else {
+                format!("{}d {}h", days, hours)
+            }
+        }
+        Err(_) => "?".to_string(),
+    }
+}
+
+/// Compute keyword overlap between a task body and an agent's description.
+/// Returns AlignmentResult::Ok if any non-stop-word tokens overlap,
+/// Warning with preview/role if zero overlap, or None if task or description is missing.
+pub fn compute_alignment(task_body: &str, description: Option<&str>) -> AlignmentResult {
+    if task_body.is_empty() {
+        return AlignmentResult::None;
+    }
+    let desc = match description {
+        Some(d) if !d.is_empty() => d,
+        _ => return AlignmentResult::None,
+    };
+
+    const STOP_WORDS: &[&str] = &[
+        "the", "a", "an", "and", "to", "for", "in", "of", "is", "on",
+        "it", "with", "as", "at", "by", "from", "that", "this",
+    ];
+
+    let tokenize = |s: &str| -> std::collections::HashSet<String> {
+        s.split_whitespace()
+            .map(|w| {
+                w.to_lowercase()
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_string()
+            })
+            .filter(|w| !w.is_empty() && !STOP_WORDS.contains(&w.as_str()))
+            .collect()
+    };
+
+    let task_tokens = tokenize(task_body);
+    let desc_tokens = tokenize(desc);
+    let overlap: usize = task_tokens.intersection(&desc_tokens).count();
+
+    if overlap > 0 {
+        AlignmentResult::Ok
+    } else {
+        // Truncate task body to ~30 chars for preview
+        let preview: String = task_body.chars().take(30).collect();
+        let task_preview = if task_body.len() > 30 {
+            format!("{}...", preview.trim_end())
+        } else {
+            preview
+        };
+        // Extract role from first few words of description
+        let role: String = desc
+            .split_whitespace()
+            .take(3)
+            .collect::<Vec<_>>()
+            .join(" ");
+        AlignmentResult::Warning { task_preview, role }
+    }
+}
+
 pub fn build_orchestrator_md(
     agents: &[Agent],
     project_root: &str,
     sdd_configs: &[SddConfig],
+    metrics: &[AgentMetrics],
 ) -> String {
     let mut out = String::new();
 
@@ -147,7 +245,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     let project_root_str = project_root.to_string_lossy().to_string();
     let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);
-    let prompt_content = build_orchestrator_md(&agents, &project_root_str, sdd_configs);
+    let prompt_content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[]);
 
     // Write slash command in provider-specific format and directory
     let (cmd_subdir, filename, file_content) = match config.orchestrator.provider.as_str() {

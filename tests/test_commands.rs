@@ -300,7 +300,7 @@ async fn test_build_orchestrator_md_contains_all_sections() {
     .unwrap();
 
     let agents = db::agents::list_agents(&db).await.unwrap();
-    let content = build_orchestrator_md(&agents, "/project/root", &[]);
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &[]);
 
     assert!(
         content.contains("You are the orchestrator"),
@@ -375,7 +375,7 @@ async fn test_build_orchestrator_md_with_sdd() {
         name: "get-shit-done".to_string(),
         playbook: playbook_path,
     }];
-    let content = build_orchestrator_md(&agents, "/project/root", &sdd);
+    let content = build_orchestrator_md(&agents, "/project/root", &sdd, &[]);
 
     assert!(
         content.contains("## SDD Orchestration"),
@@ -411,10 +411,140 @@ async fn test_build_orchestrator_md_without_sdd() {
         .unwrap();
 
     let agents = db::agents::list_agents(&db).await.unwrap();
-    let content = build_orchestrator_md(&agents, "/project/root", &[]);
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &[]);
 
     assert!(
         !content.contains("## SDD Orchestration"),
         "SDD section should not appear when no SDDs configured"
     );
+}
+
+// ============================================================
+// AgentMetrics, AlignmentResult, compute_alignment, format_busy_duration tests
+// ============================================================
+
+#[test]
+fn test_compute_alignment_ok_overlap() {
+    use squad_station::commands::context::{compute_alignment, AlignmentResult};
+    let result = compute_alignment(
+        "fix CSS grid layout bug",
+        Some("Frontend engineer specializing in React and CSS"),
+    );
+    assert_eq!(result, AlignmentResult::Ok, "CSS overlap should return Ok");
+}
+
+#[test]
+fn test_compute_alignment_warning_no_overlap() {
+    use squad_station::commands::context::{compute_alignment, AlignmentResult};
+    let result = compute_alignment(
+        "fix CSS grid layout bug",
+        Some("Backend API developer for database operations"),
+    );
+    match result {
+        AlignmentResult::Warning { task_preview, role } => {
+            assert!(
+                task_preview.contains("fix CSS"),
+                "task_preview should contain 'fix CSS', got: {}",
+                task_preview
+            );
+            assert!(
+                !role.is_empty(),
+                "role should be non-empty"
+            );
+        }
+        other => panic!("Expected Warning, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_compute_alignment_none_empty_task() {
+    use squad_station::commands::context::{compute_alignment, AlignmentResult};
+    let result = compute_alignment("", Some("some description"));
+    assert_eq!(
+        result,
+        AlignmentResult::None,
+        "empty task should return None"
+    );
+}
+
+#[test]
+fn test_compute_alignment_none_no_description() {
+    use squad_station::commands::context::{compute_alignment, AlignmentResult};
+    let result = compute_alignment("deploy the app", None);
+    assert_eq!(
+        result,
+        AlignmentResult::None,
+        "no description should return None"
+    );
+}
+
+#[test]
+fn test_compute_alignment_stop_words_filtered() {
+    use squad_station::commands::context::{compute_alignment, AlignmentResult};
+    // "the", "and", "to", "for", "in", "of" are all stop words — no real overlap
+    let result = compute_alignment(
+        "the and to for in of",
+        Some("the and to for in of is on it"),
+    );
+    // All tokens are stop words — should produce Warning or None (no meaningful overlap)
+    assert!(
+        result == AlignmentResult::None || matches!(result, AlignmentResult::Warning { .. }),
+        "stop-word-only tokens should not produce Ok alignment, got: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_format_busy_duration_5m() {
+    use squad_station::commands::context::format_busy_duration;
+    let ts = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
+    let result = format_busy_duration("busy", &ts);
+    assert_eq!(result, "5m", "5 minutes ago should return '5m', got: {}", result);
+}
+
+#[test]
+fn test_format_busy_duration_1h30m() {
+    use squad_station::commands::context::format_busy_duration;
+    let ts = (chrono::Utc::now() - chrono::Duration::minutes(90)).to_rfc3339();
+    let result = format_busy_duration("busy", &ts);
+    assert_eq!(result, "1h 30m", "90 minutes ago should return '1h 30m', got: {}", result);
+}
+
+#[test]
+fn test_format_busy_duration_2d4h() {
+    use squad_station::commands::context::format_busy_duration;
+    let ts = (chrono::Utc::now() - chrono::Duration::hours(52)).to_rfc3339();
+    let result = format_busy_duration("busy", &ts);
+    assert_eq!(result, "2d 4h", "52 hours ago should return '2d 4h', got: {}", result);
+}
+
+#[test]
+fn test_format_busy_duration_idle_status() {
+    use squad_station::commands::context::format_busy_duration;
+    let ts = chrono::Utc::now().to_rfc3339();
+    let result = format_busy_duration("idle", &ts);
+    assert_eq!(result, "idle", "non-busy status should return 'idle', got: {}", result);
+}
+
+#[test]
+fn test_format_busy_duration_less_than_1m() {
+    use squad_station::commands::context::format_busy_duration;
+    let ts = (chrono::Utc::now() - chrono::Duration::seconds(30)).to_rfc3339();
+    let result = format_busy_duration("busy", &ts);
+    assert_eq!(result, "<1m", "30 seconds ago should return '<1m', got: {}", result);
+}
+
+#[test]
+fn test_agent_metrics_struct() {
+    use squad_station::commands::context::{AgentMetrics, AlignmentResult};
+    let m = AgentMetrics {
+        agent_name: "my-agent".to_string(),
+        pending_count: 3,
+        busy_for: "5m".to_string(),
+        alignment: AlignmentResult::Ok,
+    };
+    assert_eq!(m.agent_name, "my-agent");
+    assert_eq!(m.pending_count, 3);
+    assert_eq!(m.busy_for, "5m");
+    assert_eq!(m.alignment, AlignmentResult::Ok);
 }
