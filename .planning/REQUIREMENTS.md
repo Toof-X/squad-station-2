@@ -67,29 +67,29 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INTEL-01 | — | Pending |
-| INTEL-02 | — | Pending |
-| INTEL-03 | — | Pending |
-| INTEL-04 | — | Pending |
-| INTEL-05 | — | Pending |
-| CLONE-01 | — | Pending |
-| CLONE-02 | — | Pending |
-| CLONE-03 | — | Pending |
-| CLONE-04 | — | Pending |
-| CLONE-05 | — | Pending |
-| CLONE-06 | — | Pending |
-| TMPL-01 | — | Pending |
-| TMPL-02 | — | Pending |
-| TMPL-03 | — | Pending |
-| TMPL-04 | — | Pending |
-| TMPL-05 | — | Pending |
-| TMPL-06 | — | Pending |
+| INTEL-01 | Phase 22 | Pending |
+| INTEL-02 | Phase 22 | Pending |
+| INTEL-03 | Phase 22 | Pending |
+| INTEL-04 | Phase 22 | Pending |
+| INTEL-05 | Phase 22 | Pending |
+| CLONE-01 | Phase 23 | Pending |
+| CLONE-02 | Phase 23 | Pending |
+| CLONE-03 | Phase 23 | Pending |
+| CLONE-04 | Phase 23 | Pending |
+| CLONE-05 | Phase 23 | Pending |
+| CLONE-06 | Phase 23 | Pending |
+| TMPL-01 | Phase 24 | Pending |
+| TMPL-02 | Phase 24 | Pending |
+| TMPL-03 | Phase 24 | Pending |
+| TMPL-04 | Phase 24 | Pending |
+| TMPL-05 | Phase 24 | Pending |
+| TMPL-06 | Phase 24 | Pending |
 
 **Coverage:**
 - v1.8 requirements: 17 total
-- Mapped to phases: 0
-- Unmapped: 17
+- Mapped to phases: 17
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-19*
-*Last updated: 2026-03-19 after initial definition*
+*Last updated: 2026-03-19 — traceability updated after roadmap creation (Phases 22-24)*

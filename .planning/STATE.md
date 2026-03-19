@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Smart Agent Management
-status: defining_requirements
-stopped_at: defining requirements
+status: ready_to_plan
+stopped_at: roadmap created — ready to plan Phase 22
 last_updated: "2026-03-19"
-last_activity: 2026-03-19 — Milestone v1.8 redefined as Smart Agent Management
+last_activity: 2026-03-19 — Roadmap created for v1.8 Smart Agent Management (Phases 22-24)
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,14 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** Reliable message routing between Orchestrator and agents — stateless CLI, no daemon
-**Current focus:** Defining requirements for v1.8 Smart Agent Management
+**Current focus:** Phase 22 — Orchestrator Intelligence Data
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-19 — Milestone v1.8 redefined as Smart Agent Management
+Phase: 22 of 24 (Orchestrator Intelligence Data)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-03-19 — Roadmap created for v1.8 Smart Agent Management (Phases 22-24)
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Code Status
 
@@ -38,9 +40,7 @@ Last activity: 2026-03-19 — Milestone v1.8 redefined as Smart Agent Management
 
 ### Recent changes (since v1.7 shipped)
 
-- `feat(init): add --tui flag` — `init` now requires explicit `--tui` to enter the wizard; bare `init` reads existing `squad.yml` directly and notifies if missing. Re-init prompt only shown with `--tui`. Welcome TUI `LaunchInit` uses `tui=true`; `reset` relaunch uses `tui=false`.
-- `fix(npm)`: removed install banner, updated step 3 hint to reference `--tui`
-- `docs`: updated init quickstart for `--tui` flag
+- `feat(init): add --tui flag` — `init` now requires explicit `--tui` to enter the wizard; bare `init` reads existing `squad.yml` directly and notifies if missing.
 - npm bumped through v1.5.3 → v1.5.7; binaryVersion set to 1.8
 
 ## Accumulated Context
@@ -49,10 +49,25 @@ Last activity: 2026-03-19 — Milestone v1.8 redefined as Smart Agent Management
 
 All decisions logged in PROJECT.md Key Decisions table.
 
+Key decisions relevant to v1.8:
+- Phase 22 before 23: Context file is the coordination mechanism — cloning without updated orchestrator context produces agents the orchestrator never routes to
+- Phase 24 after 23: Templates are self-contained to wizard.rs; no dependency on runtime orchestration features
+- `build_orchestrator_md()` must remain a pure fn — metrics fetched externally and passed as parameter (INTEL-05)
+- Clones are DB-only entries — never written to squad.yml (same as `register` behavior)
+- Clone name collision check must cover both DB and tmux (orphaned sessions from re-init)
+
 ### Pending Todos
 
 None.
 
 ### Blockers/Concerns
 
-None.
+- Phase 22: Exact wording of Fleet Status section in squad-orchestrator.md needs to be designed before modifying `build_orchestrator_md()` — wording has correctness implications for orchestrator behavior
+- Phase 22: `busy_since` vs `status_updated_at` — pick one approach before starting Phase 22 work (research recommends new `busy_since` column via migration 0005)
+- Phase 23: Five critical pitfalls each require explicit acceptance criteria: name collision (DB+tmux), DB-first ordering with rollback, auto-context-regeneration, orchestrator rejection guard, session name sanitization
+
+## Session Continuity
+
+Last session: 2026-03-19
+Stopped at: Roadmap created — Phase 22-24 defined, requirements fully mapped
+Resume file: None
