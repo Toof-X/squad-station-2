@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod clean;
+pub mod clone;
 pub mod close;
 pub mod context;
 pub mod diagram;

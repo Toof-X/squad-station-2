@@ -84,6 +84,11 @@ pub enum Commands {
         #[arg(long, default_value = "unknown")]
         tool: String, // CONF-04: renamed from provider
     },
+    /// Clone an existing agent with auto-incremented name
+    Clone {
+        /// Source agent name to clone
+        agent: String,
+    },
     /// List agents with reconciled status
     Agents,
     /// Generate orchestrator context file

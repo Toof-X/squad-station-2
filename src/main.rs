@@ -64,6 +64,7 @@ async fn run(cli: cli::Cli) -> Result<()> {
                 Register { name, role, tool } => {
                     commands::register::run(name, role, tool, cli.json).await
                 }
+                Clone { agent } => commands::clone::run(agent, cli.json).await,
                 Agents => commands::agents::run(cli.json).await,
                 Context => commands::context::run().await,
                 Status => commands::status::run(cli.json).await,
