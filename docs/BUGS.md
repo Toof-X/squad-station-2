@@ -3,10 +3,11 @@
 **Tested:** 2026-03-15
 **Binary:** squad-station v0.2.0 (target/release/squad-station)
 **Test project:** squad-station-landing-page (tmux session: squad-station-testing)
+**Last updated:** 2026-03-20 (v0.6.0 — marked resolved bugs)
 
 ---
 
-## BUG-01: Signal completes wrong task (LIFO vs FIFO mismatch) [CRITICAL]
+## BUG-01: Signal completes wrong task (LIFO vs FIFO mismatch) [CRITICAL] — RESOLVED v0.5.1
 
 **Description:** `signal` completes the **newest** processing task (`ORDER BY created_at DESC`), but `peek` returns the **oldest** processing task (`ORDER BY created_at ASC` with priority). When an agent has multiple tasks, it peeks task A, works on it, signals, but task B (newer) gets marked completed instead.
 
@@ -22,7 +23,7 @@ squad-station signal squad-station-implement  # Completes "task B" (newest!)
 
 ---
 
-## BUG-02: Signal sets agent to idle even with remaining tasks [HIGH]
+## BUG-02: Signal sets agent to idle even with remaining tasks [HIGH] — RESOLVED v0.6.0
 
 **Description:** After `signal` completes one task, the agent status is unconditionally set to `idle`, even when other `processing` tasks remain in the queue. The `status` command then shows the agent as "idle" with "N pending" — contradictory.
 
@@ -55,7 +56,7 @@ squad-station peek implement                      # No pending tasks (silent mis
 
 ---
 
-## BUG-04: `signal` for nonexistent agent silently succeeds [MEDIUM]
+## BUG-04: `signal` for nonexistent agent silently succeeds [MEDIUM] — RESOLVED v0.5.1
 
 **Description:** `squad-station signal nonexistent-agent` produces no output and exits 0. By design for hook context (HOOK-03), but confusing for manual CLI usage.
 
@@ -91,7 +92,7 @@ squad-station peek nonexistent  # "No pending tasks for nonexistent"
 
 ---
 
-## BUG-07: Can send tasks to orchestrator-role agents [LOW]
+## BUG-07: Can send tasks to orchestrator-role agents [LOW] — RESOLVED v0.5.1
 
 **Description:** No guard preventing `squad-station send squad-station-orchestrator --body "test"`. The orchestrator is a coordinator, not a task receiver.
 
@@ -104,7 +105,7 @@ squad-station send squad-station-orchestrator --body "some task"  # Succeeds
 
 ---
 
-## BUG-08: Can send empty body tasks [LOW]
+## BUG-08: Can send empty body tasks [LOW] — RESOLVED v0.5.1
 
 **Description:** `squad-station send agent --body ""` succeeds and creates a task with empty content. No validation on body content.
 
@@ -177,7 +178,7 @@ squad-station agents  # Shows "test-agent" alongside "squad-station-implement"
 
 ---
 
-## BUG-16: Remove `tmux-session` from squad.yml — session names must follow `{project}-{name}` convention [UPGRADE]
+## BUG-16: Remove `tmux-session` from squad.yml — session names must follow `{project}-{name}` convention [UPGRADE] — RESOLVED v0.5.1 + v0.6.0
 
 **Description:** The `tmux-session` field in `squad.yml` agent configs is silently ignored by serde (not present in the `AgentConfig` struct). Session names are always derived as `{project}-{name}` in `init.rs:59`. Users may think they are customizing session names via this field, but it has no effect.
 
