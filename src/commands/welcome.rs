@@ -114,6 +114,9 @@ fn commands_list() -> String {
     out.push_str("    signal      Signal agent completion\n");
     out.push_str("    peek        Peek at next pending task\n");
     out.push_str("    list        List messages\n");
+    out.push_str("    monitor     Live agent pane viewer (recommended)\n");
+    out.push_str("    fleet       Fleet status overview\n");
+    out.push_str("    open        Attach to tmux monitor session\n");
     out.push_str("    ui          Launch TUI dashboard\n");
     out.push_str("    view        Open tmux tiled view\n");
     out.push_str("    status      Show project status\n");
@@ -168,7 +171,7 @@ fn draw_welcome(frame: &mut Frame, remaining_secs: u64, has_config: bool, cursor
             Constraint::Length(1),  // spacer
             Constraint::Length(1),  // tagline
             Constraint::Length(1),  // spacer
-            Constraint::Length(12), // commands table (fixed — 12 lines)
+            Constraint::Length(15), // commands table (fixed — 15 lines)
             Constraint::Length(1),  // spacer between commands and prompt
             Constraint::Length(1),  // proceed prompt
             Constraint::Min(0),     // flexible spacer
@@ -366,6 +369,9 @@ fn welcome_content() -> String {
     out.push_str("    signal      Signal agent completion\n");
     out.push_str("    peek        Peek at next pending task\n");
     out.push_str("    list        List messages\n");
+    out.push_str("    monitor     Live agent pane viewer (recommended)\n");
+    out.push_str("    fleet       Fleet status overview\n");
+    out.push_str("    open        Attach to tmux monitor session\n");
     out.push_str("    ui          Launch TUI dashboard\n");
     out.push_str("    view        Open tmux tiled view\n");
     out.push_str("    status      Show project status\n");
@@ -397,6 +403,9 @@ pub fn print_welcome() {
     println!("    signal      Signal agent completion");
     println!("    peek        Peek at next pending task");
     println!("    list        List messages");
+    println!("    monitor     Live agent pane viewer (recommended)");
+    println!("    fleet       Fleet status overview");
+    println!("    open        Attach to tmux monitor session");
     println!("    ui          Launch TUI dashboard");
     println!("    view        Open tmux tiled view");
     println!("    status      Show project status");
@@ -483,8 +492,8 @@ mod tests {
     fn test_welcome_content_has_subcommands() {
         let content = welcome_content();
         let subcommands = [
-            "init", "send", "signal", "peek", "list", "ui", "view", "status", "agents",
-            "context", "register",
+            "init", "send", "signal", "peek", "list", "monitor", "fleet", "open", "ui", "view",
+            "status", "agents", "context", "register",
         ];
         for cmd in &subcommands {
             assert!(
@@ -529,8 +538,8 @@ mod tests {
     fn test_commands_list_has_all_subcommands() {
         let list = commands_list();
         let subcommands = [
-            "init", "send", "signal", "peek", "list", "ui", "view", "status", "agents",
-            "context", "register",
+            "init", "send", "signal", "peek", "list", "monitor", "fleet", "open", "ui", "view",
+            "status", "agents", "context", "register",
         ];
         for cmd in &subcommands {
             assert!(

@@ -16,6 +16,8 @@ npx squad-station-2@latest install
 npx squad-station-2@latest install --tui
 ```
 
+![Welcome TUI](docs/assets/welcome-tui.png)
+
 Requires Node.js 14+. Downloads the native binary for your platform to `/usr/local/bin` (falls back to `~/.local/bin`) and scaffolds `.squad/` project files.
 
 ### Build from source
@@ -93,10 +95,15 @@ squad-station signal $TMUX_PANE
 **Step 5 — Monitor your fleet:**
 
 ```bash
-squad-station ui      # TUI dashboard
-squad-station status  # text overview
-squad-station list    # message queue
+squad-station monitor   # Interactive TUI — live agent pane viewer (recommended)
+squad-station fleet     # Fleet overview — tasks, busy duration, alignment per agent
+squad-station open      # Attach to tmux tiled view of all agent panes
+squad-station ui        # TUI dashboard
+squad-station status    # Text overview
+squad-station list      # Message queue
 ```
+
+> **Tip:** `squad-station monitor` is the recommended way to observe your agents in real time. It shows live pane output for each agent in a navigable TUI. Use `squad-station fleet` for a quick summary of pending tasks and agent alignment.
 
 See [docs/PLAYBOOK.md](docs/PLAYBOOK.md) for the complete workflow guide.
 

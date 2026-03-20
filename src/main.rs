@@ -64,9 +64,12 @@ async fn run(cli: cli::Cli) -> Result<()> {
                 }
                 Clone { agent } => commands::clone::run(agent, cli.json).await,
                 Agents => commands::agents::run(cli.json).await,
+                Fleet => commands::fleet::run(cli.json).await,
                 Context { inject } => commands::context::run(inject).await,
                 Status => commands::status::run(cli.json).await,
                 Ui => commands::ui::run().await,
+                Monitor => commands::monitor::run().await,
+                Open => commands::open::run().await,
                 View => commands::view::run(cli.json).await,
                 Close { config } => commands::close::run(config, cli.json).await,
                 Reset {

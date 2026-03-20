@@ -381,20 +381,22 @@ pub enum AgentField {
 
 pub struct AgentDraft {
     pub name: TextInputState,
-    pub template_index: usize,                          // NEW — index into template list (last = Custom)
-    pub is_orchestrator: bool,                          // NEW — selects which template list to use
+    pub base_name: String,                              // user-typed name before template suffix
+    pub template_index: usize,                          // index into template list (last = Custom)
+    pub is_orchestrator: bool,                          // selects which template list to use
     pub provider: Provider,
     pub model: ModelSelector,
     pub custom_model: TextInputState,                   // used when model is "other"
     pub description: TextInputState,
     pub focused_field: AgentField,
-    pub routing_hints: Option<Vec<&'static str>>,       // NEW — set by template selection
+    pub routing_hints: Option<Vec<&'static str>>,       // set by template selection
 }
 
 impl AgentDraft {
     pub fn new() -> Self {
         Self {
             name: TextInputState::new(),
+            base_name: String::new(),
             template_index: 0,
             is_orchestrator: false,
             provider: Provider::ClaudeCode,
@@ -597,6 +599,45 @@ enum KeyAction {
 }
 
 // ----------------------------------------------------------------------------
+// Template acronym: uppercase initials of display name
+// e.g. "Solution Architect" → "SA", "QA Engineer" → "QE", "Coder" → "C"
+// ----------------------------------------------------------------------------
+
+fn template_acronym(display_name: &str) -> String {
+    display_name
+        .split_whitespace()
+        .filter_map(|word| word.chars().next())
+        .map(|c| c.to_uppercase().to_string())
+        .collect()
+}
+
+// ----------------------------------------------------------------------------
+// Bidirectional sync: Installation Directory ↔ Project Name
+// ----------------------------------------------------------------------------
+
+/// Extract last path component from install_dir and set it as project name.
+fn sync_project_from_dir(state: &mut WizardState) {
+    let dir = state.install_dir_input.value.trim().to_string();
+    let name = std::path::Path::new(&dir)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    state.project_input = TextInputState::with_value(name);
+}
+
+/// Replace last path component of install_dir with current project name.
+fn sync_dir_from_project(state: &mut WizardState) {
+    let dir = state.install_dir_input.value.trim().to_string();
+    let project = state.project_input.value.trim().to_string();
+    if let Some(parent) = std::path::Path::new(&dir).parent() {
+        let new_path = parent.join(&project);
+        state.install_dir_input = TextInputState::with_value(
+            new_path.to_string_lossy().to_string(),
+        );
+    }
+}
+
+// ----------------------------------------------------------------------------
 // Event handler
 // ----------------------------------------------------------------------------
 
@@ -604,25 +645,42 @@ fn handle_key(state: &mut WizardState, key: KeyCode) -> KeyAction {
     match &state.page {
         WizardPage::Project => match state.project_field {
             ProjectField::InstallDir => match key {
-                KeyCode::Enter | KeyCode::Tab => {
+                KeyCode::Enter => {
+                    sync_project_from_dir(state);
                     state.project_field = ProjectField::Name;
                 }
-                KeyCode::Esc => {} // first field, first page — no-op
-                KeyCode::Backspace => state.install_dir_input.pop(),
+                KeyCode::Esc | KeyCode::Tab => {} // first field, first page — no-op
+                KeyCode::Backspace => {
+                    state.install_dir_input.pop();
+                    sync_project_from_dir(state);
+                }
                 KeyCode::Left => state.install_dir_input.cursor_left(),
                 KeyCode::Right => state.install_dir_input.cursor_right(),
-                KeyCode::Char(c) => state.install_dir_input.push(c),
+                KeyCode::Char(c) => {
+                    state.install_dir_input.push(c);
+                    sync_project_from_dir(state);
+                }
                 _ => {}
             },
             ProjectField::Name => match key {
-                KeyCode::Enter | KeyCode::Tab => {
+                KeyCode::Enter => {
+                    sync_dir_from_project(state);
                     state.project_field = ProjectField::Sdd;
                 }
-                KeyCode::Esc => state.project_field = ProjectField::InstallDir,
-                KeyCode::Backspace => state.project_input.pop(),
+                KeyCode::Esc | KeyCode::Tab => {
+                    sync_dir_from_project(state);
+                    state.project_field = ProjectField::InstallDir;
+                }
+                KeyCode::Backspace => {
+                    state.project_input.pop();
+                    sync_dir_from_project(state);
+                }
                 KeyCode::Left => state.project_input.cursor_left(),
                 KeyCode::Right => state.project_input.cursor_right(),
-                KeyCode::Char(c) => state.project_input.push(c),
+                KeyCode::Char(c) => {
+                    state.project_input.push(c);
+                    sync_dir_from_project(state);
+                }
                 _ => {}
             },
             ProjectField::Sdd => match key {
@@ -657,9 +715,8 @@ fn handle_key(state: &mut WizardState, key: KeyCode) -> KeyAction {
                     Err(msg) => state.worker_count_input.error = Some(msg),
                 }
             }
-            KeyCode::Esc => {
+            KeyCode::Esc | KeyCode::Tab => {
                 if state.worker_only {
-                    // Worker-only mode: Esc on first page cancels the wizard
                     return KeyAction::Cancel;
                 }
                 state.orchestrator.focused_field = AgentField::Description;
@@ -693,7 +750,7 @@ fn handle_key(state: &mut WizardState, key: KeyCode) -> KeyAction {
         }
         WizardPage::Summary => match key {
             KeyCode::Enter => return KeyAction::Complete,
-            KeyCode::Esc => {
+            KeyCode::Esc | KeyCode::Tab => {
                 if state.worker_count > 0 {
                     let last = state.worker_count - 1;
                     state.workers[last].focused_field = AgentField::Description;
@@ -733,18 +790,20 @@ fn handle_agent_key(
 ) -> PageTransition {
     match draft.focused_field {
         AgentField::Name => match key {
-            KeyCode::Enter | KeyCode::Tab => {
+            KeyCode::Enter => {
+                // Save user-typed name as base_name before moving to template
+                draft.base_name = draft.name.value.trim().to_string();
                 draft.focused_field = AgentField::Template;
             }
+            KeyCode::Esc | KeyCode::Tab => return PageTransition::Go(on_back()),
             KeyCode::Backspace => draft.name.pop(),
             KeyCode::Left => draft.name.cursor_left(),
             KeyCode::Right => draft.name.cursor_right(),
             KeyCode::Char(c) => draft.name.push(c),
-            KeyCode::Esc => return PageTransition::Go(on_back()),
             _ => {}
         },
         AgentField::Template => match key {
-            KeyCode::Enter | KeyCode::Tab => {
+            KeyCode::Enter => {
                 let tmpl_list = if draft.is_orchestrator {
                     templates::ORCHESTRATOR_TEMPLATES
                 } else {
@@ -753,8 +812,14 @@ fn handle_agent_key(
                 let custom_idx = tmpl_list.len();
                 if draft.template_index < custom_idx {
                     let t = &tmpl_list[draft.template_index];
-                    // Auto-fill name — always overwrite (per UI-SPEC)
-                    draft.name.value = t.slug.to_string();
+                    // Auto-fill name: {base_name}-{ACRONYM}
+                    // e.g. name "Toof", "Solution Architect" → "Toof-SA"
+                    let acronym = template_acronym(t.display_name);
+                    if draft.base_name.is_empty() {
+                        draft.name.value = acronym;
+                    } else {
+                        draft.name.value = format!("{}-{}", draft.base_name, acronym);
+                    }
                     draft.name.cursor = draft.name.value.chars().count();
                     // Auto-fill provider
                     draft.provider = match t.default_provider {
@@ -800,13 +865,13 @@ fn handle_agent_key(
                     draft.template_index += 1;
                 }
             }
-            KeyCode::Esc => {
+            KeyCode::Esc | KeyCode::Tab => {
                 draft.focused_field = AgentField::Name;
             }
             _ => {}
         },
         AgentField::Provider => match key {
-            KeyCode::Enter | KeyCode::Tab => {
+            KeyCode::Enter => {
                 if draft.provider == Provider::Antigravity {
                     draft.focused_field = AgentField::Description;
                 } else {
@@ -823,11 +888,11 @@ fn handle_agent_key(
                 draft.model.reset();
                 draft.custom_model = TextInputState::new();
             }
-            KeyCode::Esc => draft.focused_field = AgentField::Template,
+            KeyCode::Esc | KeyCode::Tab => draft.focused_field = AgentField::Template,
             _ => {}
         },
         AgentField::Model => match key {
-            KeyCode::Enter | KeyCode::Tab => {
+            KeyCode::Enter => {
                 draft.focused_field = AgentField::Description;
             }
             KeyCode::Up => draft.model.cycle_prev(draft.provider),
@@ -852,7 +917,7 @@ fn handle_agent_key(
                     draft.custom_model.push(c);
                 }
             }
-            KeyCode::Esc => draft.focused_field = AgentField::Provider,
+            KeyCode::Esc | KeyCode::Tab => draft.focused_field = AgentField::Provider,
             _ => {}
         },
         AgentField::Description => match key {
@@ -861,7 +926,7 @@ fn handle_agent_key(
             KeyCode::Left => draft.description.cursor_left(),
             KeyCode::Right => draft.description.cursor_right(),
             KeyCode::Char(c) => draft.description.push(c),
-            KeyCode::Esc => {
+            KeyCode::Esc | KeyCode::Tab => {
                 if draft.provider == Provider::Antigravity {
                     draft.focused_field = AgentField::Provider;
                 } else {
@@ -927,30 +992,30 @@ fn render_page(frame: &mut Frame, state: &WizardState) {
     // Footer
     let agent_footer = |draft: &AgentDraft| match draft.focused_field {
         AgentField::Template => {
-            "↑↓: select template   Enter/Tab: apply   Esc: back   Ctrl+C: cancel"
+            "↑↓: select   Enter: apply   Tab: back   Ctrl+C: cancel"
         }
         AgentField::Provider => {
-            "↑↓: select provider   Enter/Tab: next   Esc: back   Ctrl+C: cancel"
+            "↑↓: select   Enter: next   Tab: back   Ctrl+C: cancel"
         }
         AgentField::Model => {
             if draft.model.is_other(draft.provider) {
-                "↑↓: change option   type: custom model   Enter/Tab: next   Esc: back   Ctrl+C: cancel"
+                "↑↓: change   type: custom model   Enter: next   Tab: back   Ctrl+C: cancel"
             } else {
-                "↑↓: select model   Enter/Tab: next   Esc: back   Ctrl+C: cancel"
+                "↑↓: select   Enter: next   Tab: back   Ctrl+C: cancel"
             }
         }
-        _ => "Enter: next   Esc: back   Ctrl+C: cancel",
+        _ => "Enter: next   Tab: back   Ctrl+C: cancel",
     };
     let footer_text = match &state.page {
         WizardPage::Project => match state.project_field {
-            ProjectField::InstallDir => "Enter/Tab: next field   Ctrl+C: cancel",
-            ProjectField::Name => "Enter/Tab: next field   Esc: back   Ctrl+C: cancel",
-            ProjectField::Sdd => "↑↓: select workflow   Enter: next page   Esc/Tab: back   Ctrl+C: cancel",
+            ProjectField::InstallDir => "Enter: next   Ctrl+C: cancel",
+            ProjectField::Name => "Enter: next   Tab: back   Ctrl+C: cancel",
+            ProjectField::Sdd => "↑↓: select   Enter: next page   Tab: back   Ctrl+C: cancel",
         },
         WizardPage::OrchestratorConfig => agent_footer(&state.orchestrator),
-        WizardPage::WorkerCount => "Enter: next   Esc: back   Ctrl+C: cancel",
+        WizardPage::WorkerCount => "Enter: next   Tab: back   Ctrl+C: cancel",
         WizardPage::WorkerConfig { index } => agent_footer(&state.workers[*index]),
-        WizardPage::Summary => "Enter: confirm   Esc: back   Ctrl+C: cancel",
+        WizardPage::Summary => "Enter: confirm   Tab: back   Ctrl+C: cancel",
     };
     let footer = Paragraph::new(footer_text);
     frame.render_widget(footer, chunks[2]);
@@ -1094,20 +1159,70 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
     };
     let template_h = (templates_list.len() + 1 + 2) as u16; // options + Custom + 2 border lines
 
-    let agent_chunks = Layout::default()
+    // Section heights (fixed)
+    let heights: [u16; 8] = [
+        3, 1, template_h, 5, model_h, custom_model_h, 3, 1,
+    ];
+    let total_h: u16 = heights.iter().sum();
+
+    // Compute scroll offset so the focused field is visible
+    let focused_idx: usize = match draft.focused_field {
+        AgentField::Name => 0,
+        AgentField::Template => 2,
+        AgentField::Provider => 3,
+        AgentField::Model => if draft.model.is_other(draft.provider) { 5 } else { 4 },
+        AgentField::Description => 6,
+    };
+    let scroll_y = if total_h <= area.height {
+        0u16
+    } else {
+        let focused_top: u16 = heights[..focused_idx].iter().sum();
+        let focused_h = heights[focused_idx]
+            + if focused_idx + 1 < 8 && heights[focused_idx + 1] == 1 { 1 } else { 0 };
+        let focused_bottom = focused_top + focused_h;
+        if focused_bottom > area.height {
+            focused_bottom.saturating_sub(area.height)
+        } else {
+            0
+        }
+    };
+
+    // Layout into a virtual rect offset by scroll, clamped to terminal
+    let virtual_rect = ratatui::layout::Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: total_h.max(area.height),
+    };
+    let all_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),              // 0: Name field
-            Constraint::Length(1),              // 1: Name hint
-            Constraint::Length(template_h),     // 2: Template selector (NEW — horizontal split)
-            Constraint::Length(5),              // 3: Provider radio (3 options + 2 border)
-            Constraint::Length(model_h),        // 4: Model radio (dynamic)
-            Constraint::Length(custom_model_h), // 5: Custom model text input
-            Constraint::Length(3),              // 6: Description field
-            Constraint::Length(1),              // 7: Description hint
-            Constraint::Min(0),                 // 8: spacer
+            Constraint::Length(heights[0]),
+            Constraint::Length(heights[1]),
+            Constraint::Length(heights[2]),
+            Constraint::Length(heights[3]),
+            Constraint::Length(heights[4]),
+            Constraint::Length(heights[5]),
+            Constraint::Length(heights[6]),
+            Constraint::Length(heights[7]),
+            Constraint::Min(0),
         ])
-        .split(area);
+        .split(virtual_rect);
+
+    // Apply scroll: shift each chunk's y position and clip to visible area
+    let agent_chunks: Vec<ratatui::layout::Rect> = all_chunks
+        .iter()
+        .map(|r| {
+            let new_y = r.y.saturating_sub(scroll_y);
+            if new_y + r.height <= area.y || new_y >= area.y + area.height {
+                // Fully off-screen: zero-height rect (won't render)
+                ratatui::layout::Rect { x: r.x, y: area.y, width: r.width, height: 0 }
+            } else {
+                let clipped_h = r.height.min((area.y + area.height).saturating_sub(new_y));
+                ratatui::layout::Rect { x: r.x, y: new_y, width: r.width, height: clipped_h }
+            }
+        })
+        .collect();
 
     // --- Name field ---
     let name_focused = draft.focused_field == AgentField::Name;

@@ -96,13 +96,11 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
             // --tui: run interactive wizard to generate squad.yml
             match crate::commands::wizard::run().await? {
                 Some(result) => {
-                    // Change to install directory if different from CWD
+                    // Change to install directory (already includes project name as last component)
                     let install_dir = std::path::PathBuf::from(&result.install_dir);
-                    if install_dir.is_absolute() || install_dir.exists() {
-                        std::fs::create_dir_all(&install_dir)?;
-                        std::env::set_current_dir(&install_dir)?;
-                        config_path = install_dir.join("squad.yml");
-                    }
+                    std::fs::create_dir_all(&install_dir)?;
+                    std::env::set_current_dir(&install_dir)?;
+                    config_path = install_dir.join("squad.yml");
                     // Capture routing hints before result fields are moved into yaml generation
                     wizard_routing_hints = Some(extract_routing_hints(&result));
                     let yaml = generate_squad_yml(&result);
@@ -299,6 +297,24 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         match tmux::launch_agent_in_dir(&agent_name, &cmd, &project_root_str) {
             Ok(()) => launched += 1,
             Err(e) => failed.push((agent_name.clone(), format!("{e:#}"))),
+        }
+    }
+
+    // 6b. Clean stale agents: delete any DB agents not in current config
+    {
+        let mut expected_names: Vec<String> = vec![orch_name.clone()];
+        for agent in &config.agents {
+            let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
+            expected_names.push(config::sanitize_session_name(&format!(
+                "{}-{}",
+                config.project, role_suffix
+            )));
+        }
+        let all_agents = db::agents::list_agents(&pool).await?;
+        for agent in &all_agents {
+            if !expected_names.contains(&agent.name) {
+                let _ = db::agents::delete_agent_by_name(&pool, &agent.name).await;
+            }
         }
     }
 

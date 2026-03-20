@@ -91,6 +91,8 @@ pub enum Commands {
     },
     /// List agents with reconciled status
     Agents,
+    /// Show fleet status — pending tasks, busy duration, alignment per agent
+    Fleet,
     /// Generate orchestrator context file
     Context {
         /// Output context to stdout for SessionStart hook injection (orchestrator only)
@@ -101,6 +103,10 @@ pub enum Commands {
     Status,
     /// Launch interactive TUI dashboard
     Ui,
+    /// Interactive monitor — live agent pane output viewer
+    Monitor,
+    /// Attach to the monitor tmux session (tiled agent panes)
+    Open,
     /// Open tmux tiled view of all live agent sessions
     View,
     /// Kill all tmux sessions and remove database (graceful teardown)
