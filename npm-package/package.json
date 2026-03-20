@@ -1,6 +1,6 @@
 {
   "name": "squad-station-2",
-  "version": "1.6.4",
+  "version": "1.6.6",
   "binaryVersion": "0.6.0",
   "description": "Message routing and orchestration for AI agent squads",
   "repository": {

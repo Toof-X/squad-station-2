@@ -440,13 +440,13 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                 "  If disabled, you must manually run {} each time.",
                 yellow("/squad-orchestrator")
             );
-            print!("\n  Enable auto-inject? [y/N] ");
+            print!("\n  Enable auto-inject? [Y/n] ");
             use std::io::Write;
             std::io::stdout().flush().ok();
 
             let mut answer = String::new();
             if std::io::stdin().read_line(&mut answer).is_ok()
-                && answer.trim().eq_ignore_ascii_case("y")
+                && !answer.trim().eq_ignore_ascii_case("n")
             {
                 match install_session_start_hook(&config.orchestrator.provider) {
                     Ok(true) => println!("  SessionStart hook: installed"),
