@@ -40,9 +40,6 @@ function install() {
       // TUI failed (no TTY, e.g. piped or non-interactive shell) — show static fallback
       spawnSync(destPath, [], { stdio: 'inherit' });
       console.log('\n  \x1b[33mTip:\x1b[0m Run \x1b[36msquad-station --tui\x1b[0m in your terminal for the interactive welcome.\n');
-    } else {
-      // After TUI setup, check if user needs to cd to project directory
-      promptCdToProject();
     }
   } else {
     console.log('\x1b[1mNext steps:\x1b[0m');
@@ -162,62 +159,6 @@ function scaffoldProject(force) {
     } else {
       fs.copyFileSync(path.join(exSrc, file), dest);
       console.log('  \x1b[32m✓\x1b[0m .squad/examples/' + file);
-    }
-  });
-}
-
-// ── Post-TUI: prompt to cd into project directory ──────────────────
-// After wizard creates project in a subdirectory, the user's shell
-// is still in the original cwd. Detect the project dir and prompt.
-
-function promptCdToProject() {
-  // If squad.yml exists in cwd, we're already in the project dir
-  if (fs.existsSync(path.join(process.cwd(), 'squad.yml'))) {
-    return;
-  }
-
-  // Look for squad.yml in immediate subdirectories (wizard creates project as subdir)
-  var projectDir = null;
-  try {
-    var entries = fs.readdirSync(process.cwd(), { withFileTypes: true });
-    // Sort by most recently modified first
-    var dirs = entries
-      .filter(function(e) { return e.isDirectory() && !e.name.startsWith('.'); })
-      .map(function(e) {
-        var full = path.join(process.cwd(), e.name);
-        var stat = fs.statSync(full);
-        return { name: e.name, path: full, mtime: stat.mtimeMs };
-      })
-      .sort(function(a, b) { return b.mtime - a.mtime; });
-
-    for (var i = 0; i < dirs.length; i++) {
-      if (fs.existsSync(path.join(dirs[i].path, 'squad.yml'))) {
-        projectDir = dirs[i].path;
-        break;
-      }
-    }
-  } catch (_) {
-    return;
-  }
-
-  if (!projectDir) {
-    return;
-  }
-
-  // Prompt user to cd to project directory
-  var readline = require('readline');
-  var rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-
-  console.log('');
-  console.log('  \x1b[33mYou are not in the project directory.\x1b[0m');
-  console.log('  Project: \x1b[36m' + projectDir + '\x1b[0m');
-
-  rl.question('\n  Move to project directory? [Y/n] ', function(answer) {
-    rl.close();
-    answer = (answer || '').trim().toLowerCase();
-    if (answer === '' || answer === 'y' || answer === 'yes') {
-      console.log('\n  Run this command to enter your project:\n');
-      console.log('  \x1b[36mcd ' + projectDir + '\x1b[0m\n');
     }
   });
 }

@@ -87,6 +87,8 @@ fn append_workers_to_yaml(
 
 pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Result<()> {
     let mut purge_db_on_init = false;
+    // Track the project directory when wizard creates it (for cd prompt at end)
+    let mut project_dir: Option<String> = None;
     // Carries routing_hints from wizard result to DB insertion.
     // routing_hints are NOT stored in squad.yml, so they must be kept separately.
     let mut wizard_routing_hints: Option<std::collections::HashMap<String, Option<String>>> = None;
@@ -99,6 +101,7 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                     // Change to install directory (already includes project name as last component)
                     let install_dir = std::path::PathBuf::from(&result.install_dir);
                     std::fs::create_dir_all(&install_dir)?;
+                    project_dir = Some(install_dir.canonicalize().unwrap_or(install_dir.clone()).to_string_lossy().to_string());
                     std::env::set_current_dir(&install_dir)?;
                     config_path = install_dir.join("squad.yml");
                     // Capture routing hints before result fields are moved into yaml generation
@@ -534,6 +537,27 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         crate::commands::helpers::reconcile_agent_statuses(&pool).await?;
         let agents = db::agents::list_agents(&pool).await?;
         crate::commands::diagram::print_diagram(&agents);
+
+        // Prompt to cd into project directory if wizard created it elsewhere
+        if let Some(ref dir) = project_dir {
+            println!();
+            println!(
+                "  {}",
+                bold("Your project was created in a different directory.")
+            );
+            println!("  Project: {}", cyan(dir));
+            print!("\n  Move to project directory? [Y/n] ");
+            use std::io::Write;
+            std::io::stdout().flush().ok();
+
+            let mut answer = String::new();
+            if std::io::stdin().read_line(&mut answer).is_ok()
+                && !answer.trim().eq_ignore_ascii_case("n")
+            {
+                println!("\n  Run this command:\n");
+                println!("  {}\n", cyan(&format!("cd {}", dir)));
+            }
+        }
     }
 
     Ok(())
