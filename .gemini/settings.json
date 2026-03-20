@@ -1,53 +1,16 @@
 {
-  "experimental": {
-    "enableAgents": true
-  },
   "hooks": {
+    "AfterAgent": [],
     "SessionStart": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .gemini/hooks/gsd-check-update.js"
-          }
-        ]
-      }
-    ],
-    "AfterTool": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .gemini/hooks/gsd-context-monitor.js"
-          }
-        ]
-      }
-    ],
-    "AfterAgent": [
-      {
         "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "squad-station signal $(tmux display-message -p '#S')"
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "squad-station notify --body 'Agent needs input' --agent $(tmux display-message -p '#S')"
+            "command": "squad-station context --inject"
           }
         ]
       }
     ]
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "node .gemini/hooks/gsd-statusline.js"
   }
 }

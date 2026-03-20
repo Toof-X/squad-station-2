@@ -9,8 +9,12 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub json: bool,
 
+    /// Launch interactive welcome TUI (auto-launched by installer in TTY environments)
+    #[arg(long)]
+    pub tui: bool,
+
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -20,6 +24,9 @@ pub enum Commands {
         /// Path to squad config file
         #[arg(default_value = "squad.yml")]
         config: PathBuf,
+        /// Launch interactive TUI wizard instead of using existing squad.yml
+        #[arg(long)]
+        tui: bool,
     },
     /// Send a task to an agent
     Send {
@@ -77,8 +84,15 @@ pub enum Commands {
         #[arg(long, default_value = "unknown")]
         tool: String, // CONF-04: renamed from provider
     },
+    /// Clone an existing agent with auto-incremented name
+    Clone {
+        /// Source agent name to clone
+        agent: String,
+    },
     /// List agents with reconciled status
     Agents,
+    /// Show fleet status — pending tasks, busy duration, alignment per agent
+    Fleet,
     /// Generate orchestrator context file
     Context {
         /// Output context to stdout for SessionStart hook injection (orchestrator only)
@@ -89,8 +103,18 @@ pub enum Commands {
     Status,
     /// Launch interactive TUI dashboard
     Ui,
+    /// Interactive monitor — live agent pane output viewer
+    Monitor,
+    /// Attach to the monitor tmux session (tiled agent panes)
+    Open,
     /// Open tmux tiled view of all live agent sessions
     View,
+    /// Kill all tmux sessions and remove database (graceful teardown)
+    Close {
+        /// Path to squad config file
+        #[arg(default_value = "squad.yml")]
+        config: PathBuf,
+    },
     /// Kill all sessions and delete database, then relaunch
     Reset {
         /// Path to squad config file
