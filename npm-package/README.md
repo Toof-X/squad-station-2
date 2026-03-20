@@ -7,69 +7,36 @@ Squad Station routes messages between an AI orchestrator and N agents running in
 ## Install
 
 ```bash
-# Install binary and scaffold project files
-npx squad-station-2@latest install
-
-# Same, but launch the interactive welcome TUI after install
 npx squad-station-2@latest install --tui
-```
-
-This downloads the `squad-station` binary to your system and scaffolds project files:
-
-```
-.squad/
-├── sdd/                          # SDD playbooks
-│   ├── gsd-playbook.md
-│   ├── bmad-playbook.md
-│   └── superpowers-playbook.md
-└── examples/                     # Example configs
-    ├── orchestrator-claude.yml
-    └── orchestrator-gemini.yml
 ```
 
 ## Quickstart
 
+**Step 1 — Install and follow the TUI wizard:**
+
+The interactive TUI guides you through setup — press **y** to launch the init wizard, which generates `squad.yml` and starts your squad automatically.
+
+**Step 2 — Open the monitor:**
+
 ```bash
-# 1. Copy an example config
-cp .squad/examples/orchestrator-claude.yml squad.yml
-
-# 2. Edit — set project name, providers, models
-vi squad.yml
-
-# 3. Launch the squad
-squad-station init
-
-# Or: generate squad.yml interactively with the TUI wizard
-squad-station init --tui
+squad-station open
 ```
 
-## Example `squad.yml`
+**Step 3 — Send a task:**
 
-```yaml
-project: my-app
+```bash
+squad-station send my-app-claude-code-backend --body "Implement the /api/health endpoint"
+```
 
-sdd:
-  - name: get-shit-done
-    playbook: ".squad/sdd/gsd-playbook.md"
+**Step 4 — Monitor your fleet:**
 
-orchestrator:
-  provider: claude-code
-  role: orchestrator
-  model: haiku
-  description: Team leader, coordinates tasks for agents
-
-agents:
-  - name: implement
-    provider: claude-code
-    role: worker
-    model: sonnet
-    description: Senior coder, coding, fixing bugs
-
-  - name: brainstorm
-    provider: claude-code
-    role: worker
-    model: opus
-    description: Technical Lead, planner, analysis, code reviews
+```bash
+squad-station monitor   # Interactive TUI — live agent pane viewer (recommended)
+squad-station fleet     # Fleet overview — tasks, busy duration, alignment per agent
+squad-station open      # Attach to tmux tiled view of all agent panes
+squad-station ui        # TUI dashboard
+squad-station status    # Text overview
+squad-station list      # Message queue
 ```
 
 ## Commands
@@ -80,6 +47,9 @@ agents:
 | `squad-station init --tui` | Interactive TUI wizard — generate `squad.yml`, then launch |
 | `squad-station send <agent> --body "<task>"` | Send a task to an agent |
 | `squad-station signal <agent>` | Signal agent completed its task |
+| `squad-station monitor` | Interactive TUI — live agent pane viewer |
+| `squad-station fleet` | Fleet status overview — tasks, busy duration, alignment |
+| `squad-station open` | Attach to tmux monitor session |
 | `squad-station list` | List messages |
 | `squad-station agents` | List agents with live status |
 | `squad-station status` | Project and agent summary |
@@ -92,14 +62,6 @@ agents:
 
 - macOS or Linux
 - tmux
-- Node.js 14+ (for `npx install` only)
-
-## Build from source
-
-```bash
-git clone https://github.com/Toof-X/squad-station-2.git
-cd squad-station-2 && cargo build --release
-```
 
 ## License
 
