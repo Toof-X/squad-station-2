@@ -667,6 +667,7 @@ fn agent_resolve_snippet() -> &'static str {
 }
 
 /// Install Claude Code hooks: Stop (signal) + Notification (notify) + PostToolUse (AskUserQuestion)
+/// Appends to existing hook arrays instead of overwriting them.
 fn install_claude_hooks(settings_file: &str) -> anyhow::Result<bool> {
     let mut settings = read_or_create_settings(settings_file)?;
     let resolve = agent_resolve_snippet();
@@ -682,34 +683,46 @@ fn install_claude_hooks(settings_file: &str) -> anyhow::Result<bool> {
     );
 
     // Stop hook — agent finished task → signal completion
-    settings["hooks"]["Stop"] = serde_json::json!([{
-        "matcher": "",
-        "hooks": [{"type": "command", "command": signal_cmd}]
-    }]);
+    append_hook_entry(
+        &mut settings,
+        "Stop",
+        serde_json::json!({
+            "matcher": "",
+            "hooks": [{"type": "command", "command": signal_cmd}]
+        }),
+        "squad-station signal",
+    );
 
     // Notification hook — agent needs permission approval → notify orchestrator
-    // Only permission_prompt triggers notify. idle_prompt must NOT trigger notify
-    // because idle = agent finished and is waiting for next task, which causes a
-    // notification loop: idle → notify orchestrator → orchestrator sends task → idle → notify...
-    settings["hooks"]["Notification"] = serde_json::json!([
-        {
+    append_hook_entry(
+        &mut settings,
+        "Notification",
+        serde_json::json!({
             "matcher": "permission_prompt",
             "hooks": [{"type": "command", "command": notify_cmd}]
-        },
-        {
+        }),
+        "squad-station notify",
+    );
+    append_hook_entry(
+        &mut settings,
+        "Notification",
+        serde_json::json!({
             "matcher": "elicitation_dialog",
             "hooks": [{"type": "command", "command": notify_cmd}]
-        }
-    ]);
+        }),
+        "squad-station notify",
+    );
 
     // PostToolUse hook — agent is asking the user a question → notify orchestrator.
-    // Orchestrator reads the actual question via capture-pane.
-    settings["hooks"]["PostToolUse"] = serde_json::json!([
-        {
+    append_hook_entry(
+        &mut settings,
+        "PostToolUse",
+        serde_json::json!({
             "matcher": "AskUserQuestion",
             "hooks": [{"type": "command", "command": notify_cmd}]
-        }
-    ]);
+        }),
+        "squad-station notify",
+    );
 
     std::fs::write(settings_file, serde_json::to_string_pretty(&settings)?)?;
     Ok(true)
@@ -736,34 +749,87 @@ fn install_gemini_hooks(settings_file: &str) -> anyhow::Result<bool> {
         resolve
     );
 
-    settings["hooks"]["AfterAgent"] = serde_json::json!([{
-        "matcher": "",
-        "hooks": [{
-            "type": "command",
-            "command": signal_cmd,
-            "name": "squad-signal",
-            "description": "Signal task completion to squad-station",
-            "timeout": 30000
-        }]
-    }]);
+    append_hook_entry(
+        &mut settings,
+        "AfterAgent",
+        serde_json::json!({
+            "matcher": "",
+            "hooks": [{
+                "type": "command",
+                "command": signal_cmd,
+                "name": "squad-signal",
+                "description": "Signal task completion to squad-station",
+                "timeout": 30000
+            }]
+        }),
+        "squad-station signal",
+    );
 
-    settings["hooks"]["Notification"] = serde_json::json!([{
-        "matcher": "",
-        "hooks": [{
-            "type": "command",
-            "command": notify_cmd,
-            "name": "squad-notify",
-            "description": "Forward permission prompt to orchestrator",
-            "timeout": 30000
-        }]
-    }]);
+    append_hook_entry(
+        &mut settings,
+        "Notification",
+        serde_json::json!({
+            "matcher": "",
+            "hooks": [{
+                "type": "command",
+                "command": notify_cmd,
+                "name": "squad-notify",
+                "description": "Forward permission prompt to orchestrator",
+                "timeout": 30000
+            }]
+        }),
+        "squad-station notify",
+    );
 
     std::fs::write(settings_file, serde_json::to_string_pretty(&settings)?)?;
     Ok(true)
 }
 
+/// Append a hook entry to an existing hook array, skipping if an identical matcher+marker combo exists.
+/// Returns true if the entry was added, false if it already existed.
+fn append_hook_entry(
+    settings: &mut serde_json::Value,
+    hook_event: &str,
+    entry: serde_json::Value,
+    marker: &str,
+) -> bool {
+    let arr = settings["hooks"][hook_event]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+
+    let entry_matcher = entry["matcher"].as_str().unwrap_or("");
+
+    // Check if an entry with the same matcher AND marker command already exists
+    let already_exists = arr.iter().any(|e| {
+        let same_matcher = e["matcher"].as_str().unwrap_or("") == entry_matcher;
+        let has_marker = e["hooks"]
+            .as_array()
+            .map(|hooks| {
+                hooks.iter().any(|h| {
+                    h["command"]
+                        .as_str()
+                        .map(|c| c.contains(marker))
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false);
+        same_matcher && has_marker
+    });
+
+    if already_exists {
+        return false;
+    }
+
+    let mut new_arr = arr;
+    new_arr.push(entry);
+    settings["hooks"][hook_event] = serde_json::Value::Array(new_arr);
+    true
+}
+
 /// Install SessionStart hook for auto-injecting orchestrator context.
 /// Called separately from base hooks because it requires user opt-in.
+/// Appends to existing SessionStart hooks instead of overwriting.
 fn install_session_start_hook(
     provider: &str,
     project_root: &std::path::Path,
@@ -779,13 +845,15 @@ fn install_session_start_hook(
     let mut settings = read_or_create_settings(&settings_str)?;
     let inject_cmd = "squad-station context --inject";
 
-    settings["hooks"]["SessionStart"] = serde_json::json!([{
+    let entry = serde_json::json!({
         "matcher": "",
         "hooks": [{"type": "command", "command": inject_cmd}]
-    }]);
+    });
+
+    let added = append_hook_entry(&mut settings, "SessionStart", entry, "squad-station context");
 
     std::fs::write(&settings_path, serde_json::to_string_pretty(&settings)?)?;
-    Ok(true)
+    Ok(added)
 }
 
 /// Validate that a model string is safe for use as a CLI argument.
