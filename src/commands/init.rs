@@ -538,25 +538,10 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         let agents = db::agents::list_agents(&pool).await?;
         crate::commands::diagram::print_diagram(&agents);
 
-        // Prompt to cd into project directory if wizard created it elsewhere
+        // Write project directory to temp file for parent process (run.js) to cd into
         if let Some(ref dir) = project_dir {
-            println!();
-            println!(
-                "  {}",
-                bold("Your project was created in a different directory.")
-            );
-            println!("  Project: {}", cyan(dir));
-            print!("\n  Move to project directory? [Y/n] ");
-            use std::io::Write;
-            std::io::stdout().flush().ok();
-
-            let mut answer = String::new();
-            if std::io::stdin().read_line(&mut answer).is_ok()
-                && !answer.trim().eq_ignore_ascii_case("n")
-            {
-                println!("\n  Run this command:\n");
-                println!("  {}\n", cyan(&format!("cd {}", dir)));
-            }
+            let marker = std::env::temp_dir().join(".squad-project-dir");
+            let _ = std::fs::write(&marker, dir);
         }
     }
 

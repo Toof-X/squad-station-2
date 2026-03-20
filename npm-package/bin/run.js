@@ -35,11 +35,28 @@ function install() {
   if (tui) {
     // --tui: launch welcome TUI directly via the installed binary
     // spawnSync with stdio inherit passes the real terminal FDs through
+    // Clean up any stale marker before running TUI
+    var marker = path.join(require('os').tmpdir(), '.squad-project-dir');
+    try { fs.unlinkSync(marker); } catch (_) {}
+
     var tuiResult = spawnSync(destPath, ['--tui'], { stdio: 'inherit' });
     if (tuiResult.status !== 0) {
       // TUI failed (no TTY, e.g. piped or non-interactive shell) — show static fallback
       spawnSync(destPath, [], { stdio: 'inherit' });
       console.log('\n  \x1b[33mTip:\x1b[0m Run \x1b[36msquad-station --tui\x1b[0m in your terminal for the interactive welcome.\n');
+    } else {
+      // Check if binary wrote a project directory marker (wizard created project elsewhere)
+      try {
+        var projectDir = fs.readFileSync(marker, 'utf8').trim();
+        fs.unlinkSync(marker);
+        if (projectDir && projectDir !== process.cwd()) {
+          console.log('\n  \x1b[1mProject created at:\x1b[0m \x1b[36m' + projectDir + '\x1b[0m');
+          console.log('  To enter your project, run:\n');
+          console.log('  \x1b[36mcd ' + projectDir + '\x1b[0m\n');
+        }
+      } catch (_) {
+        // No marker = project created in cwd, nothing to do
+      }
     }
   } else {
     console.log('\x1b[1mNext steps:\x1b[0m');
