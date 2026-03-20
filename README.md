@@ -16,17 +16,6 @@ npx squad-station-2@latest install --tui
 
 Requires Node.js 14+. Downloads the native binary for your platform to `/usr/local/bin` (falls back to `~/.local/bin`) and scaffolds `.squad/` project files.
 
-### Build from source
-
-```bash
-git clone https://github.com/Toof-X/squad-station-2.git
-cd squad-station-2
-cargo build --release
-# Binary: target/release/squad-station
-```
-
-Requires Rust toolchain. See [Cargo docs](https://doc.rust-lang.org/cargo/getting-started/installation.html).
-
 ## First Run
 
 Running `squad-station` with no arguments opens an interactive welcome screen:
