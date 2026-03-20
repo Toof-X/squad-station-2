@@ -155,13 +155,13 @@ Add to `.gemini/settings.json`:
 
 ### SessionStart — Context Auto-Inject
 
-The `SessionStart` hook is **opt-in**. During `squad-station init`, you are asked:
+The `SessionStart` hook is **enabled by default**. During `squad-station init`, you are asked:
 
 ```
-Enable auto-inject? [y/N]
+Enable auto-inject? [Y/n]
 ```
 
-When enabled, the orchestrator automatically receives its role, agent roster, and playbook context whenever the AI starts a new session, resumes, or compacts context. When disabled, you must manually run `/squad-orchestrator` each time.
+When enabled (the default), the orchestrator automatically receives its role, agent roster, and playbook context whenever the AI starts a new session, resumes, or compacts context. Type `n` to disable — you must then manually run `/squad-orchestrator` each time.
 
 The `--inject` command guards on the orchestrator session name — workers sharing the same settings file receive no injection.
 
