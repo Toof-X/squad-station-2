@@ -1,0 +1,24 @@
+project: landing-page
+
+sdd:
+  - name: get-shit-done
+    playbook: ".squad/sdd/gsd-playbook.md"
+
+orchestrator:
+  provider: claude-code
+  role: orchestrator
+  model: haiku
+  description: Team leader, monitors and coordinates tasks for agents
+
+agents:
+  - name: implement
+    provider: claude-code
+    role: worker
+    model: sonnet
+    description: Senior coder, coding, fixing bugs, operating according to the project SDD.
+
+  - name: brainstorm
+    provider: claude-code
+    role: worker
+    model: opus
+    description: Technical Lead, planner, analysis, performs code reviews and technical solutions

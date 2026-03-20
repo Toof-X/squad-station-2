@@ -26,13 +26,6 @@ After reading squad.yml, immediately:
 1. Run `scripts/validate-squad.sh` — confirms tmux sessions are alive and playbook paths exist.
 2. Read every `sdd[].playbook` file — these are your available workflow commands.
 3. Scan each SDD's own state mechanism (the playbook itself defines how to check project state).
-4. **Clear context before execution** — ensures all sessions start fresh:
-   - Run `/clear` in your own session to reset your context window.
-   - For each agent in `agents[]`, send `/clear` to their tmux session:
-     ```
-     tmux send-keys -t <tmux-session> "/clear" Enter
-     ```
-   - Wait 5s, then confirm each agent's prompt returned before proceeding.
 
 # 2. Role
 
@@ -75,7 +68,7 @@ Before EVERY delegation, follow this loop:
 
 # 4. Ground Rules (CRITICAL — MUST NOT VIOLATE)
 
-1. Bootstrap MUST be completed before any delegation — includes clearing your context and all agent contexts (§1 step 4).
+1. Bootstrap MUST be completed before any delegation.
 2. Every message to an agent MUST include a specific workflow command from the SDD playbook.
 3. NEVER send a raw task description bypassing the SDD workflow.
 4. NEVER write code or execute against source code yourself.

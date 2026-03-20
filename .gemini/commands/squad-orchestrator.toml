@@ -11,7 +11,7 @@ You COORDINATE agents on behalf of the user via `squad-station send`.
 
 Only proceed after reading. The playbook defines your workflow.
 
-- [ ] Project root: `/Users/tranquoctoan/Workspaces/Contributes/squad-station-2`
+- [ ] Project root: `/Users/tranthien/Documents/2.DEV/2.PRIVATE/squad-station`
 - [ ] Verify agents are alive: `squad-station agents`
 
 ## Completion Notification (Automatic)
@@ -30,56 +30,6 @@ After assigning a task, **stop and wait for the signal**:
 
 Only proactively check (`capture-pane`) if you suspect the agent is stuck for an unusually long time.
 
-## Fleet Status
-
-| Agent | Pending | Busy For | Alignment |
-|-------|---------|----------|-----------|
-| landing-page-brainstorm | 0 | idle | — |
-| landing-page-implement | 0 | idle | — |
-
-- Prefer agents with 0 pending tasks
-- ⚠️ alignment = task may be misrouted — verify before sending
-- Re-query if this context is >5 minutes old
-
-> **Live re-query commands:**
-> ```
-> squad-station agents          # agent status + busy duration
-> squad-station list --status processing  # pending queue
-> squad-station status          # fleet overview
-> squad-station context         # regenerate this file
-> ```
-
-## Context Management — `/clear`
-
-You MUST send `/clear` to an agent BEFORE dispatching a new task if ANY of these conditions are true:
-
-### Mandatory `/clear` Triggers
-
-1. **Topic shift** — The new task is on a DIFFERENT topic/feature than the agent's last completed task.
-   Examples: bug fix → new feature, UI work → backend work, different file areas.
-
-2. **Task count threshold** — The agent has completed 3 or more consecutive tasks without a `/clear`.
-   Count resets after each `/clear`.
-
-3. **Agent hint** — The agent's output mentions context issues, suggests clearing,
-   or shows signs of confusion (referencing old/irrelevant code).
-
-### `/clear` Checklist (run BEFORE every `squad-station send`)
-
-□ Is this a topic shift from the agent's last task? → /clear
-□ Has the agent done 3+ tasks since last /clear? → /clear
-□ Did the agent hint at context issues? → /clear
-□ None of the above? → send task directly (no /clear needed)
-
-### How to `/clear`
-
-```bash
-squad-station send <agent-name> --body "/clear"
-```
-
-After `/clear`, the agent has ZERO memory. You MUST re-inject enough context
-in the next task body so the agent can execute independently.
-
 ## Session Routing
 
 Based on the nature of the work, independently decide the correct agent:
@@ -91,10 +41,6 @@ Based on the nature of the work, independently decide the correct agent:
 - Reasoning, architecture, planning, review → brainstorm/planning agent
 - Coding, implement, fix, build, deploy → implementation agent
 - **Parallel** only when tasks are independent. **Sequential** when one output feeds another.
-
-## Routing Matrix
-
-No routing hints configured — use templates during init for keyword-based routing
 
 ## SDD Orchestration
 
@@ -143,9 +89,7 @@ After receiving `[SQUAD SIGNAL]`:
 2. If agent reported errors or asked technical questions → answer via follow-up task
 3. If agent asked business/requirements questions → forward to user (HITL)
 4. `squad-station list --agent <agent>` — confirm status is `completed`
-5. Run the `/clear` checklist (see Context Management) — if ANY condition matches,
-   send `/clear` to the agent BEFORE dispatching the next task.
-6. Proceed to next playbook step, or report to user if workflow is complete.
+5. Proceed to next playbook step, or report to user if workflow is complete.
 
 ## Agent Roster
 

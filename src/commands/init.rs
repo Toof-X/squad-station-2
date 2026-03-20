@@ -383,7 +383,16 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         anyhow::bail!("All {} agent(s) failed to launch", total);
     }
 
-    // 9. Hook setup: auto-install or print instructions
+    // 9a. Create .squad/log/ directory for signal and watchdog logs
+    {
+        let log_dir = db_path
+            .parent()
+            .unwrap_or(std::path::Path::new(".squad"))
+            .join("log");
+        let _ = std::fs::create_dir_all(&log_dir);
+    }
+
+    // 9. Hook setup: auto-install for ALL providers used in the squad (not just orchestrator).
     // In JSON mode, skip stdout instructions (to preserve machine-parseable output).
     if !json {
         let green = |s: &str| {
@@ -407,22 +416,45 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         println!("  {}", bold("Squad Setup Complete"));
         println!("{}\n", green("══════════════════════════════════"));
 
-        let hook_installed = auto_install_hooks(&config.orchestrator.provider).unwrap_or(false);
-        if hook_installed {
-            println!("  Hooks: installed to settings file");
-        } else {
+        // Collect all unique providers across orchestrator + workers
+        let mut providers_seen: Vec<String> = vec![config.orchestrator.provider.clone()];
+        for agent in &config.agents {
+            if !providers_seen.contains(&agent.provider) {
+                providers_seen.push(agent.provider.clone());
+            }
+        }
+
+        let mut any_hooks_installed = false;
+        for provider in &providers_seen {
+            match auto_install_hooks(provider) {
+                Ok(true) => {
+                    any_hooks_installed = true;
+                    println!("  Hooks: installed for {}", provider);
+                }
+                Ok(false) => {
+                    println!("  Hooks: skipped for {} (unsupported provider)", provider);
+                }
+                Err(e) => {
+                    println!("  Hooks: failed for {} ({})", provider, e);
+                }
+            }
+        }
+
+        if !any_hooks_installed {
             println!("Please manually configure the following hooks to enable task completion signals:\n");
-            let providers: &[(&str, &str, &str)] = &[
+            let hook_providers: &[(&str, &str, &str)] = &[
                 (".claude/settings.json", "Stop", "*"),
                 (".claude/settings.json", "Notification", "permission_prompt"),
                 (".claude/settings.json", "PostToolUse", "AskUserQuestion"),
                 (".gemini/settings.json", "AfterAgent", "*"),
                 (".gemini/settings.json", "Notification", "*"),
             ];
-            for &(settings_path, hook_event, matcher) in providers {
+            for &(settings_path, hook_event, matcher) in hook_providers {
                 print_hook_instructions(settings_path, hook_event, matcher);
             }
         }
+
+        let hook_installed = any_hooks_installed;
 
         // Ask user if they want auto-inject of orchestrator context on session start/compact/clear.
         // Only prompt when base hooks were successfully auto-installed (supported provider).
@@ -482,6 +514,20 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         println!();
         println!("  Monitor all agents (read-only view):");
         println!("     {}", cyan("squad-station view"));
+        println!();
+
+        // Auto-start watchdog daemon for self-healing
+        match crate::commands::watch::run(30, 5, true, false).await {
+            Ok(()) => println!("  Watchdog: started (30s interval)"),
+            Err(e) => {
+                let msg = format!("{}", e);
+                if msg.contains("already running") {
+                    println!("  Watchdog: already running");
+                } else {
+                    println!("  Watchdog: failed to start ({})", e);
+                }
+            }
+        }
         println!();
 
         // Reconcile agent statuses before printing diagram
@@ -613,12 +659,27 @@ fn read_or_create_settings(settings_file: &str) -> anyhow::Result<serde_json::Va
     }
 }
 
+/// Build the agent name resolution shell snippet.
+/// Primary: $SQUAD_AGENT_NAME (set at tmux launch, deterministic).
+/// Fallback: $TMUX_PANE + list-panes (server command, more reliable than display-message).
+fn agent_resolve_snippet() -> &'static str {
+    r#"AGENT=${SQUAD_AGENT_NAME:-$(tmux list-panes -t "$TMUX_PANE" -F '#S' 2>/dev/null | head -1)}"#
+}
+
 /// Install Claude Code hooks: Stop (signal) + Notification (notify) + PostToolUse (AskUserQuestion)
 fn install_claude_hooks(settings_file: &str) -> anyhow::Result<bool> {
     let mut settings = read_or_create_settings(settings_file)?;
-    let signal_cmd = "squad-station signal $(tmux display-message -p '#S')";
-    let notify_cmd =
-        "squad-station notify --body 'Agent needs input' --agent $(tmux display-message -p '#S')";
+    let resolve = agent_resolve_snippet();
+
+    // Claude Code: stdout is ignored, errors to log file. Always exit 0.
+    let signal_cmd = format!(
+        r#"{}; [ -n "$AGENT" ] && squad-station signal "$AGENT" 2>>.squad/log/signal.log || true"#,
+        resolve
+    );
+    let notify_cmd = format!(
+        r#"{}; [ -n "$AGENT" ] && squad-station notify --body 'Agent needs input' --agent "$AGENT" || true"#,
+        resolve
+    );
 
     // Stop hook — agent finished task → signal completion
     settings["hooks"]["Stop"] = serde_json::json!([{
@@ -655,20 +716,46 @@ fn install_claude_hooks(settings_file: &str) -> anyhow::Result<bool> {
 }
 
 /// Install Gemini CLI hooks: AfterAgent (signal) + Notification (notify)
+///
+/// Critical Gemini CLI differences:
+/// - Uses AfterAgent (not Stop) for completion signals
+/// - Stdout MUST be valid JSON (golden rule) — all signal output goes to log file
+/// - printf '{}' outputs empty JSON object = "continue normally"
+/// - Uses ${AGENT:-__none__} to avoid shell short-circuit skipping printf
 fn install_gemini_hooks(settings_file: &str) -> anyhow::Result<bool> {
     let mut settings = read_or_create_settings(settings_file)?;
-    let signal_cmd = "squad-station signal $(tmux display-message -p '#S')";
-    let notify_cmd =
-        "squad-station notify --body 'Agent needs input' --agent $(tmux display-message -p '#S')";
+    let resolve = agent_resolve_snippet();
+
+    // Gemini CLI: ALL signal output redirected to log. stdout MUST be valid JSON.
+    let signal_cmd = format!(
+        r#"{}; squad-station signal "${{AGENT:-__none__}}" >>.squad/log/signal.log 2>&1; printf '{{}}'"#,
+        resolve
+    );
+    let notify_cmd = format!(
+        r#"{}; squad-station notify --body 'Agent needs input' --agent "${{AGENT:-__none__}}" >>.squad/log/signal.log 2>&1; printf '{{}}'"#,
+        resolve
+    );
 
     settings["hooks"]["AfterAgent"] = serde_json::json!([{
         "matcher": "",
-        "hooks": [{"type": "command", "command": signal_cmd}]
+        "hooks": [{
+            "type": "command",
+            "command": signal_cmd,
+            "name": "squad-signal",
+            "description": "Signal task completion to squad-station",
+            "timeout": 30000
+        }]
     }]);
 
     settings["hooks"]["Notification"] = serde_json::json!([{
         "matcher": "",
-        "hooks": [{"type": "command", "command": notify_cmd}]
+        "hooks": [{
+            "type": "command",
+            "command": notify_cmd,
+            "name": "squad-notify",
+            "description": "Forward permission prompt to orchestrator",
+            "timeout": 30000
+        }]
     }]);
 
     std::fs::write(settings_file, serde_json::to_string_pretty(&settings)?)?;
