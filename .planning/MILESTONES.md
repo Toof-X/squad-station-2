@@ -19,6 +19,8 @@
 - routing_hints not persisted to squad.yml — destructive upsert risk on non-TUI re-init (low severity)
 - TMPL-06 at minimal level — static template ordering, dynamic SDD-based reordering deferred
 
+**Upstream merge (2026-03-20):** Applied upstream v0.5.5–v0.5.8 — `context --inject` for SessionStart hook auto-injection, Context Management `/clear` section in orchestrator.md, `/clear` fire-and-forget auto-complete in `send`, signal race condition fixes, SessionStart hook auto-install in `init`. Tests: 313 (all green, +10 from upstream).
+
 **Archives:** [v1.8-ROADMAP.md](milestones/v1.8-ROADMAP.md) | [v1.8-REQUIREMENTS.md](milestones/v1.8-REQUIREMENTS.md) | [v1.8-MILESTONE-AUDIT.md](milestones/v1.8-MILESTONE-AUDIT.md)
 
 ---

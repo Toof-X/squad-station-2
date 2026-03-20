@@ -11,7 +11,7 @@ Squad Station is a stateless Rust CLI that routes messages between an AI orchest
 ```bash
 cargo build                    # Debug build
 cargo build --release          # Release build (binary at target/release/squad-station)
-cargo test                     # Run all 164 unit + integration tests
+cargo test                     # Run all 313 unit + integration tests
 cargo test test_name           # Run a single test by name
 cargo test --test test_commands # Run a specific test file
 ./tests/e2e_cli.sh            # End-to-end CLI tests (requires release binary)
@@ -28,7 +28,7 @@ cargo check                    # Quick compilation check
 - `src/cli.rs` — clap-based argument parsing (`Commands` enum defines all subcommands)
 - `src/config.rs` — YAML config loading (`squad.yml`), DB path resolution
 - `src/tmux.rs` — tmux session management: launch, send-keys, capture-pane, reconciliation
-- `src/commands/` — One file per subcommand (init, send, signal, peek, list, register, agents, context, status, ui, view)
+- `src/commands/` — One file per subcommand (init, send, signal, peek, list, register, agents, context, status, ui, view, clone, close, reset, clean, freeze, notify, welcome, wizard, diagram, templates)
 - `src/db/` — SQLite pool setup (`mod.rs`), agent CRUD (`agents.rs`), message CRUD (`messages.rs`)
 - `src/db/migrations/` — SQL migration files, auto-applied via `sqlx::migrate!()`
 
@@ -37,7 +37,8 @@ cargo check                    # Quick compilation check
 - `send-keys -l` (literal mode) to prevent shell injection via tmux
 - Idempotent agent registration (`INSERT OR IGNORE`) and signal handling (most-recent-pending)
 - TUI (`ratatui`) drops pool after each fetch to prevent WAL starvation
-- Hook scripts in `hooks/` detect agent task completion per provider
+- Hook scripts: Stop hook fires `squad-station signal` on task completion; SessionStart hook fires `squad-station context --inject` for auto-context
+- `/clear` commands auto-completed as fire-and-forget (never trigger Stop hook)
 
 ## Testing
 
@@ -45,7 +46,7 @@ Tests use `tests/helpers.rs` → `setup_test_db()` which creates an isolated tem
 
 ## Database Schema
 
-Two tables: `agents` (id, name, provider, role, command, status) and `messages` (id, agent_name, task, status, priority, timestamps). Messages reference agents by name. Priority ordering: urgent > high > normal.
+Two tables: `agents` (id, name, tool, role, model, description, status, status_updated_at, current_task, routing_hints) and `messages` (id, from_agent, to_agent, type, task, status, priority, thread_id, timestamps including completed_at). Messages reference agents by name. Priority ordering: urgent > high > normal.
 
 <skills_system priority="1">
 

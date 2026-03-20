@@ -88,6 +88,13 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 - ✓ Template routing hints embedded in Routing Matrix section of squad-orchestrator.md — v1.8
 - ✓ Cloned agents appear in TUI dashboard on next poll cycle (existing connect-per-refresh pattern) — v1.8
 
+- ✓ `context --inject` outputs orchestrator context to stdout for SessionStart hook auto-injection — v1.8.1
+- ✓ Context Management `/clear` section in squad-orchestrator.md (mandatory triggers, checklist, how-to) — v1.8.1
+- ✓ `/clear` fire-and-forget auto-complete in `send` — prevents blocking FIFO queue for subsequent tasks — v1.8.1
+- ✓ Signal race condition fix when `/clear` precedes a real task — v1.8.1
+- ✓ `current_task` corruption fix when `/clear` overlaps in-flight task — v1.8.1
+- ✓ `init` auto-installs SessionStart hook for context auto-injection (Claude Code + Gemini CLI) — v1.8.1
+
 ### Active
 
 (None — planning next milestone)
@@ -104,19 +111,20 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ## Context
 
-Shipped v1.8 Smart Agent Management. Orchestrator now has intelligence metrics, dynamic cloning, and role templates.
-Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.30, crossterm 0.29, tui-big-text 0.8, serde-saphyr, serde_json, owo-colors 3, uuid (temp file naming).
-Distribution: npm package (v1.5.7, binaryVersion 1.8) + curl | sh installer, both download pre-built binaries from GitHub Releases. Both install paths auto-launch the welcome TUI in interactive terminals.
+Shipped v1.8 Smart Agent Management + merged upstream v0.5.5–v0.5.8 (context auto-inject, /clear management, signal race fixes).
+Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.30, crossterm 0.29, tui-big-text 0.8, serde-saphyr, serde_json, owo-colors 3, uuid (temp file naming), chrono.
+Distribution: npm package (v1.5.15, binaryVersion 0.5.8) + curl | sh installer, both download pre-built binaries from GitHub Releases. Both install paths auto-launch the welcome TUI in interactive terminals.
 CI/CD: GitHub Actions matrix workflow produces 4 musl/darwin binaries on v* tag push.
 Providers supported: claude-code, gemini-cli, antigravity (DB-only IDE orchestrator).
-Hook registration: inline `squad-station signal $TMUX_PANE` command (scripts in hooks/ deprecated).
-Init flow: TUI wizard (ratatui, requires `--tui` flag) with role template selector generates squad.yml from scratch; re-init prompt handles overwrite/add-agents/abort. Post-init prints ASCII agent fleet diagram.
+Hook registration: inline `squad-station signal $TMUX_PANE` (Stop hook) + `squad-station context --inject` (SessionStart hook, auto-installed by init).
+Init flow: TUI wizard (ratatui, requires `--tui` flag) with role template selector generates squad.yml from scratch; re-init prompt handles overwrite/add-agents/abort. Post-init prints ASCII agent fleet diagram. Auto-installs SessionStart hook for context injection.
 Welcome TUI: bare `squad-station` invocation opens ratatui AlternateScreen with BigText title, 5s countdown, Tab-navigable Quick Guide page; Enter routes to init wizard or dashboard.
-Context generation: `.agent/workflows/squad-orchestrator.md` — unified playbook with Fleet Status metrics and Routing Matrix sections.
+Context generation: provider-specific orchestrator file (`.claude/commands/squad-orchestrator.md` or `.gemini/commands/squad-orchestrator.toml`) with Fleet Status metrics, Context Management /clear rules, and Routing Matrix sections. `--inject` flag outputs to stdout for SessionStart hook consumption.
 Clone: `squad-station clone <agent>` creates duplicate agent with auto-incremented name, DB-first + tmux rollback, auto-regenerates orchestrator context.
 Safe injection: load-buffer/paste-buffer pattern for multiline task bodies (no shell-injection artifacts).
+/clear management: `send` auto-completes fire-and-forget commands (`/clear`) that never trigger Stop hook, preventing FIFO queue blockage. Signal handler guards against race conditions when /clear precedes real tasks.
 Database: `.squad/station.db` in project directory (no home-dir dependency, no `dirs` crate). 5 migrations (latest: 0005_routing_hints).
-Test suite: 303 tests (all green).
+Test suite: 313 tests (all green).
 
 ## Constraints
 
@@ -194,6 +202,13 @@ Test suite: 303 tests (all green).
 | routing_hints as JSON string in DB | `Option<String>` serialized to JSON array; parsed by build_orchestrator_md | ✓ Good — no schema complexity, serde_json parsing |
 | Template selector split-pane layout (45%/55%) | Left: role list, Right: description preview — scannable selection UX | ✓ Good — clear visual hierarchy |
 | Routing Matrix after Session Routing section | Orchestrator reads routing knowledge after understanding sessions | ✓ Good — correct context ordering |
+| `context --inject` for SessionStart hooks | Orchestrator gets full context on session start without manual `/squad-orchestrator` | ✓ Good — zero-friction context loading |
+| `/clear` auto-complete as fire-and-forget | `/clear` never triggers Stop hook → message stays `processing` forever → blocks FIFO queue | ✓ Good — prevents queue deadlock |
+| `is_fire_and_forget()` in send.rs | Centralized detection of commands that bypass Stop hook | ✓ Good — extensible pattern |
+| Signal guards for `/clear` race conditions | Signal arriving during/after `/clear` must not corrupt `current_task` or mark wrong message | ✓ Good — prevents data corruption |
+| SessionStart hook auto-install in `init` | `install_session_start_hook()` writes to provider settings.json with backup | ✓ Good — zero manual hook setup |
+| Context Management `/clear` section in orchestrator.md | Hard rules for when orchestrator MUST send `/clear` before next task | ✓ Good — prevents context pollution |
+| `format_inject_output()` provider dispatch | Claude Code gets raw markdown, Gemini CLI gets JSON `hookSpecificOutput.additionalContext` | ✓ Good — correct hook response format per provider |
 
 ---
-*Last updated: 2026-03-19 after v1.8 Smart Agent Management milestone*
+*Last updated: 2026-03-20 after upstream merge v0.5.5–v0.5.8*
