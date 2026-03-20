@@ -336,6 +336,33 @@ pub fn build_orchestrator_md(
 
 /// Detect the current tmux session name. Returns None if not in tmux.
 pub fn detect_tmux_session() -> Option<String> {
+    // Primary: $SQUAD_AGENT_NAME (set at tmux launch, deterministic)
+    if let Ok(name) = std::env::var("SQUAD_AGENT_NAME") {
+        if !name.is_empty() {
+            return Some(name);
+        }
+    }
+
+    // Fallback: $TMUX_PANE + list-panes (server command, more reliable than display-message)
+    if let Ok(pane) = std::env::var("TMUX_PANE") {
+        if let Some(name) = std::process::Command::new("tmux")
+            .args(["list-panes", "-t", &pane, "-F", "#S"])
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    let n = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    if n.is_empty() { None } else { Some(n) }
+                } else {
+                    None
+                }
+            })
+        {
+            return Some(name);
+        }
+    }
+
+    // Last resort: display-message (only works when attached to a client)
     std::process::Command::new("tmux")
         .args(["display-message", "-p", "#S"])
         .output()
