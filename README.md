@@ -20,10 +20,10 @@ npx squad-station-2@latest install --tui
 
 The interactive TUI guides you through setup — press **y** to launch the init wizard, which generates `squad.yml` and starts your squad automatically.
 
-**Step 2 — Launch the squad** (if not already started by the wizard):
+**Step 2 — Open the monitor:**
 
 ```bash
-squad-station init
+squad-station open
 ```
 
 **Step 3 — Send a task:**
