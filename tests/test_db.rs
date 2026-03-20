@@ -774,3 +774,196 @@ async fn test_update_agent_status_updates_timestamp() {
         .unwrap();
     assert_ne!(before.status_updated_at, after.status_updated_at);
 }
+
+// ============================================================
+// complete_by_id tests — v0.6.0 current_task-targeted completion
+// ============================================================
+
+#[tokio::test]
+async fn test_complete_by_id() {
+    let pool = helpers::setup_test_db().await;
+    agents::insert_agent(&pool, "agent-cbi", "claude-code", "worker", None, None)
+        .await
+        .unwrap();
+    let msg_id = messages::insert_message(
+        &pool,
+        "orchestrator",
+        "agent-cbi",
+        "task_request",
+        "specific task",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
+
+    let rows = messages::complete_by_id(&pool, &msg_id).await.unwrap();
+    assert_eq!(rows, 1, "should complete exactly one message");
+
+    let msgs = messages::list_messages(&pool, Some("agent-cbi"), Some("completed"), 10)
+        .await
+        .unwrap();
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0].id, msg_id);
+    assert!(msgs[0].completed_at.is_some());
+}
+
+#[tokio::test]
+async fn test_complete_by_id_already_completed() {
+    let pool = helpers::setup_test_db().await;
+    agents::insert_agent(&pool, "agent-dup", "claude-code", "worker", None, None)
+        .await
+        .unwrap();
+    let msg_id = messages::insert_message(
+        &pool,
+        "orchestrator",
+        "agent-dup",
+        "task_request",
+        "task",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Complete once
+    let first = messages::complete_by_id(&pool, &msg_id).await.unwrap();
+    assert_eq!(first, 1);
+
+    // Duplicate signal: already completed → 0 rows (idempotent)
+    let second = messages::complete_by_id(&pool, &msg_id).await.unwrap();
+    assert_eq!(second, 0, "duplicate complete_by_id must be idempotent");
+}
+
+#[tokio::test]
+async fn test_complete_by_id_nonexistent() {
+    let pool = helpers::setup_test_db().await;
+    let rows = messages::complete_by_id(&pool, "nonexistent-id")
+        .await
+        .unwrap();
+    assert_eq!(rows, 0, "nonexistent message ID returns 0 rows, not error");
+}
+
+#[tokio::test]
+async fn test_signal_uses_current_task_not_fifo() {
+    // Simulate: two processing messages, current_task points to the second one.
+    // complete_by_id should complete task-2, not task-1 (FIFO would complete task-1).
+    let pool = helpers::setup_test_db().await;
+    agents::insert_agent(&pool, "agent-ct", "claude-code", "worker", None, None)
+        .await
+        .unwrap();
+
+    let task1_id = messages::insert_message(
+        &pool,
+        "orchestrator",
+        "agent-ct",
+        "task_request",
+        "task 1 (older)",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
+
+    let task2_id = messages::insert_message(
+        &pool,
+        "orchestrator",
+        "agent-ct",
+        "task_request",
+        "task 2 (newer, current)",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Set current_task to task2 (simulating send.rs behavior)
+    sqlx::query("UPDATE agents SET current_task = ? WHERE name = ?")
+        .bind(&task2_id)
+        .bind("agent-ct")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Signal fires: should complete task2 (current_task), not task1 (FIFO oldest)
+    let rows = messages::complete_by_id(&pool, &task2_id).await.unwrap();
+    assert_eq!(rows, 1);
+
+    // Verify task1 is still processing
+    let task1_msgs = messages::list_messages(&pool, Some("agent-ct"), Some("processing"), 10)
+        .await
+        .unwrap();
+    assert_eq!(task1_msgs.len(), 1);
+    assert_eq!(task1_msgs[0].id, task1_id, "task1 must still be processing");
+
+    // Verify task2 is completed
+    let task2_msgs = messages::list_messages(&pool, Some("agent-ct"), Some("completed"), 10)
+        .await
+        .unwrap();
+    assert_eq!(task2_msgs.len(), 1);
+    assert_eq!(task2_msgs[0].id, task2_id, "task2 must be completed");
+}
+
+#[tokio::test]
+async fn test_fire_and_forget_does_not_set_current_task() {
+    // Simulate: agent has a real task as current_task, then /clear is sent.
+    // /clear must NOT overwrite current_task.
+    let pool = helpers::setup_test_db().await;
+    agents::insert_agent(&pool, "agent-ff", "claude-code", "worker", None, None)
+        .await
+        .unwrap();
+
+    let real_task_id = messages::insert_message(
+        &pool,
+        "orchestrator",
+        "agent-ff",
+        "task_request",
+        "real task",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Set current_task to the real task (as send.rs would for a normal task)
+    sqlx::query("UPDATE agents SET current_task = ?, status = 'busy' WHERE name = ?")
+        .bind(&real_task_id)
+        .bind("agent-ff")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Now send a /clear (fire-and-forget) — it should NOT touch current_task
+    let clear_id = messages::insert_message(
+        &pool,
+        "orchestrator",
+        "agent-ff",
+        "task_request",
+        "/clear",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
+
+    // Auto-complete the /clear message (as send.rs does for fire-and-forget)
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query(
+        "UPDATE messages SET status = 'completed', updated_at = ?, completed_at = ? WHERE id = ?",
+    )
+    .bind(&now)
+    .bind(&now)
+    .bind(&clear_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // current_task must still point to the real task
+    let agent = agents::get_agent(&pool, "agent-ff").await.unwrap().unwrap();
+    assert_eq!(
+        agent.current_task.as_deref(),
+        Some(real_task_id.as_str()),
+        "current_task must still point to the real task after /clear"
+    );
+    assert_eq!(agent.status, "busy", "agent must remain busy");
+}

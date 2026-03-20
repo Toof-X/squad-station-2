@@ -3,9 +3,49 @@ use std::io::IsTerminal;
 
 use crate::{config, db, tmux};
 
+/// Append a structured log line to `.squad/log/signal.log`.
+/// Best-effort: silently ignores write failures. Must never cause signal to fail.
+fn log_signal(project_root: &std::path::Path, level: &str, agent: &str, msg: &str) {
+    let log_dir = project_root.join(".squad").join("log");
+    let _ = std::fs::create_dir_all(&log_dir);
+    let log_file = log_dir.join("signal.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_file)
+    {
+        use std::io::Write;
+        let _ = writeln!(
+            f,
+            "{} {:<5} agent={} {}",
+            chrono::Utc::now().to_rfc3339(),
+            level,
+            agent,
+            msg
+        );
+        // Log rotation: truncate to last 500 lines when file exceeds 1MB
+        if let Ok(meta) = std::fs::metadata(&log_file) {
+            if meta.len() > 1_048_576 {
+                rotate_log(&log_file);
+            }
+        }
+    }
+}
+
+/// Truncate log file to last 500 lines.
+fn rotate_log(path: &std::path::Path) {
+    if let Ok(content) = std::fs::read_to_string(path) {
+        let lines: Vec<&str> = content.lines().collect();
+        if lines.len() > 500 {
+            let tail = &lines[lines.len() - 500..];
+            let _ = std::fs::write(path, tail.join("\n") + "\n");
+        }
+    }
+}
+
 pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
     // GUARD 1: No explicit agent name provided -- silent exit 0 (HOOK-03)
-    // The hook command passes the session name explicitly via $(tmux display-message -p '#S').
+    // The hook command passes the session name explicitly via $SQUAD_AGENT_NAME.
     // If no name is provided (e.g. outside tmux, in CI), we silently exit.
     let agent: String = match agent {
         Some(name) => name,
@@ -29,22 +69,43 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
             return Ok(());
         }
     };
+
+    // Resolve project root for logging (DB is at <root>/.squad/station.db)
+    let project_root = db_path
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap_or(std::path::Path::new("."))
+        .to_path_buf();
+
     let pool = match db::connect(&db_path).await {
         Ok(p) => p,
         Err(e) => {
             eprintln!("squad-station: warning: DB connection failed: {e}");
+            log_signal(&project_root, "GUARD", &agent, "reason=db_connection_failed");
             return Ok(());
         }
     };
 
     // GUARD 3: Agent not registered -- silent exit 0 in hook context (HOOK-03),
     // but print a message when running interactively so manual usage isn't confusing.
-    let agent_record = match db::agents::get_agent(&pool, &agent).await? {
-        Some(r) => r,
-        None => {
+    // Uses match instead of ? to maintain exit-0 contract (never fail the provider).
+    let agent_record = match db::agents::get_agent(&pool, &agent).await {
+        Ok(Some(r)) => r,
+        Ok(None) => {
             if std::io::stdout().is_terminal() {
                 println!("Agent not found: {} (ignored)", agent);
             }
+            log_signal(
+                &project_root,
+                "GUARD",
+                &agent,
+                "reason=agent_not_found",
+            );
+            return Ok(());
+        }
+        Err(e) => {
+            eprintln!("squad-station: warning: get_agent failed: {e}");
+            log_signal(&project_root, "GUARD", &agent, "reason=get_agent_error");
             return Ok(());
         }
     };
@@ -52,28 +113,68 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
     // GUARD 4: Orchestrator self-signal -- silent exit 0 (HOOK-01)
     // Prevents infinite loop where the orchestrator's AfterAgent hook signals itself.
     if agent_record.role == "orchestrator" {
+        log_signal(
+            &project_root,
+            "GUARD",
+            &agent,
+            "reason=orchestrator_self_signal",
+        );
         return Ok(());
     }
 
-    // --- Existing signal flow (from Phase 1) ---
+    // --- Signal flow: use current_task FK for targeted completion ---
 
-    // Idempotent status update (MSG-03): only updates the most recent pending message.
-    // Returns 0 if no pending message exists — this is NOT an error (duplicate signal silently succeeds).
-    let rows = db::messages::update_status(&pool, &agent).await?;
-
-    // Retrieve task_id of the message that was just completed (only if state actually changed).
-    let task_id: Option<String> = if rows > 0 {
-        // Query the most recently completed message for this agent
-        let result: Option<(String,)> = sqlx::query_as(
-            "SELECT id FROM messages WHERE agent_name = ? AND status = 'completed' ORDER BY updated_at DESC LIMIT 1"
-        )
-        .bind(&agent)
-        .fetch_optional(&pool)
-        .await?;
-        result.map(|(id,)| id)
-    } else {
-        None
-    };
+    let (rows, task_id): (u64, Option<String>) =
+        if let Some(ref ct_id) = agent_record.current_task {
+            // Primary path: complete the specific task pointed to by current_task
+            let r = db::messages::complete_by_id(&pool, ct_id).await?;
+            if r > 0 {
+                log_signal(
+                    &project_root,
+                    "OK",
+                    &agent,
+                    &format!("task={} method=current_task", ct_id),
+                );
+                (r, Some(ct_id.clone()))
+            } else {
+                // current_task exists but message is already completed (duplicate signal)
+                log_signal(
+                    &project_root,
+                    "OK",
+                    &agent,
+                    &format!(
+                        "task={} rows=0 reason=already_completed_or_missing",
+                        ct_id
+                    ),
+                );
+                (0, None)
+            }
+        } else {
+            // current_task is NULL — fallback to FIFO (edge case: task sent but current_task race)
+            let fifo_rows = db::messages::update_status(&pool, &agent).await?;
+            if fifo_rows > 0 {
+                // Retrieve the task that FIFO just completed
+                let tid = db::messages::last_completed_id(&pool, &agent).await?;
+                log_signal(
+                    &project_root,
+                    "WARN",
+                    &agent,
+                    &format!(
+                        "task={} method=fifo_fallback reason=current_task_null",
+                        tid.as_deref().unwrap_or("unknown")
+                    ),
+                );
+                (fifo_rows, tid)
+            } else {
+                log_signal(
+                    &project_root,
+                    "OK",
+                    &agent,
+                    "task=none reason=no_current_task_no_processing",
+                );
+                (0, None)
+            }
+        };
 
     // Find orchestrator and notify (only on actual state change).
     // GUARD 5: Skip notification when agent is frozen (user is in control).
@@ -87,13 +188,48 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
             );
             if orch.tool == "antigravity" {
                 // DB-only orchestrator: polls DB for completions, no push notification needed.
+                log_signal(
+                    &project_root,
+                    "OK",
+                    &agent,
+                    &format!("task={} notified=false reason=antigravity", task_id_str),
+                );
                 false
             } else if tmux::session_exists(&orch.name) {
                 // Only notify if orchestrator tmux session is running.
-                // If session is down, signal is persisted in DB — not an error (per user decision).
-                tmux::send_keys_literal(&orch.name, &notification)?;
-                true
+                match tmux::send_keys_literal(&orch.name, &notification) {
+                    Ok(()) => {
+                        log_signal(
+                            &project_root,
+                            "OK",
+                            &agent,
+                            &format!("task={} notified=true orch={}", task_id_str, orch.name),
+                        );
+                        true
+                    }
+                    Err(e) => {
+                        log_signal(
+                            &project_root,
+                            "WARN",
+                            &agent,
+                            &format!(
+                                "task={} notified=false reason=send_keys_failed err={}",
+                                task_id_str, e
+                            ),
+                        );
+                        false
+                    }
+                }
             } else {
+                log_signal(
+                    &project_root,
+                    "WARN",
+                    &agent,
+                    &format!(
+                        "task={} notified=false reason=orch_session_missing orch={}",
+                        task_id_str, orch.name
+                    ),
+                );
                 false
             }
         } else {
@@ -111,19 +247,12 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
             // Still has processing tasks — update current_task to next task, stay busy
             let next = db::messages::peek_message(&pool, &agent).await?;
             if let Some(next_msg) = next {
-                sqlx::query("UPDATE agents SET current_task = ? WHERE name = ?")
-                    .bind(&next_msg.id)
-                    .bind(&agent)
-                    .execute(&pool)
-                    .await?;
+                db::agents::set_current_task(&pool, &agent, &next_msg.id).await?;
             }
             // Agent remains busy — don't change status
         } else {
             // No remaining tasks — clear current_task and set idle
-            sqlx::query("UPDATE agents SET current_task = NULL WHERE name = ?")
-                .bind(&agent)
-                .execute(&pool)
-                .await?;
+            db::agents::clear_current_task(&pool, &agent).await?;
             db::agents::update_agent_status(&pool, &agent, "idle").await?;
         }
     }
@@ -166,4 +295,62 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rotate_log_truncates_to_500_lines() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let log_file = tmp.path().join("test.log");
+
+        // Write 1000 lines
+        let mut content = String::new();
+        for i in 0..1000 {
+            content.push_str(&format!("line {}\n", i));
+        }
+        std::fs::write(&log_file, &content).unwrap();
+
+        rotate_log(&log_file);
+
+        let result = std::fs::read_to_string(&log_file).unwrap();
+        let lines: Vec<&str> = result.lines().collect();
+        assert_eq!(lines.len(), 500);
+        assert!(lines[0].contains("line 500"));
+        assert!(lines[499].contains("line 999"));
+    }
+
+    #[test]
+    fn test_log_signal_creates_directory_and_writes() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project_root = tmp.path();
+
+        log_signal(project_root, "OK", "test-agent", "task=abc123 rows=1");
+
+        let log_file = project_root.join(".squad").join("log").join("signal.log");
+        assert!(log_file.exists(), "Log file must be created");
+
+        let content = std::fs::read_to_string(&log_file).unwrap();
+        assert!(content.contains("OK"));
+        assert!(content.contains("agent=test-agent"));
+        assert!(content.contains("task=abc123 rows=1"));
+    }
+
+    #[test]
+    fn test_log_signal_appends_not_overwrites() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project_root = tmp.path();
+
+        log_signal(project_root, "OK", "agent-a", "first");
+        log_signal(project_root, "WARN", "agent-b", "second");
+
+        let log_file = project_root.join(".squad").join("log").join("signal.log");
+        let content = std::fs::read_to_string(&log_file).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("agent-a"));
+        assert!(lines[1].contains("agent-b"));
+    }
 }

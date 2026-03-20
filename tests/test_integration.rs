@@ -1477,7 +1477,7 @@ async fn test_signal_antigravity_orchestrator_db_only() {
     .await
     .unwrap();
     // Send a task to the worker
-    db::messages::insert_message(
+    let msg_id = db::messages::insert_message(
         &pool,
         "orchestrator",
         "test-squad-claude-code-worker",
@@ -1488,6 +1488,13 @@ async fn test_signal_antigravity_orchestrator_db_only() {
     )
     .await
     .unwrap();
+    // Set current_task so signal can find and complete it (v0.6.0: signal uses current_task, not FIFO)
+    sqlx::query("UPDATE agents SET current_task = ?, status = 'busy' WHERE name = ?")
+        .bind(&msg_id)
+        .bind("test-squad-claude-code-worker")
+        .execute(&pool)
+        .await
+        .unwrap();
     pool.close().await;
     // Signal the worker
     let output = cmd_with_db(&db_file)
@@ -1531,7 +1538,7 @@ async fn test_signal_antigravity_message_completed() {
     )
     .await
     .unwrap();
-    db::messages::insert_message(
+    let msg_id = db::messages::insert_message(
         &pool,
         "orchestrator",
         "test-squad-claude-code-worker",
@@ -1542,6 +1549,13 @@ async fn test_signal_antigravity_message_completed() {
     )
     .await
     .unwrap();
+    // Set current_task so signal can find and complete it (v0.6.0: signal uses current_task, not FIFO)
+    sqlx::query("UPDATE agents SET current_task = ?, status = 'busy' WHERE name = ?")
+        .bind(&msg_id)
+        .bind("test-squad-claude-code-worker")
+        .execute(&pool)
+        .await
+        .unwrap();
     pool.close().await;
     let output = cmd_with_db(&db_file)
         .args(["signal", "test-squad-claude-code-worker"])

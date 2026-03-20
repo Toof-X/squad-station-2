@@ -9,12 +9,18 @@ pub async fn run(config_path: PathBuf, no_relaunch: bool, json: bool) -> Result<
     let config = config::load_config(&config_path)?;
     let db_path = config::resolve_db_path(&config)?;
 
+    // Stop watchdog daemon before killing sessions / deleting DB
+    let squad_dir = db_path
+        .parent()
+        .unwrap_or(std::path::Path::new("."));
+    clean::stop_watchdog(squad_dir);
+
     // Kill all sessions
     let (killed, _, _) = clean::kill_all_sessions(&config)?;
     let session_count = clean::compute_session_names(&config).len() as u32;
     let skipped = session_count.saturating_sub(killed);
 
-    // Delete the database
+    // Delete the database (logs preserved — reset inherits clean's log preservation)
     let deleted = clean::delete_db_file(&db_path)?;
 
     // Optionally relaunch (re-init)

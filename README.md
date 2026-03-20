@@ -40,12 +40,14 @@ Requires Rust toolchain. See [Cargo docs](https://doc.rust-lang.org/cargo/gettin
 ```yaml
 project: my-app
 orchestrator:
-  tool: claude-code
+  provider: claude-code
   role: orchestrator
+  model: sonnet
 agents:
   - name: backend
-    tool: gemini
+    provider: gemini-cli
     role: worker
+    model: gemini-2.5-pro
 ```
 
 **Step 2 — Initialize:**
@@ -68,10 +70,19 @@ squad-station send my-app-gemini-backend --body "Implement the /api/health endpo
 squad-station signal my-app-gemini-backend
 ```
 
-**Step 5 — List pending tasks:**
+**Step 5 — Check status:**
 
 ```bash
-squad-station list
+squad-station status           # Agent overview: statuses, pending tasks
+squad-station list             # List all messages
+squad-station reconcile        # Sync agent statuses with live tmux sessions
+```
+
+**Step 6 — Self-healing watchdog** (auto-started by init):
+
+```bash
+squad-station watch            # Foreground: reconcile + stall detection + nudges
+squad-station watch --interval 30  # Custom interval (seconds)
 ```
 
 See [docs/PLAYBOOK.md](docs/PLAYBOOK.md) for the complete workflow guide.
@@ -80,10 +91,12 @@ See [docs/PLAYBOOK.md](docs/PLAYBOOK.md) for the complete workflow guide.
 
 Squad Station is a stateless Rust CLI. There is no background daemon. Every command opens the SQLite database, reads or writes, and exits.
 
-- `agents` table — registered agents with `tool` (e.g. `claude-code`, `gemini`), role, command, status
-- `messages` table — tasks routed to agents with bidirectional `from_agent`/`to_agent` fields, priority (urgent > high > normal), and a full status lifecycle: `pending → processing → done` (or `failed`)
-- tmux sessions — each agent runs in its own named session; `send-keys -l` prevents shell injection
-- Hooks in `hooks/` detect task completion per tool and call `squad-station signal`
+- `agents` table — registered agents with `tool` (e.g. `claude-code`, `gemini`), role, status, `current_task` FK
+- `messages` table — tasks routed to agents with bidirectional `from_agent`/`to_agent` fields, priority (urgent > high > normal), and status lifecycle: `processing → completed`
+- tmux sessions — each agent runs in its own named session; `send-keys -l` prevents shell injection; `$SQUAD_AGENT_NAME` env var set at launch
+- Provider hooks auto-installed by `init` — detect task completion and call `squad-station signal`
+- Watchdog daemon — auto-started by `init`, reconciles sessions, detects stalls, nudges idle orchestrators
+- Signal logging — structured logs at `.squad/log/signal.log` for debugging signal flow
 
 ## Requirements
 

@@ -47,8 +47,15 @@ async fn run(cli: cli::Cli) -> Result<()> {
             config,
             no_relaunch,
         } => commands::reset::run(config, no_relaunch, cli.json).await,
+        Reconcile { dry_run } => commands::reconcile::run(dry_run, cli.json).await,
         Freeze => commands::freeze::run_freeze(cli.json).await,
         Unfreeze => commands::freeze::run_unfreeze(cli.json).await,
-        Clean { config, yes } => commands::clean::run(config, yes, cli.json).await,
+        Watch {
+            interval,
+            stall_threshold,
+            daemon,
+            stop,
+        } => commands::watch::run(interval, stall_threshold, daemon, stop).await,
+        Clean { config, yes, all } => commands::clean::run(config, yes, all, cli.json).await,
     }
 }

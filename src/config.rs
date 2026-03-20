@@ -58,11 +58,13 @@ pub struct AgentConfig {
 }
 
 /// Sanitize a string for use as a tmux session name.
-/// Replaces `.`, `:`, and `"` with `-` to prevent tmux targeting issues.
+/// Replaces shell metacharacters and tmux-special chars with `-` to prevent
+/// both tmux targeting issues and shell injection in `sh -c` commands.
 pub fn sanitize_session_name(name: &str) -> String {
     name.chars()
         .map(|c| match c {
-            '.' | ':' | '"' => '-',
+            '.' | ':' | '"' | '\'' | '`' | '$' | ';' | '(' | ')' | '|' | '&' | '<' | '>'
+            | '\\' | ' ' | '\n' | '\0' | '/' => '-',
             _ => c,
         })
         .collect()

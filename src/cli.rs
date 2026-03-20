@@ -100,10 +100,31 @@ pub enum Commands {
         #[arg(long)]
         no_relaunch: bool,
     },
+    /// Detect and fix stuck agents (busy in DB but idle in tmux)
+    Reconcile {
+        /// Show what would be fixed without changing the database
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Freeze all agents — block orchestrator from sending tasks (user takes control)
     Freeze,
     /// Unfreeze all agents — allow orchestrator to send tasks again
     Unfreeze,
+    /// Watchdog daemon — auto-detect and fix stuck agents
+    Watch {
+        /// Poll interval in seconds
+        #[arg(long, default_value = "30")]
+        interval: u64,
+        /// Minutes of system-wide idle before nudging orchestrator
+        #[arg(long, default_value = "5")]
+        stall_threshold: u64,
+        /// Fork to background and write PID to .squad/watch.pid
+        #[arg(long)]
+        daemon: bool,
+        /// Stop a running watchdog daemon
+        #[arg(long)]
+        stop: bool,
+    },
     /// Kill all squad tmux sessions and delete the database
     Clean {
         /// Path to squad config file
@@ -112,6 +133,9 @@ pub enum Commands {
         /// Skip confirmation prompt
         #[arg(long, short = 'y')]
         yes: bool,
+        /// Also delete .squad/log/ directory (by default, logs are preserved for post-mortem)
+        #[arg(long)]
+        all: bool,
     },
 }
 

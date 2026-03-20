@@ -4,4 +4,5 @@ pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod db;
+pub mod providers;
 pub mod tmux;
