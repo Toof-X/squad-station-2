@@ -448,8 +448,21 @@ async fn run_inject(
     project_root: &std::path::Path,
     config: &config::SquadConfig,
 ) -> anyhow::Result<()> {
-    // No guard — inject orchestrator context in any session that has squad.yml.
-    // Workers benefit from knowing the squad roster and their role.
+    // Only inject in orchestrator session — workers must not get orchestrator context.
+    if let Some(session_name) = detect_tmux_session() {
+        let orch_role = config
+            .orchestrator
+            .name
+            .as_deref()
+            .unwrap_or("orchestrator");
+        let orch_name =
+            config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
+        if session_name != orch_name {
+            return Ok(()); // Not the orchestrator — silent exit
+        }
+    } else {
+        return Ok(()); // Not in tmux — silent exit
+    }
 
     // Generate content
     let db_path = config::resolve_db_path(config)?;
