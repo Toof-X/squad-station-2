@@ -476,18 +476,27 @@ async fn run_inject(
     config: &config::SquadConfig,
 ) -> anyhow::Result<()> {
     // Only inject in orchestrator session — workers must not get orchestrator context.
+    let orch_role = config
+        .orchestrator
+        .name
+        .as_deref()
+        .unwrap_or("orchestrator");
+    let orch_name =
+        config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
+
     if let Some(session_name) = detect_tmux_session() {
-        let orch_role = config
-            .orchestrator
-            .name
-            .as_deref()
-            .unwrap_or("orchestrator");
-        let orch_name =
-            config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
         if session_name != orch_name {
+            eprintln!(
+                "squad-station: inject skipped (session={}, expected={})",
+                session_name, orch_name
+            );
             return Ok(()); // Not the orchestrator — silent exit
         }
     } else {
+        eprintln!(
+            "squad-station: inject skipped (no tmux session detected, expected={})",
+            orch_name
+        );
         return Ok(()); // Not in tmux — silent exit
     }
 
