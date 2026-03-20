@@ -76,6 +76,29 @@ pub async fn get_orchestrator(pool: &SqlitePool) -> anyhow::Result<Option<Agent>
     Ok(agent)
 }
 
+/// Set the current_task FK to a specific message ID.
+pub async fn set_current_task(
+    pool: &SqlitePool,
+    name: &str,
+    message_id: &str,
+) -> anyhow::Result<()> {
+    sqlx::query("UPDATE agents SET current_task = ? WHERE name = ?")
+        .bind(message_id)
+        .bind(name)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Clear the current_task FK (set to NULL).
+pub async fn clear_current_task(pool: &SqlitePool, name: &str) -> anyhow::Result<()> {
+    sqlx::query("UPDATE agents SET current_task = NULL WHERE name = ?")
+        .bind(name)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Update agent lifecycle status. Valid values: "idle" | "busy" | "dead"
 pub async fn update_agent_status(
     pool: &SqlitePool,

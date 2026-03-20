@@ -64,54 +64,29 @@ pub async fn run(
     )
     .await?;
 
-    // 5b. AGNT-02: set current_task FK on the target agent
-    sqlx::query("UPDATE agents SET current_task = ? WHERE name = ?")
-        .bind(&msg_id)
-        .bind(&agent)
-        .execute(&pool)
-        .await?;
+    // 5b. Fire-and-forget commands (e.g. /clear) are auto-completed immediately.
+    // They never trigger a completion hook, so we must NOT set current_task to them
+    // (that would cause the next signal to noop since current_task points to a completed message).
+    if is_fire_and_forget(&body) {
+        // Auto-complete the message without touching current_task
+        db::messages::complete_by_id(&pool, &msg_id).await?;
 
-    // 5c. Mark agent as busy now that a task has been sent
-    db::agents::update_agent_status(&pool, &agent, "busy").await?;
+        // If no other tasks are processing, agent goes idle
+        let remaining = db::messages::count_processing(&pool, &agent).await?;
+        if remaining == 0 && agent_record.status != "busy" {
+            // Agent was idle before /clear, stay idle
+        } else if remaining == 0 {
+            db::agents::update_agent_status(&pool, &agent, "idle").await?;
+        }
+        // If remaining > 0, current_task already points to the real task — don't touch it
+    } else {
+        // Real task: set current_task and mark agent as busy
+        db::agents::set_current_task(&pool, &agent, &msg_id).await?;
+        db::agents::update_agent_status(&pool, &agent, "busy").await?;
+    }
 
     // 6. Inject task into agent tmux session via load-buffer/paste-buffer (TMUX-01, TMUX-02)
     tmux::inject_body(&agent, &body)?;
-
-    // 6b. Auto-complete fire-and-forget commands that never trigger a Stop hook.
-    // `/clear` in Claude Code executes instantly without producing a response turn,
-    // so the Stop hook never fires and the message would stay `processing` forever,
-    // blocking the FIFO queue for subsequent real tasks.
-    if is_fire_and_forget(&body) {
-        let now = chrono::Utc::now().to_rfc3339();
-        sqlx::query(
-            "UPDATE messages SET status = 'completed', updated_at = ?, completed_at = ? WHERE id = ?",
-        )
-        .bind(&now)
-        .bind(&now)
-        .bind(&msg_id)
-        .execute(&pool)
-        .await?;
-
-        // Restore agent state: point current_task to next real task, or go idle
-        let remaining = db::messages::count_processing(&pool, &agent).await?;
-        if remaining > 0 {
-            // current_task was set to the /clear message in step 5b — fix it
-            let next = db::messages::peek_message(&pool, &agent).await?;
-            if let Some(next_msg) = next {
-                sqlx::query("UPDATE agents SET current_task = ? WHERE name = ?")
-                    .bind(&next_msg.id)
-                    .bind(&agent)
-                    .execute(&pool)
-                    .await?;
-            }
-        } else {
-            sqlx::query("UPDATE agents SET current_task = NULL WHERE name = ?")
-                .bind(&agent)
-                .execute(&pool)
-                .await?;
-            db::agents::update_agent_status(&pool, &agent, "idle").await?;
-        }
-    }
 
     // 7. Output result
     if json {

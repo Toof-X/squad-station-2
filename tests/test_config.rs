@@ -1,4 +1,4 @@
-use squad_station::config::SquadConfig;
+use squad_station::config::{sanitize_session_name, SquadConfig};
 
 #[test]
 fn test_project_is_string() {
@@ -56,4 +56,26 @@ fn test_is_db_only_claude_code_false() {
     let yaml = "project: p\norchestrator:\n  provider: claude-code\nagents: []";
     let cfg: SquadConfig = serde_saphyr::from_str(yaml).unwrap();
     assert!(!cfg.orchestrator.is_db_only());
+}
+
+#[test]
+fn test_sanitize_session_name_shell_metacharacters() {
+    assert_eq!(sanitize_session_name("a'b"), "a-b");
+    assert_eq!(sanitize_session_name("a`b"), "a-b");
+    assert_eq!(sanitize_session_name("a$b"), "a-b");
+    assert_eq!(sanitize_session_name("a;b"), "a-b");
+    assert_eq!(sanitize_session_name("a(b)"), "a-b-");
+    assert_eq!(sanitize_session_name("a|b"), "a-b");
+    assert_eq!(sanitize_session_name("a&b"), "a-b");
+    assert_eq!(sanitize_session_name("a\\b"), "a-b");
+    assert_eq!(sanitize_session_name("a b"), "a-b");
+    assert_eq!(sanitize_session_name("a/b"), "a-b");
+}
+
+#[test]
+fn test_sanitize_session_name_injection_attempt() {
+    let result = sanitize_session_name("foo'; rm -rf /; echo '");
+    assert!(!result.contains('\''));
+    assert!(!result.contains(';'));
+    assert!(!result.contains(' '));
 }

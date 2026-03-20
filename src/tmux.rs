@@ -182,21 +182,36 @@ fn inject_single(target: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
-/// Inject body content into a tmux target.
-///
-/// If the body contains `&&`, it is split into separate commands and each is
-/// sent individually with a delay between them. This handles compound commands
-/// like `/clear && /gsd:plan-phase 1` that Claude Code's TUI cannot parse as one input.
-pub fn inject_body(target: &str, body: &str) -> Result<()> {
-    // Check if body contains && separators (compound commands)
+/// Split a body into compound slash commands if applicable.
+/// Returns Some(parts) if the body is a compound slash command (e.g. "/clear && /review"),
+/// or None if it's plain text that should be sent as-is.
+fn split_compound_commands(body: &str) -> Option<Vec<&str>> {
     let parts: Vec<&str> = body
         .split("&&")
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .collect();
 
-    if parts.len() > 1 {
-        // Multiple commands: send each separately with delay between
+    // Only split when ALL parts are slash commands — prevents corrupting
+    // plain task text that happens to contain &&
+    if parts.len() > 1 && parts.iter().all(|p| p.starts_with('/')) {
+        Some(parts)
+    } else {
+        None
+    }
+}
+
+/// Inject body content into a tmux target.
+///
+/// If the body contains `&&` and every part is a slash command (starts with `/`),
+/// it is split into separate commands sent individually with a delay between them.
+/// This handles compound slash commands like `/clear && /gsd:plan-phase 1` that
+/// Claude Code's TUI cannot parse as one input.
+///
+/// Plain task text containing `&&` (e.g. "check if A && B") is sent as-is.
+pub fn inject_body(target: &str, body: &str) -> Result<()> {
+    if let Some(parts) = split_compound_commands(body) {
+        // Multiple slash commands: send each separately with delay between
         for (i, part) in parts.iter().enumerate() {
             inject_single(target, part)?;
             if i < parts.len() - 1 {
@@ -205,7 +220,7 @@ pub fn inject_body(target: &str, body: &str) -> Result<()> {
             }
         }
     } else {
-        // Single command: send as-is
+        // Single command or plain task text: send as-is
         inject_single(target, body)?;
     }
 
@@ -350,11 +365,20 @@ pub fn session_name_from_pane(pane_id: &str) -> Option<String> {
         .map(String::from)
 }
 
+/// Wrap a command with `export SQUAD_AGENT_NAME='<session>'` so hook subprocesses
+/// can reliably identify which agent they belong to via environment variable.
+/// This is more reliable than `tmux display-message` which can fail in subprocess contexts.
+fn wrap_with_agent_env(session_name: &str, command: &str) -> String {
+    format!("export SQUAD_AGENT_NAME='{}'; {}", session_name, command)
+}
+
 /// Launch an agent in a new detached tmux session (SAFE-03)
 ///
 /// Passes the command directly to `new-session` to avoid shell readiness race conditions.
+/// Sets `SQUAD_AGENT_NAME` environment variable for reliable hook identification.
 pub fn launch_agent(session_name: &str, command: &str) -> Result<()> {
-    let args = launch_args(session_name, command);
+    let wrapped = wrap_with_agent_env(session_name, command);
+    let args = launch_args(session_name, &wrapped);
     let status = Command::new("tmux").args(&args).status()?;
     if !status.success() {
         bail!("Failed to create tmux session: {}", session_name);
@@ -363,8 +387,10 @@ pub fn launch_agent(session_name: &str, command: &str) -> Result<()> {
 }
 
 /// Launch an agent in a new detached tmux session at a specific working directory.
+/// Sets `SQUAD_AGENT_NAME` environment variable for reliable hook identification.
 pub fn launch_agent_in_dir(session_name: &str, command: &str, start_dir: &str) -> Result<()> {
-    let args = launch_args_with_dir(session_name, command, start_dir);
+    let wrapped = wrap_with_agent_env(session_name, command);
+    let args = launch_args_with_dir(session_name, &wrapped, start_dir);
     let status = Command::new("tmux").args(&args).status()?;
     if !status.success() {
         bail!("Failed to create tmux session: {}", session_name);
@@ -534,5 +560,59 @@ mod tests {
             !args.contains(&"-p".to_string()),
             "paste-buffer must use -t not -p; -p pastes to current pane ignoring -t target"
         );
+    }
+
+    #[test]
+    fn test_wrap_with_agent_env() {
+        let result = wrap_with_agent_env("kindle-implement", "claude --dangerously-skip-permissions");
+        assert_eq!(
+            result,
+            "export SQUAD_AGENT_NAME='kindle-implement'; claude --dangerously-skip-permissions"
+        );
+    }
+
+    #[test]
+    fn test_wrap_with_agent_env_preserves_special_chars() {
+        let result = wrap_with_agent_env("my-agent", "gemini -y --model gemini-3.1-pro");
+        assert!(result.starts_with("export SQUAD_AGENT_NAME='my-agent';"));
+        assert!(result.ends_with("gemini -y --model gemini-3.1-pro"));
+    }
+
+    #[test]
+    fn test_launch_args_include_agent_env_wrapper() {
+        // Verify that launch_agent would produce args with the env wrapper
+        let wrapped = wrap_with_agent_env("test-agent", "claude --dangerously-skip-permissions");
+        let args = launch_args("test-agent", &wrapped);
+        assert!(
+            args[4].contains("SQUAD_AGENT_NAME"),
+            "Launch command must include SQUAD_AGENT_NAME export"
+        );
+        assert!(
+            args[4].contains("claude --dangerously-skip-permissions"),
+            "Original command must be preserved after env export"
+        );
+    }
+
+    #[test]
+    fn test_split_compound_commands_slash_commands() {
+        let result = split_compound_commands("/clear && /gsd:plan-phase 1");
+        assert_eq!(result, Some(vec!["/clear", "/gsd:plan-phase 1"]));
+    }
+
+    #[test]
+    fn test_split_compound_commands_plain_text_not_split() {
+        assert_eq!(split_compound_commands("check if A && B are set"), None);
+        assert_eq!(split_compound_commands("run foo && bar"), None);
+    }
+
+    #[test]
+    fn test_split_compound_commands_mixed_not_split() {
+        assert_eq!(split_compound_commands("/clear && run tests"), None);
+    }
+
+    #[test]
+    fn test_split_compound_commands_single_command() {
+        assert_eq!(split_compound_commands("/clear"), None);
+        assert_eq!(split_compound_commands("build the feature"), None);
     }
 }

@@ -119,6 +119,66 @@ pub async fn count_processing(pool: &SqlitePool, agent_name: &str) -> anyhow::Re
     Ok(row.0)
 }
 
+/// Complete a specific message by ID. Returns rows affected (0 if already completed or not found).
+/// Used by signal.rs to complete the exact task pointed to by agent.current_task,
+/// instead of the FIFO-based update_status which can race with /clear.
+pub async fn complete_by_id(pool: &SqlitePool, message_id: &str) -> anyhow::Result<u64> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let result = sqlx::query(
+        "UPDATE messages SET status = 'completed', updated_at = ?, completed_at = ? \
+         WHERE id = ? AND status = 'processing'",
+    )
+    .bind(&now)
+    .bind(&now)
+    .bind(message_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Count all processing messages across all agents.
+pub async fn count_processing_all(pool: &SqlitePool) -> anyhow::Result<i64> {
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM messages WHERE status = 'processing'")
+            .fetch_one(pool)
+            .await?;
+    Ok(row.0)
+}
+
+/// Get the ID of the most recently completed message for an agent.
+/// Used by signal.rs FIFO fallback to identify which task was just completed.
+pub async fn last_completed_id(
+    pool: &SqlitePool,
+    agent_name: &str,
+) -> anyhow::Result<Option<String>> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT id FROM messages WHERE agent_name = ? AND status = 'completed' \
+         ORDER BY updated_at DESC LIMIT 1",
+    )
+    .bind(agent_name)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(id,)| id))
+}
+
+/// Count total messages (all statuses). Used by watchdog for activity detection.
+pub async fn total_count(pool: &SqlitePool) -> anyhow::Result<i64> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM messages")
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
+}
+
+/// Get the most recent updated_at timestamp across all messages.
+/// Used by watchdog for global stall detection.
+pub async fn last_activity_timestamp(pool: &SqlitePool) -> anyhow::Result<Option<String>> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT MAX(updated_at) FROM messages")
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.map(|(ts,)| ts))
+}
+
 /// Peek at the highest-priority processing message for an agent.
 /// Priority ordering: urgent > high > normal.
 pub async fn peek_message(pool: &SqlitePool, agent_name: &str) -> anyhow::Result<Option<Message>> {
