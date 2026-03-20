@@ -50,9 +50,7 @@ function install() {
         var projectDir = fs.readFileSync(marker, 'utf8').trim();
         fs.unlinkSync(marker);
         if (projectDir && projectDir !== process.cwd()) {
-          console.log('\n  \x1b[1mProject created at:\x1b[0m \x1b[36m' + projectDir + '\x1b[0m');
-          console.log('  To enter your project, run:\n');
-          console.log('  \x1b[36mcd ' + projectDir + '\x1b[0m\n');
+          promptAndMoveToProject(projectDir);
         }
       } catch (_) {
         // No marker = project created in cwd, nothing to do
@@ -176,6 +174,28 @@ function scaffoldProject(force) {
     } else {
       fs.copyFileSync(path.join(exSrc, file), dest);
       console.log('  \x1b[32m✓\x1b[0m .squad/examples/' + file);
+    }
+  });
+}
+
+function promptAndMoveToProject(projectDir) {
+  var readline = require('readline');
+  var rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+  console.log('\n  \x1b[1mProject created at:\x1b[0m \x1b[36m' + projectDir + '\x1b[0m');
+
+  rl.question('\n  Move to project directory? [Y/n] ', function(answer) {
+    rl.close();
+    answer = (answer || '').trim().toLowerCase();
+    if (answer === '' || answer === 'y' || answer === 'yes') {
+      // Spawn a new interactive shell in the project directory
+      var shell = process.env.SHELL || '/bin/zsh';
+      console.log('\n  \x1b[32m→\x1b[0m Opening shell in \x1b[36m' + projectDir + '\x1b[0m\n');
+      var result = spawnSync(shell, ['-l'], { cwd: projectDir, stdio: 'inherit' });
+      process.exit(result.status != null ? result.status : 0);
+    } else {
+      console.log('\n  To enter your project later:\n');
+      console.log('  \x1b[36mcd ' + projectDir + '\x1b[0m\n');
     }
   });
 }
