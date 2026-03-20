@@ -1,0 +1,31 @@
+# Squad Station — Gemini orchestrator + Claude workers
+# Copy to project root as squad.yml, then run: squad-station init
+
+project: my-project
+
+sdd:
+  - name: get-shit-done
+    playbook: ".squad/sdd/gsd-playbook.md"
+  # - name: bmad-method
+  #   playbook: ".squad/sdd/bmad-playbook.md"
+  # - name: superpowers
+  #   playbook: ".squad/sdd/superpowers-playbook.md"
+
+orchestrator:
+  provider: gemini-cli
+  role: orchestrator
+  model: gemini-3.1-pro-preview
+  description: Team leader, monitors and coordinates tasks for agents
+
+agents:
+  - name: implement
+    provider: claude-code
+    role: worker
+    model: sonnet
+    description: Senior coder, coding, fixing bugs
+
+  - name: brainstorm
+    provider: claude-code
+    role: worker
+    model: opus
+    description: Technical Lead, planner, analysis, code reviews

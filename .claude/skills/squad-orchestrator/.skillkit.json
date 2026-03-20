@@ -1,0 +1,5 @@
+{
+  "name": "squad-orchestrator",
+  "description": "AI Orchestrator — delegate tasks to squad agents with direct command syntax",
+  "enabled": true
+}
