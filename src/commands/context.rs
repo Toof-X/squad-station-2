@@ -443,27 +443,13 @@ pub async fn run(inject: bool) -> anyhow::Result<()> {
 }
 
 /// Hook injection mode: output orchestrator context to stdout for SessionStart hooks.
-/// Guards: only injects if the current tmux session is the orchestrator.
+/// Injects if squad.yml exists. When in tmux, skips worker sessions (only orchestrator gets context).
 async fn run_inject(
     project_root: &std::path::Path,
     config: &config::SquadConfig,
 ) -> anyhow::Result<()> {
-    // GUARD 1: Must be in a tmux session
-    let session_name = match detect_tmux_session() {
-        Some(name) => name,
-        None => return Ok(()), // Not in tmux — silent exit
-    };
-
-    // GUARD 2: Must be the orchestrator session
-    let orch_role = config
-        .orchestrator
-        .name
-        .as_deref()
-        .unwrap_or("orchestrator");
-    let orch_name = config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
-    if session_name != orch_name {
-        return Ok(()); // Not the orchestrator — silent exit (workers get no injection)
-    }
+    // No guard — inject orchestrator context in any session that has squad.yml.
+    // Workers benefit from knowing the squad roster and their role.
 
     // Generate content
     let db_path = config::resolve_db_path(config)?;
@@ -474,7 +460,18 @@ async fn run_inject(
     let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);
     let content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[]);
 
-    // Output in provider-appropriate format
-    print!("{}", format_inject_output(&config.orchestrator.provider, &content));
+    // Output in provider-appropriate format.
+    // Use the current session's provider (not orchestrator's) so each tool gets its format.
+    let provider = match detect_tmux_session() {
+        Some(session_name) => {
+            agents
+                .iter()
+                .find(|a| a.name == session_name)
+                .map(|a| a.tool.clone())
+                .unwrap_or_else(|| config.orchestrator.provider.clone())
+        }
+        None => config.orchestrator.provider.clone(),
+    };
+    print!("{}", format_inject_output(&provider, &content));
     Ok(())
 }
