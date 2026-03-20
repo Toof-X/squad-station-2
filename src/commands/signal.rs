@@ -88,9 +88,10 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
 
     // GUARD 3: Agent not registered -- silent exit 0 in hook context (HOOK-03),
     // but print a message when running interactively so manual usage isn't confusing.
-    let agent_record = match db::agents::get_agent(&pool, &agent).await? {
-        Some(r) => r,
-        None => {
+    // Uses match instead of ? to maintain exit-0 contract (never fail the provider).
+    let agent_record = match db::agents::get_agent(&pool, &agent).await {
+        Ok(Some(r)) => r,
+        Ok(None) => {
             if std::io::stdout().is_terminal() {
                 println!("Agent not found: {} (ignored)", agent);
             }
@@ -100,6 +101,11 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
                 &agent,
                 "reason=agent_not_found",
             );
+            return Ok(());
+        }
+        Err(e) => {
+            eprintln!("squad-station: warning: get_agent failed: {e}");
+            log_signal(&project_root, "GUARD", &agent, "reason=get_agent_error");
             return Ok(());
         }
     };
