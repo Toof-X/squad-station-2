@@ -14,56 +14,17 @@ npx squad-station-2@latest install --tui
 
 ![Welcome TUI](docs/assets/welcome-tui.png)
 
-Requires Node.js 14+. Downloads the native binary for your platform to `/usr/local/bin` (falls back to `~/.local/bin`) and scaffolds `.squad/` project files.
-
-## First Run
-
-Running `squad-station` with no arguments opens an interactive welcome screen:
-
-```
-SQUAD-STATION
-v0.x.x
-
-Multi-agent orchestration for AI coding
-
-  Commands:
-    init        Initialize squad from config
-    send        Send a task to an agent
-    ...
-
-  Ok to proceed? (y)
-● ○  Tab: Guide  Q: Quit  25s
-```
-
-- **y / Enter** — launch the init wizard (or open the dashboard if already configured)
-- **Tab** — open the Quick Guide
-- **Q / Esc** — exit
-- Timeout — exits silently with no action
-
-The title scales with terminal width: full pixel font on wide terminals, compact on narrow.
-
 ## Quickstart
 
-**Step 1 — Create `squad.yml`:**
+**Step 1 — Install and follow the TUI wizard:**
 
-Copy an example config and edit it, or use the interactive wizard:
+The interactive TUI guides you through setup — press **y** to launch the init wizard, which generates `squad.yml` and starts your squad automatically.
 
-```bash
-# Option A — copy and edit an example
-cp .squad/examples/orchestrator-claude.yml squad.yml
-vi squad.yml
-
-# Option B — interactive TUI wizard (generates squad.yml for you)
-squad-station init --tui
-```
-
-**Step 2 — Launch the squad:**
+**Step 2 — Launch the squad** (if not already started by the wizard):
 
 ```bash
 squad-station init
 ```
-
-Reads `squad.yml`, creates the SQLite database, launches tmux sessions, and installs hooks.
 
 **Step 3 — Send a task:**
 
