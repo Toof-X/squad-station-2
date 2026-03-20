@@ -22,8 +22,6 @@ if (subcommand === 'install') {
 function install() {
   var args = process.argv.slice(3);
   var force = args.includes('--force') || args.includes('-f');
-  var tui = args.includes('--tui');
-
   // Step 1: Install binary
   var destPath = installBinary();
 
@@ -32,22 +30,11 @@ function install() {
 
   // Done — print next steps
   console.log('');
-  if (tui) {
-    // --tui: launch welcome TUI directly via the installed binary
-    // spawnSync with stdio inherit passes the real terminal FDs through
-    var tuiResult = spawnSync(destPath, ['--tui'], { stdio: 'inherit' });
-    if (tuiResult.status !== 0) {
-      // TUI failed (no TTY, e.g. piped or non-interactive shell) — show static fallback
-      spawnSync(destPath, [], { stdio: 'inherit' });
-      console.log('\n  \x1b[33mTip:\x1b[0m Run \x1b[36msquad-station --tui\x1b[0m in your terminal for the interactive welcome.\n');
-    }
-  } else {
-    console.log('\x1b[1mNext steps:\x1b[0m');
-    console.log('  1. Copy an example config:');
-    console.log('     \x1b[36mcp .squad/examples/orchestrator-claude.yml squad.yml\x1b[0m');
-    console.log('  2. Edit \x1b[36msquad.yml\x1b[0m — set project name, providers, models');
-    console.log('  3. Run  \x1b[36msquad-station init\x1b[0m — launch tmux sessions\n');
-  }
+  console.log('\x1b[1mNext steps:\x1b[0m');
+  console.log('  1. Copy an example config:');
+  console.log('     \x1b[36mcp .squad/examples/orchestrator-claude.yml squad.yml\x1b[0m');
+  console.log('  2. Edit \x1b[36msquad.yml\x1b[0m — set project name, providers, models');
+  console.log('  3. Run  \x1b[36msquad-station init\x1b[0m — launch tmux sessions\n');
 }
 
 function installBinary() {
