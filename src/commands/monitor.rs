@@ -26,6 +26,7 @@ struct MonitorApp {
 
 struct AgentPane {
     name: String,
+    #[allow(dead_code)]
     role: String,
     status: String,
     output: String, // captured tmux pane content

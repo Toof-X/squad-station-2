@@ -1,6 +1,16 @@
 {
   "hooks": {
-    "AfterAgent": [],
+    "AfterAgent": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "squad-station signal $(tmux display-message -p '#S')"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "",
@@ -8,6 +18,17 @@
           {
             "type": "command",
             "command": "squad-station context --inject"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "squad-station notify --body 'Agent needs input' --agent $(tmux display-message -p '#S')"
           }
         ]
       }

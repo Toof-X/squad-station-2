@@ -67,7 +67,6 @@ pub fn render_diagram(agents: &[Agent]) -> String {
             if !current_row.is_empty() && needed > MAX_ROW_WIDTH {
                 rows.push(current_row);
                 current_row = Vec::new();
-                current_width = 0;
             }
             current_row.push(idx);
             current_width = needed;
