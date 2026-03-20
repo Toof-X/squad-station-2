@@ -182,21 +182,36 @@ fn inject_single(target: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
-/// Inject body content into a tmux target.
-///
-/// If the body contains `&&`, it is split into separate commands and each is
-/// sent individually with a delay between them. This handles compound commands
-/// like `/clear && /gsd:plan-phase 1` that Claude Code's TUI cannot parse as one input.
-pub fn inject_body(target: &str, body: &str) -> Result<()> {
-    // Check if body contains && separators (compound commands)
+/// Split a body into compound slash commands if applicable.
+/// Returns Some(parts) if the body is a compound slash command (e.g. "/clear && /review"),
+/// or None if it's plain text that should be sent as-is.
+fn split_compound_commands(body: &str) -> Option<Vec<&str>> {
     let parts: Vec<&str> = body
         .split("&&")
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .collect();
 
-    if parts.len() > 1 {
-        // Multiple commands: send each separately with delay between
+    // Only split when ALL parts are slash commands — prevents corrupting
+    // plain task text that happens to contain &&
+    if parts.len() > 1 && parts.iter().all(|p| p.starts_with('/')) {
+        Some(parts)
+    } else {
+        None
+    }
+}
+
+/// Inject body content into a tmux target.
+///
+/// If the body contains `&&` and every part is a slash command (starts with `/`),
+/// it is split into separate commands sent individually with a delay between them.
+/// This handles compound slash commands like `/clear && /gsd:plan-phase 1` that
+/// Claude Code's TUI cannot parse as one input.
+///
+/// Plain task text containing `&&` (e.g. "check if A && B") is sent as-is.
+pub fn inject_body(target: &str, body: &str) -> Result<()> {
+    if let Some(parts) = split_compound_commands(body) {
+        // Multiple slash commands: send each separately with delay between
         for (i, part) in parts.iter().enumerate() {
             inject_single(target, part)?;
             if i < parts.len() - 1 {
@@ -205,7 +220,7 @@ pub fn inject_body(target: &str, body: &str) -> Result<()> {
             }
         }
     } else {
-        // Single command: send as-is
+        // Single command or plain task text: send as-is
         inject_single(target, body)?;
     }
 
@@ -576,5 +591,28 @@ mod tests {
             args[4].contains("claude --dangerously-skip-permissions"),
             "Original command must be preserved after env export"
         );
+    }
+
+    #[test]
+    fn test_split_compound_commands_slash_commands() {
+        let result = split_compound_commands("/clear && /gsd:plan-phase 1");
+        assert_eq!(result, Some(vec!["/clear", "/gsd:plan-phase 1"]));
+    }
+
+    #[test]
+    fn test_split_compound_commands_plain_text_not_split() {
+        assert_eq!(split_compound_commands("check if A && B are set"), None);
+        assert_eq!(split_compound_commands("run foo && bar"), None);
+    }
+
+    #[test]
+    fn test_split_compound_commands_mixed_not_split() {
+        assert_eq!(split_compound_commands("/clear && run tests"), None);
+    }
+
+    #[test]
+    fn test_split_compound_commands_single_command() {
+        assert_eq!(split_compound_commands("/clear"), None);
+        assert_eq!(split_compound_commands("build the feature"), None);
     }
 }
