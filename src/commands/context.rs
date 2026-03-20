@@ -194,6 +194,26 @@ pub fn build_orchestrator_md(
         out.push_str("> ```\n\n");
     }
 
+    // ── Context Management ─────────────────────────────────────────────
+    out.push_str("## Context Management — `/clear`\n\n");
+    out.push_str("You MUST send `/clear` to an agent BEFORE dispatching a new task if ANY of these conditions are true:\n\n");
+    out.push_str("### Mandatory `/clear` Triggers\n\n");
+    out.push_str("1. **Topic shift** — The new task is on a DIFFERENT topic/feature than the agent's last completed task.\n");
+    out.push_str("   Examples: bug fix → new feature, UI work → backend work, different file areas.\n\n");
+    out.push_str("2. **Task count threshold** — The agent has completed 3 or more consecutive tasks without a `/clear`.\n");
+    out.push_str("   Count resets after each `/clear`.\n\n");
+    out.push_str("3. **Agent hint** — The agent's output mentions context issues, suggests clearing,\n");
+    out.push_str("   or shows signs of confusion (referencing old/irrelevant code).\n\n");
+    out.push_str("### `/clear` Checklist (run BEFORE every `squad-station send`)\n\n");
+    out.push_str("□ Is this a topic shift from the agent's last task? → /clear\n");
+    out.push_str("□ Has the agent done 3+ tasks since last /clear? → /clear\n");
+    out.push_str("□ Did the agent hint at context issues? → /clear\n");
+    out.push_str("□ None of the above? → send task directly (no /clear needed)\n\n");
+    out.push_str("### How to `/clear`\n\n");
+    out.push_str("```bash\nsquad-station send <agent-name> --body \"/clear\"\n```\n\n");
+    out.push_str("After `/clear`, the agent has ZERO memory. You MUST re-inject enough context\n");
+    out.push_str("in the next task body so the agent can execute independently.\n\n");
+
     // ── Session Routing ──────────────────────────────────────────────────
     out.push_str("## Session Routing\n\n");
     out.push_str("Based on the nature of the work, independently decide the correct agent:\n\n");
@@ -292,8 +312,10 @@ pub fn build_orchestrator_md(
     );
     out.push_str("3. If agent asked business/requirements questions → forward to user (HITL)\n");
     out.push_str("4. `squad-station list --agent <agent>` — confirm status is `completed`\n");
+    out.push_str("5. Run the `/clear` checklist (see Context Management) — if ANY condition matches,\n");
+    out.push_str("   send `/clear` to the agent BEFORE dispatching the next task.\n");
     out.push_str(
-        "5. Proceed to next playbook step, or report to user if workflow is complete.\n\n",
+        "6. Proceed to next playbook step, or report to user if workflow is complete.\n\n",
     );
 
     // ── Agent Roster ─────────────────────────────────────────────────────
@@ -312,9 +334,50 @@ pub fn build_orchestrator_md(
     out
 }
 
-pub async fn run() -> anyhow::Result<()> {
+/// Detect the current tmux session name. Returns None if not in tmux.
+pub fn detect_tmux_session() -> Option<String> {
+    std::process::Command::new("tmux")
+        .args(["display-message", "-p", "#S"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                let name = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                if name.is_empty() {
+                    None
+                } else {
+                    Some(name)
+                }
+            } else {
+                None
+            }
+        })
+}
+
+/// Format orchestrator content for stdout injection based on provider.
+/// Claude Code: raw markdown. Gemini CLI: JSON with hookSpecificOutput.additionalContext.
+pub fn format_inject_output(provider: &str, content: &str) -> String {
+    match provider {
+        "gemini-cli" => {
+            let json = serde_json::json!({
+                "hookSpecificOutput": {
+                    "additionalContext": content
+                }
+            });
+            serde_json::to_string(&json).unwrap_or_default()
+        }
+        _ => content.to_string(),
+    }
+}
+
+pub async fn run(inject: bool) -> anyhow::Result<()> {
     let project_root = config::find_project_root()?;
     let config = config::load_config(&project_root.join("squad.yml"))?;
+
+    if inject {
+        return run_inject(&project_root, &config).await;
+    }
+
     let db_path = config::resolve_db_path(&config)?;
     let pool = db::connect(&db_path).await?;
 
@@ -376,5 +439,42 @@ pub async fn run() -> anyhow::Result<()> {
     std::fs::write(&context_path, &file_content)?;
 
     println!("Generated {}", context_path.display());
+    Ok(())
+}
+
+/// Hook injection mode: output orchestrator context to stdout for SessionStart hooks.
+/// Guards: only injects if the current tmux session is the orchestrator.
+async fn run_inject(
+    project_root: &std::path::Path,
+    config: &config::SquadConfig,
+) -> anyhow::Result<()> {
+    // GUARD 1: Must be in a tmux session
+    let session_name = match detect_tmux_session() {
+        Some(name) => name,
+        None => return Ok(()), // Not in tmux — silent exit
+    };
+
+    // GUARD 2: Must be the orchestrator session
+    let orch_role = config
+        .orchestrator
+        .name
+        .as_deref()
+        .unwrap_or("orchestrator");
+    let orch_name = config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
+    if session_name != orch_name {
+        return Ok(()); // Not the orchestrator — silent exit (workers get no injection)
+    }
+
+    // Generate content
+    let db_path = config::resolve_db_path(config)?;
+    let pool = db::connect(&db_path).await?;
+    let agents = db::agents::list_agents(&pool).await?;
+
+    let project_root_str = project_root.to_string_lossy().to_string();
+    let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);
+    let content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[]);
+
+    // Output in provider-appropriate format
+    print!("{}", format_inject_output(&config.orchestrator.provider, &content));
     Ok(())
 }

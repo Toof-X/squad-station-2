@@ -77,6 +77,42 @@ pub async fn run(
     // 6. Inject task into agent tmux session via load-buffer/paste-buffer (TMUX-01, TMUX-02)
     tmux::inject_body(&agent, &body)?;
 
+    // 6b. Auto-complete fire-and-forget commands that never trigger a Stop hook.
+    // `/clear` in Claude Code executes instantly without producing a response turn,
+    // so the Stop hook never fires and the message would stay `processing` forever,
+    // blocking the FIFO queue for subsequent real tasks.
+    if is_fire_and_forget(&body) {
+        let now = chrono::Utc::now().to_rfc3339();
+        sqlx::query(
+            "UPDATE messages SET status = 'completed', updated_at = ?, completed_at = ? WHERE id = ?",
+        )
+        .bind(&now)
+        .bind(&now)
+        .bind(&msg_id)
+        .execute(&pool)
+        .await?;
+
+        // Restore agent state: point current_task to next real task, or go idle
+        let remaining = db::messages::count_processing(&pool, &agent).await?;
+        if remaining > 0 {
+            // current_task was set to the /clear message in step 5b — fix it
+            let next = db::messages::peek_message(&pool, &agent).await?;
+            if let Some(next_msg) = next {
+                sqlx::query("UPDATE agents SET current_task = ? WHERE name = ?")
+                    .bind(&next_msg.id)
+                    .bind(&agent)
+                    .execute(&pool)
+                    .await?;
+            }
+        } else {
+            sqlx::query("UPDATE agents SET current_task = NULL WHERE name = ?")
+                .bind(&agent)
+                .execute(&pool)
+                .await?;
+            db::agents::update_agent_status(&pool, &agent, "idle").await?;
+        }
+    }
+
     // 7. Output result
     if json {
         let out = serde_json::json!({
@@ -102,4 +138,35 @@ pub async fn run(
     }
 
     Ok(())
+}
+
+/// Returns true for commands that execute instantly without producing a provider response turn.
+/// These commands never trigger the Stop hook, so their DB messages must be auto-completed
+/// to prevent blocking the FIFO signal queue.
+fn is_fire_and_forget(body: &str) -> bool {
+    let trimmed = body.trim().to_lowercase();
+    // `/clear` (with optional args like `/clear hard`) — Claude Code context reset
+    trimmed == "/clear" || trimmed.starts_with("/clear ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_fire_and_forget_clear_variants() {
+        assert!(is_fire_and_forget("/clear"));
+        assert!(is_fire_and_forget("/clear hard"));
+        assert!(is_fire_and_forget("  /clear  "));
+        assert!(is_fire_and_forget("/CLEAR"));
+        assert!(is_fire_and_forget("/Clear Hard"));
+    }
+
+    #[test]
+    fn test_is_fire_and_forget_normal_tasks() {
+        assert!(!is_fire_and_forget("/review PR #2"));
+        assert!(!is_fire_and_forget("build the feature"));
+        assert!(!is_fire_and_forget("/clearance check"));
+        assert!(!is_fire_and_forget("run /clear in the agent"));
+    }
 }

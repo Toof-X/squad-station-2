@@ -64,13 +64,13 @@
 squad-station/
 ├── src/
 │   ├── main.rs              ← Entry point + SIGPIPE handler
-│   ├── cli.rs               ← clap Parser (16 subcommands)
+│   ├── cli.rs               ← clap Parser (15 subcommands)
 │   ├── config.rs            ← squad.yml parsing, validation, DB path resolution
 │   ├── tmux.rs              ← Tmux adapter (send_keys, inject_body, session mgmt)
 │   ├── lib.rs               ← Re-exports for test access
 │   ├── commands/
 │   │   ├── mod.rs
-│   │   ├── init.rs          ← squad.yml → DB + tmux sessions + context + monitor
+│   │   ├── init.rs          ← squad.yml → DB + tmux sessions + hooks + context + monitor
 │   │   ├── send.rs          ← Task → agent (DB + tmux inject)
 │   │   ├── signal.rs        ← Hook completion (guard chain + orch skip)
 │   │   ├── notify.rs        ← Mid-task HITL notification (no status change)
@@ -78,13 +78,13 @@ squad-station/
 │   │   ├── list.rs          ← Message list + filters
 │   │   ├── register.rs      ← Dynamic agent registration
 │   │   ├── agents.rs        ← Agent list (with tmux reconciliation)
-│   │   ├── context.rs       ← Generate orchestrator context (provider-specific)
+│   │   ├── context.rs       ← Generate orchestrator context; --inject for SessionStart hook
 │   │   ├── status.rs        ← Squad overview
 │   │   ├── ui.rs            ← TUI dashboard (ratatui)
 │   │   ├── view.rs          ← Split tmux layout
-│   │   ├── close.rs         ← Kill all squad tmux sessions
-│   │   ├── reset.rs         ← Kill + delete DB + optionally relaunch
-│   │   ├── clean.rs         ← Delete DB file only
+│   │   ├── clean.rs         ← Kill all squad tmux sessions + delete DB
+│   │   ├── reset.rs         ← Clean + optionally relaunch (re-init)
+│   │   ├── freeze.rs        ← Freeze/unfreeze agent task dispatch
 │   │   └── helpers.rs       ← Shared: colorize, format_status, reconcile
 │   └── db/
 │       ├── mod.rs           ← connect() + migrations
@@ -115,42 +115,13 @@ cli → commands → db + tmux + config
                 sqlx    std::process::Command
 ```
 
-## 4. Roadmap — 3 Phases
+## 4. Release History
 
-```
-Phase 1                    Phase 2                    Phase 3
-CORE FOUNDATION            LIFECYCLE & HOOKS          VIEWS & TUI
-━━━━━━━━━━━━━━━━━━          ━━━━━━━━━━━━━━━━━━          ━━━━━━━━━━━━━
-
-┌────────────────┐        ┌────────────────┐        ┌────────────────┐
-│ • DB schema    │        │ • Agent status │        │ • status cmd   │
-│ • init         │───────►│   idle/busy/dead│───────►│ • agents cmd   │
-│ • register     │        │ • Liveness     │        │ • TUI dashboard│
-│ • send + signal│        │   reconciliation│       │ • Split tmux   │
-│ • list + peek  │        │ • Hook scripts │        │   view         │
-│ • Priority     │        │   Claude + Gem │        │                │
-│ • Idempotency  │        │ • Orch skip    │        │                │
-│ • WAL + safety │        │ • Context gen  │        │                │
-└────────────────┘        └────────────────┘        └────────────────┘
-                                                            │
-                                                            ▼
-Phase 4
-ANTIGRAVITY & HOOKS OPT
-━━━━━━━━━━━━━━━━━━━━━━━
-
-┌──────────────────────┐
-│ • Centralized hooks    │
-│   (no shell scripts)  │
-│ • Antigravity provider │
-│ • Conditional notify   │
-│   skip in signal.rs   │
-│ • .agent/workflows/    │
-│   context generation  │
-│ • Safe tmux injection  │
-│   (Rust adapter)      │
-│ • Setup-hooks merge    │
-└──────────────────────┘
-```
+| Version | Highlights |
+|---------|------------|
+| v0.5.1 | First public release: npm package, colored init, provider-agnostic hooks, full messaging pipeline |
+| v0.5.3 | PostToolUse hook (AskUserQuestion), elicitation_dialog support, orchestrator resolution fix |
+| v0.5.5 | Context auto-inject (SessionStart hook), /clear management, simplified CLI (close removed, clean = kill + delete) |
 
 ## 5. Safety Checklist
 
@@ -185,7 +156,5 @@ ANTIGRAVITY & HOOKS OPT
 | Safe tmux injection in Rust | `tmux::adapter` with `load-buffer`/`paste-buffer` | ✓ Confirmed |
 
 ---
-*Source: Obsidian/1-Projects/Agentic-Coding-Squad/03. Tech Stack Decision - Squad Station.md*
-*Supersedes Go references in 02. Solution Design (sections 13, 15)*
-*Updated with: 04. Upgrade Design — Antigravity & Hooks Optimization*
-*Updated with: 05. Local DB — `.squad/station.db` in project directory*
+*Implementation language: Rust. 171 tests passing.*
+*Current version: v0.5.5*

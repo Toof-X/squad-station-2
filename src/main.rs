@@ -25,9 +25,6 @@ async fn run(cli: cli::Cli) -> Result<()> {
             use std::io::IsTerminal;
             use std::path::PathBuf;
             if cli.tui && std::io::stdin().is_terminal() {
-                // --tui with a real TTY: interactive welcome screen
-                // Guard checks stdin because crossterm's enable_raw_mode()
-                // calls tcsetattr() on stdin — fails with ENXIO if no TTY
                 let has_config = std::path::Path::new("squad.yml").exists();
                 let action = commands::welcome::run_welcome_tui(has_config).await?;
                 match action {
@@ -40,7 +37,6 @@ async fn run(cli: cli::Cli) -> Result<()> {
                     _ => {}
                 }
             } else {
-                // No TTY or no --tui flag: static welcome text
                 commands::welcome::print_welcome();
             }
             Ok(())
@@ -68,7 +64,7 @@ async fn run(cli: cli::Cli) -> Result<()> {
                 }
                 Clone { agent } => commands::clone::run(agent, cli.json).await,
                 Agents => commands::agents::run(cli.json).await,
-                Context => commands::context::run().await,
+                Context { inject } => commands::context::run(inject).await,
                 Status => commands::status::run(cli.json).await,
                 Ui => commands::ui::run().await,
                 View => commands::view::run(cli.json).await,

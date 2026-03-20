@@ -425,7 +425,6 @@ async fn test_build_orchestrator_md_without_sdd() {
     );
 }
 
-// ============================================================
 // AgentMetrics, AlignmentResult, compute_alignment, format_busy_duration tests
 // ============================================================
 
@@ -663,11 +662,8 @@ async fn test_build_orchestrator_md_fleet_status_excludes_orchestrator() {
 
     let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
 
-    // Fleet Status section should not appear if only orchestrator metrics provided
-    // (orchestrator is excluded from the table)
     let fleet_section_exists = content.contains("## Fleet Status");
     if fleet_section_exists {
-        // If Fleet Status section exists, the orchestrator agent should NOT appear in the table
         let fleet_start = content.find("## Fleet Status").unwrap();
         let fleet_end = content[fleet_start..]
             .find("\n## ")
@@ -697,7 +693,6 @@ async fn test_build_orchestrator_md_fleet_status_excludes_dead() {
     )
     .await
     .unwrap();
-    // Mark worker as dead
     db::agents::update_agent_status(&db, "proj-dead-worker", "dead")
         .await
         .unwrap();
@@ -712,7 +707,6 @@ async fn test_build_orchestrator_md_fleet_status_excludes_dead() {
 
     let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
 
-    // Dead agent should not appear in Fleet Status table
     let fleet_section_exists = content.contains("## Fleet Status");
     if fleet_section_exists {
         let fleet_start = content.find("## Fleet Status").unwrap();
@@ -780,7 +774,6 @@ async fn test_build_orchestrator_md_fleet_status_alignment_warning() {
         content.contains("## Fleet Status"),
         "Fleet Status should appear with warning metric"
     );
-    // Warning emoji \u{26a0}\u{fe0f} = ⚠️
     assert!(
         content.contains('\u{26a0}'),
         "Warning emoji should appear for Warning alignment"
@@ -876,7 +869,6 @@ async fn test_context_metrics_pipeline_end_to_end() {
 
     let db = helpers::setup_test_db().await;
 
-    // Set up agents: 1 orchestrator + 2 workers (1 busy, 1 idle)
     db::agents::insert_agent(
         &db, "proj-orchestrator", "claude-code", "orchestrator", None, None,
         None,
@@ -892,10 +884,8 @@ async fn test_context_metrics_pipeline_end_to_end() {
         None,
     ).await.unwrap();
 
-    // Make worker-a busy
     db::agents::update_agent_status(&db, "proj-worker-a", "busy").await.unwrap();
 
-    // Send 2 processing messages to worker-a, 1 to worker-b
     db::messages::insert_message(
         &db, "proj-orchestrator", "proj-worker-a", "task_request",
         "Fix the CSS grid layout for the dashboard", "normal", None,
@@ -909,7 +899,6 @@ async fn test_context_metrics_pipeline_end_to_end() {
         "Optimize database query performance", "normal", None,
     ).await.unwrap();
 
-    // Simulate the metrics assembly that run() does
     let agents = db::agents::list_agents(&db).await.unwrap();
     let mut metrics = Vec::new();
     for agent in &agents {
@@ -932,34 +921,67 @@ async fn test_context_metrics_pipeline_end_to_end() {
 
     let content = build_orchestrator_md(&agents, "/test/project", &[], &metrics);
 
-    // INTEL-01: Pending counts appear
     assert!(content.contains("| proj-worker-a | 2 |"), "Worker A should show 2 pending, got:\n{}", content);
     assert!(content.contains("| proj-worker-b | 1 |"), "Worker B should show 1 pending, got:\n{}", content);
-
-    // INTEL-02: Busy For column present
-    // worker-b is idle (should show "idle")
     assert!(content.contains("idle"), "Worker B should show idle");
-
-    // INTEL-03: Alignment check
-    // worker-a: "Fix CSS grid layout..." vs "Frontend engineer for React and CSS" — overlap on "css" → checkmark
     assert!(content.contains('\u{2705}'), "Worker A should have checkmark alignment (CSS overlap)");
-
-    // INTEL-04: Re-query commands
     assert!(content.contains("squad-station agents"), "Missing re-query: agents");
     assert!(content.contains("squad-station list --status processing"), "Missing re-query: list");
     assert!(content.contains("squad-station status"), "Missing re-query: status");
     assert!(content.contains("squad-station context"), "Missing re-query: context");
 
-    // Orchestrator excluded from Fleet Status
     let fleet_section = content.split("## Fleet Status").nth(1).unwrap_or("");
-    let session_section_start = fleet_section.find("## Session Routing").unwrap_or(fleet_section.len());
+    let session_section_start = fleet_section.find("## Context Management").unwrap_or(
+        fleet_section.find("## Session Routing").unwrap_or(fleet_section.len())
+    );
     let fleet_only = &fleet_section[..session_section_start];
     assert!(!fleet_only.contains("proj-orchestrator"), "Orchestrator should not be in Fleet Status");
 
-    // Section ordering: Fleet Status between PRE-FLIGHT and Session Routing
     let fleet_pos = content.find("## Fleet Status").expect("Fleet Status section missing");
     let preflight_pos = content.find("PRE-FLIGHT").expect("PRE-FLIGHT missing");
     let routing_pos = content.find("## Session Routing").expect("Session Routing missing");
     assert!(fleet_pos > preflight_pos, "Fleet Status should come after PRE-FLIGHT");
     assert!(fleet_pos < routing_pos, "Fleet Status should come before Session Routing");
+}
+
+// ============================================================
+// Context inject output format tests
+// ============================================================
+
+#[tokio::test]
+async fn test_format_inject_output_claude_code_returns_raw_content() {
+    use squad_station::commands::context::format_inject_output;
+
+    let content = "You are the orchestrator.\n## Agent Roster\n";
+    let output = format_inject_output("claude-code", content);
+    assert_eq!(output, content, "Claude Code inject must return raw content");
+}
+
+#[tokio::test]
+async fn test_format_inject_output_gemini_cli_returns_json() {
+    use squad_station::commands::context::format_inject_output;
+
+    let content = "You are the orchestrator.";
+    let output = format_inject_output("gemini-cli", content);
+    let parsed: serde_json::Value = serde_json::from_str(&output)
+        .expect("Gemini CLI inject output must be valid JSON");
+    assert_eq!(
+        parsed["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap(),
+        content,
+        "Gemini JSON must contain additionalContext field"
+    );
+}
+
+#[tokio::test]
+async fn test_format_inject_output_unknown_provider_returns_raw() {
+    use squad_station::commands::context::format_inject_output;
+
+    let content = "fallback content";
+    let output = format_inject_output("some-other-tool", content);
+    assert_eq!(
+        output, content,
+        "Unknown provider should fall back to raw content"
+    );
 }

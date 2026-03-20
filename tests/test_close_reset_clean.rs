@@ -1,17 +1,16 @@
 mod helpers;
 
 use squad_station::commands::clean;
-use squad_station::commands::close;
 use squad_station::config::SquadConfig;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
 // ============================================================
-// close::compute_session_names — pure function tests
+// clean::compute_session_names — pure function tests
 // ============================================================
 
 #[test]
-fn close_session_names_includes_orchestrator_and_workers() {
+fn clean_session_names_includes_orchestrator_and_workers() {
     let yaml = r#"
 project: myapp
 orchestrator:
@@ -24,14 +23,14 @@ agents:
     role: worker
 "#;
     let config: SquadConfig = serde_saphyr::from_str(yaml).unwrap();
-    let names = close::compute_session_names(&config);
+    let names = clean::compute_session_names(&config);
     assert!(names.contains(&"myapp-master".to_string()));
     assert!(names.contains(&"myapp-worker".to_string()));
     assert_eq!(names.len(), 2);
 }
 
 #[test]
-fn close_session_names_orchestrator_defaults_to_role_when_no_name() {
+fn clean_session_names_orchestrator_defaults_to_role_when_no_name() {
     let yaml = r#"
 project: proj
 orchestrator:
@@ -40,12 +39,12 @@ orchestrator:
 agents: []
 "#;
     let config: SquadConfig = serde_saphyr::from_str(yaml).unwrap();
-    let names = close::compute_session_names(&config);
+    let names = clean::compute_session_names(&config);
     assert_eq!(names, vec!["proj-orchestrator"]);
 }
 
 #[test]
-fn close_session_names_multiple_agents_with_different_providers() {
+fn clean_session_names_multiple_agents_with_different_providers() {
     let yaml = r#"
 project: app
 orchestrator:
@@ -60,7 +59,7 @@ agents:
     role: worker
 "#;
     let config: SquadConfig = serde_saphyr::from_str(yaml).unwrap();
-    let names = close::compute_session_names(&config);
+    let names = clean::compute_session_names(&config);
     assert_eq!(names.len(), 3);
     assert!(names.contains(&"app-orchestrator".to_string()));
     assert!(names.contains(&"app-frontend".to_string()));
@@ -68,7 +67,7 @@ agents:
 }
 
 #[test]
-fn close_session_names_agent_falls_back_to_role_when_no_name() {
+fn clean_session_names_agent_falls_back_to_role_when_no_name() {
     let yaml = r#"
 project: myapp
 orchestrator:
@@ -79,7 +78,7 @@ agents:
     role: researcher
 "#;
     let config: SquadConfig = serde_saphyr::from_str(yaml).unwrap();
-    let names = close::compute_session_names(&config);
+    let names = clean::compute_session_names(&config);
     assert!(names.contains(&"myapp-researcher".to_string()));
 }
 
@@ -129,16 +128,6 @@ fn clean_delete_db_file_deletes_file_and_returns_true() {
 #[tokio::test]
 async fn clean_run_errors_on_missing_config() {
     let result = clean::run(PathBuf::from("nonexistent-squad.yml"), true, false).await;
-    assert!(result.is_err(), "run must error when config file not found");
-}
-
-// ============================================================
-// close::run — error handling
-// ============================================================
-
-#[tokio::test]
-async fn close_run_errors_on_missing_config() {
-    let result = close::run(PathBuf::from("nonexistent-squad.yml"), false).await;
     assert!(result.is_err(), "run must error when config file not found");
 }
 

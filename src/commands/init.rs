@@ -408,8 +408,42 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
             }
         }
 
+        // Ask user if they want auto-inject of orchestrator context on session start/compact/clear.
+        // Only prompt when base hooks were successfully auto-installed (supported provider).
+        if hook_installed {
+            println!();
+            println!(
+                "  {}",
+                bold("Auto-inject orchestrator context on session start?")
+            );
+            println!(
+                "  When enabled, the orchestrator automatically receives its role and agent roster"
+            );
+            println!("  whenever the AI starts a new session, resumes, or compacts context.");
+            println!(
+                "  If disabled, you must manually run {} each time.",
+                yellow("/squad-orchestrator")
+            );
+            print!("\n  Enable auto-inject? [y/N] ");
+            use std::io::Write;
+            std::io::stdout().flush().ok();
+
+            let mut answer = String::new();
+            if std::io::stdin().read_line(&mut answer).is_ok()
+                && answer.trim().eq_ignore_ascii_case("y")
+            {
+                match install_session_start_hook(&config.orchestrator.provider) {
+                    Ok(true) => println!("  SessionStart hook: installed"),
+                    Ok(false) => println!("  SessionStart hook: skipped (unsupported provider)"),
+                    Err(e) => println!("  SessionStart hook: failed ({})", e),
+                }
+            } else {
+                println!("  SessionStart hook: skipped");
+            }
+        }
+
         println!("\nGenerating orchestrator context...");
-        if let Err(e) = crate::commands::context::run().await {
+        if let Err(e) = crate::commands::context::run(false).await {
             println!("Warning: Failed to generate context files: {}", e);
         }
 
@@ -615,6 +649,27 @@ fn install_gemini_hooks(settings_file: &str) -> anyhow::Result<bool> {
     settings["hooks"]["Notification"] = serde_json::json!([{
         "matcher": "",
         "hooks": [{"type": "command", "command": notify_cmd}]
+    }]);
+
+    std::fs::write(settings_file, serde_json::to_string_pretty(&settings)?)?;
+    Ok(true)
+}
+
+/// Install SessionStart hook for auto-injecting orchestrator context.
+/// Called separately from base hooks because it requires user opt-in.
+fn install_session_start_hook(provider: &str) -> anyhow::Result<bool> {
+    let settings_file = match provider {
+        "claude-code" => ".claude/settings.json",
+        "gemini-cli" => ".gemini/settings.json",
+        _ => return Ok(false),
+    };
+
+    let mut settings = read_or_create_settings(settings_file)?;
+    let inject_cmd = "squad-station context --inject";
+
+    settings["hooks"]["SessionStart"] = serde_json::json!([{
+        "matcher": "",
+        "hooks": [{"type": "command", "command": inject_cmd}]
     }]);
 
     std::fs::write(settings_file, serde_json::to_string_pretty(&settings)?)?;
@@ -890,6 +945,12 @@ mod tests {
             cmd.contains("squad-station notify"),
             "PostToolUse command must call squad-station notify"
         );
+
+        // Base hooks must NOT include SessionStart (opt-in via install_session_start_hook)
+        assert!(
+            settings["hooks"]["SessionStart"].is_null(),
+            "SessionStart must not be installed by base hooks"
+        );
     }
 
     #[test]
@@ -922,6 +983,100 @@ mod tests {
         assert!(settings["hooks"]["PostToolUse"].is_array());
         assert!(settings["hooks"]["Stop"].is_array());
         assert!(settings["hooks"]["Notification"].is_array());
+        // SessionStart must NOT be added by base hooks
+        assert!(settings["hooks"]["SessionStart"].is_null());
+    }
+
+    #[test]
+    fn test_install_gemini_hooks_excludes_session_start() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let gemini_dir = tmp.path().join(".gemini");
+        std::fs::create_dir_all(&gemini_dir).unwrap();
+        let settings_file = gemini_dir.join("settings.json");
+        let settings_str = settings_file.to_str().unwrap();
+
+        install_gemini_hooks(settings_str).unwrap();
+
+        let content = std::fs::read_to_string(&settings_file).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        // Verify base hooks exist
+        assert!(
+            settings["hooks"]["AfterAgent"].is_array(),
+            "AfterAgent hook must exist"
+        );
+        assert!(
+            settings["hooks"]["Notification"].is_array(),
+            "Notification hook must exist"
+        );
+        // SessionStart must NOT be installed by base hooks
+        assert!(
+            settings["hooks"]["SessionStart"].is_null(),
+            "SessionStart must not be installed by base hooks"
+        );
+    }
+
+    #[test]
+    fn test_install_session_start_hook_claude() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let claude_dir = tmp.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        let settings_file = claude_dir.join("settings.json");
+        // Pre-populate with base hooks
+        std::fs::write(&settings_file, r#"{"hooks":{"Stop":[]}}"#).unwrap();
+
+        // Override CWD so install_session_start_hook finds the settings file
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let result = install_session_start_hook("claude-code");
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert!(result.unwrap());
+
+        let content = std::fs::read_to_string(&settings_file).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        // SessionStart hook installed
+        let ss = &settings["hooks"]["SessionStart"];
+        assert!(ss.is_array(), "SessionStart hook must exist");
+        let ss_cmd = ss[0]["hooks"][0]["command"].as_str().unwrap();
+        assert_eq!(ss_cmd, "squad-station context --inject");
+
+        // Existing hooks preserved
+        assert!(settings["hooks"]["Stop"].is_array());
+    }
+
+    #[test]
+    fn test_install_session_start_hook_gemini() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let gemini_dir = tmp.path().join(".gemini");
+        std::fs::create_dir_all(&gemini_dir).unwrap();
+        let settings_file = gemini_dir.join("settings.json");
+        std::fs::write(&settings_file, r#"{"hooks":{"AfterAgent":[]}}"#).unwrap();
+
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let result = install_session_start_hook("gemini-cli");
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert!(result.unwrap());
+
+        let content = std::fs::read_to_string(&settings_file).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        let ss = &settings["hooks"]["SessionStart"];
+        assert!(ss.is_array(), "SessionStart hook must exist");
+        let ss_cmd = ss[0]["hooks"][0]["command"].as_str().unwrap();
+        assert_eq!(ss_cmd, "squad-station context --inject");
+
+        // Existing hooks preserved
+        assert!(settings["hooks"]["AfterAgent"].is_array());
+    }
+
+    #[test]
+    fn test_install_session_start_hook_unknown_provider_returns_false() {
+        assert!(!install_session_start_hook("antigravity").unwrap());
+        assert!(!install_session_start_hook("unknown-tool").unwrap());
     }
 }
 

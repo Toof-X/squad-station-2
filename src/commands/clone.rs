@@ -56,7 +56,7 @@ pub async fn run(source_name: String, json: bool) -> anyhow::Result<()> {
     // 7. Output result
     if json {
         // CLONE-05: Auto-regenerate context (best-effort)
-        let context_ok = context::run().await.is_ok();
+        let context_ok = context::run(false).await.is_ok();
         let output = serde_json::json!({
             "cloned": true,
             "source": source_name,
@@ -67,7 +67,7 @@ pub async fn run(source_name: String, json: bool) -> anyhow::Result<()> {
     } else {
         println!("Cloned {} -> {}", source_name, clone_name);
         // CLONE-05: Auto-regenerate context (best-effort)
-        match context::run().await {
+        match context::run(false).await {
             Ok(()) => println!("Regenerated squad-orchestrator.md"),
             Err(e) => eprintln!(
                 "Warning: context regeneration failed: {e:#}. Run 'squad-station context' manually."

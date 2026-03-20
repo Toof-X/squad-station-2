@@ -1,28 +1,18 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
-use crate::{config, tmux};
+use crate::config;
 
 use super::clean;
-use super::close;
 
 pub async fn run(config_path: PathBuf, no_relaunch: bool, json: bool) -> Result<()> {
     let config = config::load_config(&config_path)?;
     let db_path = config::resolve_db_path(&config)?;
-    let session_names = close::compute_session_names(&config);
 
     // Kill all sessions
-    let mut killed = 0u32;
-    let mut skipped = 0u32;
-
-    for name in &session_names {
-        if tmux::session_exists(name) {
-            tmux::kill_session(name)?;
-            killed += 1;
-        } else {
-            skipped += 1;
-        }
-    }
+    let (killed, _, _) = clean::kill_all_sessions(&config)?;
+    let session_count = clean::compute_session_names(&config).len() as u32;
+    let skipped = session_count.saturating_sub(killed);
 
     // Delete the database
     let deleted = clean::delete_db_file(&db_path)?;
