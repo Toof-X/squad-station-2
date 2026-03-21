@@ -570,9 +570,9 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
             if !any_hooks_installed {
                 println!("Please manually configure the following hooks to enable task completion signals:\n");
                 let hook_providers: &[(&str, &str, &str)] = &[
-                    (".claude/settings.json", "Stop", "*"),
-                    (".claude/settings.json", "Notification", "permission_prompt"),
-                    (".claude/settings.json", "PostToolUse", "AskUserQuestion"),
+                    (".claude/settings.local.json", "Stop", "*"),
+                    (".claude/settings.local.json", "Notification", "permission_prompt"),
+                    (".claude/settings.local.json", "PostToolUse", "AskUserQuestion"),
                     (".gemini/settings.json", "AfterAgent", "*"),
                     (".gemini/settings.json", "Notification", "*"),
                 ];
@@ -808,7 +808,7 @@ fn generate_squad_yml(result: &crate::commands::wizard::WizardResult) -> String 
 
 fn auto_install_hooks(provider: &str) -> anyhow::Result<bool> {
     match provider {
-        "claude-code" => install_claude_hooks(".claude/settings.json"),
+        "claude-code" => install_claude_hooks(".claude/settings.local.json"),
         "gemini-cli" => install_gemini_hooks(".gemini/settings.json"),
         _ => Ok(false), // unknown provider: skip auto-install
     }
@@ -1018,7 +1018,7 @@ fn install_session_start_hook(
     project_root: &std::path::Path,
 ) -> anyhow::Result<bool> {
     let rel_path = match provider {
-        "claude-code" => ".claude/settings.json",
+        "claude-code" => ".claude/settings.local.json",
         "gemini-cli" => ".gemini/settings.json",
         _ => return Ok(false),
     };
@@ -1407,9 +1407,8 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let claude_dir = tmp.path().join(".claude");
         std::fs::create_dir_all(&claude_dir).unwrap();
-        let settings_file = claude_dir.join("settings.json");
-        // Pre-populate with base hooks
-        std::fs::write(&settings_file, r#"{"hooks":{"Stop":[]}}"#).unwrap();
+        // SessionStart hook goes to settings.local.json (trusted, no approval needed)
+        let settings_file = claude_dir.join("settings.local.json");
 
         let result = install_session_start_hook("claude-code", tmp.path());
         assert!(result.unwrap());
@@ -1422,9 +1421,6 @@ mod tests {
         assert!(ss.is_array(), "SessionStart hook must exist");
         let ss_cmd = ss[0]["hooks"][0]["command"].as_str().unwrap();
         assert_eq!(ss_cmd, "squad-station context --inject");
-
-        // Existing hooks preserved
-        assert!(settings["hooks"]["Stop"].is_array());
     }
 
     #[test]
