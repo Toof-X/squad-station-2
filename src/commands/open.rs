@@ -3,10 +3,10 @@ use anyhow::bail;
 use crate::{config, tmux};
 
 pub async fn run() -> anyhow::Result<()> {
-    let config = config::load_config(std::path::Path::new("squad.yml"))?;
+    let config = config::load_config(std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE))?;
     let monitor_session = format!("{}-monitor", config.project);
 
-    if !tmux::session_exists(&monitor_session) {
+    if !tmux::session_exists(&monitor_session).await {
         bail!(
             "Monitor session '{}' not running. Run 'squad-station init' first.",
             monitor_session

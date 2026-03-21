@@ -100,6 +100,33 @@ pub fn compute_alignment(task_body: &str, description: Option<&str>) -> Alignmen
     }
 }
 
+/// Build per-agent metrics (pending count, busy duration, alignment) for non-orchestrator,
+/// non-dead agents. Shared by `fleet`, `context`, and any command needing fleet status.
+pub async fn build_agent_metrics(
+    pool: &sqlx::SqlitePool,
+    agents: &[Agent],
+) -> anyhow::Result<Vec<AgentMetrics>> {
+    let mut metrics = Vec::new();
+    for agent in agents {
+        if agent.role == "orchestrator" || agent.status == "dead" {
+            continue;
+        }
+        let pending_count = crate::db::messages::count_processing(pool, &agent.name).await?;
+        let busy_for = format_busy_duration(&agent.status, &agent.status_updated_at);
+        let alignment = match crate::db::messages::peek_message(pool, &agent.name).await? {
+            Some(msg) => compute_alignment(&msg.task, agent.description.as_deref()),
+            None => AlignmentResult::None,
+        };
+        metrics.push(AgentMetrics {
+            agent_name: agent.name.clone(),
+            pending_count,
+            busy_for,
+            alignment,
+        });
+    }
+    Ok(metrics)
+}
+
 pub fn build_orchestrator_md(
     agents: &[Agent],
     project_root: &str,
@@ -335,7 +362,7 @@ pub fn build_orchestrator_md(
 }
 
 /// Detect the current tmux session name. Returns None if not in tmux.
-pub fn detect_tmux_session() -> Option<String> {
+pub async fn detect_tmux_session() -> Option<String> {
     // Primary: $SQUAD_AGENT_NAME (set at tmux launch, deterministic)
     if let Ok(name) = std::env::var("SQUAD_AGENT_NAME") {
         if !name.is_empty() {
@@ -345,9 +372,10 @@ pub fn detect_tmux_session() -> Option<String> {
 
     // Fallback: $TMUX_PANE + list-panes (server command, more reliable than display-message)
     if let Ok(pane) = std::env::var("TMUX_PANE") {
-        if let Some(name) = std::process::Command::new("tmux")
+        if let Some(name) = tokio::process::Command::new("tmux")
             .args(["list-panes", "-t", &pane, "-F", "#S"])
             .output()
+            .await
             .ok()
             .and_then(|o| {
                 if o.status.success() {
@@ -363,9 +391,10 @@ pub fn detect_tmux_session() -> Option<String> {
     }
 
     // Last resort: display-message (only works when attached to a client)
-    std::process::Command::new("tmux")
+    tokio::process::Command::new("tmux")
         .args(["display-message", "-p", "#S"])
         .output()
+        .await
         .ok()
         .and_then(|o| {
             if o.status.success() {
@@ -399,7 +428,7 @@ pub fn format_inject_output(provider: &str, content: &str) -> String {
 
 pub async fn run(inject: bool) -> anyhow::Result<()> {
     let project_root = config::find_project_root()?;
-    let config = config::load_config(&project_root.join("squad.yml"))?;
+    let config = config::load_config(&project_root.join(crate::config::DEFAULT_CONFIG_FILE))?;
 
     if inject {
         return run_inject(&project_root, &config).await;
@@ -411,33 +440,7 @@ pub async fn run(inject: bool) -> anyhow::Result<()> {
     let agents = db::agents::list_agents(&pool).await?;
 
     // Build per-agent metrics for Fleet Status (INTEL-01 through INTEL-03)
-    let mut metrics = Vec::new();
-    for agent in &agents {
-        // Skip orchestrator and dead agents — they won't render anyway,
-        // but skipping avoids unnecessary DB queries
-        if agent.role == "orchestrator" || agent.status == "dead" {
-            continue;
-        }
-
-        // INTEL-01: Pending message count
-        let pending_count = db::messages::count_processing(&pool, &agent.name).await?;
-
-        // INTEL-02: Busy duration
-        let busy_for = format_busy_duration(&agent.status, &agent.status_updated_at);
-
-        // INTEL-03: Task-role alignment from most recent processing message
-        let alignment = match db::messages::peek_message(&pool, &agent.name).await? {
-            Some(msg) => compute_alignment(&msg.task, agent.description.as_deref()),
-            None => AlignmentResult::None,
-        };
-
-        metrics.push(AgentMetrics {
-            agent_name: agent.name.clone(),
-            pending_count,
-            busy_for,
-            alignment,
-        });
-    }
+    let metrics = build_agent_metrics(&pool, &agents).await?;
 
     let project_root_str = project_root.to_string_lossy().to_string();
     let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);
@@ -484,7 +487,7 @@ async fn run_inject(
     let orch_name =
         config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
 
-    if let Some(session_name) = detect_tmux_session() {
+    if let Some(session_name) = detect_tmux_session().await {
         if session_name != orch_name {
             eprintln!(
                 "squad-station: inject skipped (session={}, expected={})",
@@ -511,7 +514,7 @@ async fn run_inject(
 
     // Output in provider-appropriate format.
     // Use the current session's provider (not orchestrator's) so each tool gets its format.
-    let provider = match detect_tmux_session() {
+    let provider = match detect_tmux_session().await {
         Some(session_name) => {
             agents
                 .iter()

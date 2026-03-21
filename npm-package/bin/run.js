@@ -27,8 +27,10 @@ function install() {
   // Step 1: Install binary
   var destPath = installBinary();
 
-  // Step 2: Scaffold project files
-  scaffoldProject(force);
+  // Step 2: Scaffold project files (skip when --tui — wizard handles this)
+  if (!tui) {
+    scaffoldProject(force);
+  }
 
   // Done — print next steps
   console.log('');

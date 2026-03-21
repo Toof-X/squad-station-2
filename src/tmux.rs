@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use std::process::Command;
+use tokio::process::Command;
 
 // --- Argument builders (testable without invoking tmux) ---
 
@@ -125,20 +125,20 @@ const MULTI_CMD_DELAY_SECS: u64 = 5;
 /// Sends Enter as a separate call so it is interpreted as a key, not literal text.
 /// Includes a delay between text and Enter to ensure the target pane
 /// has received and rendered the text before Enter is processed.
-pub fn send_keys_literal(target: &str, text: &str) -> Result<()> {
+pub async fn send_keys_literal(target: &str, text: &str) -> Result<()> {
     // Step 1: Send text as literal (no key name interpretation)
     let args = send_keys_args(target, text);
-    let status = Command::new("tmux").args(&args).status()?;
+    let status = Command::new("tmux").args(&args).status().await?;
     if !status.success() {
         bail!("tmux send-keys failed for target: {}", target);
     }
 
     // Step 2: Wait for the pane to receive and render the text
-    std::thread::sleep(std::time::Duration::from_secs(SEND_ENTER_DELAY_SECS));
+    tokio::time::sleep(std::time::Duration::from_secs(SEND_ENTER_DELAY_SECS)).await;
 
     // Step 3: Send Enter as separate key (NOT -l, so Enter key is recognized)
     let enter = enter_args(target);
-    let status = Command::new("tmux").args(&enter).status()?;
+    let status = Command::new("tmux").args(&enter).status().await?;
     if !status.success() {
         bail!("tmux send-keys Enter failed for target: {}", target);
     }
@@ -147,7 +147,7 @@ pub fn send_keys_literal(target: &str, text: &str) -> Result<()> {
 }
 
 /// Inject a single piece of content into a tmux target using load-buffer/paste-buffer.
-fn inject_single(target: &str, text: &str) -> Result<()> {
+async fn inject_single(target: &str, text: &str) -> Result<()> {
     let temp_path =
         std::env::temp_dir().join(format!("squad-station-msg-{}", uuid::Uuid::new_v4()));
     std::fs::write(&temp_path, text)?;
@@ -158,23 +158,23 @@ fn inject_single(target: &str, text: &str) -> Result<()> {
         .to_string();
 
     let load_args = load_buffer_args(&path_str);
-    let status = Command::new("tmux").args(&load_args).status()?;
+    let status = Command::new("tmux").args(&load_args).status().await?;
     if !status.success() {
         let _ = std::fs::remove_file(&temp_path);
         bail!("tmux load-buffer failed for target: {}", target);
     }
 
     let paste_args = paste_buffer_args(target);
-    let status = Command::new("tmux").args(&paste_args).status()?;
+    let status = Command::new("tmux").args(&paste_args).status().await?;
     let _ = std::fs::remove_file(&temp_path);
     if !status.success() {
         bail!("tmux paste-buffer failed for target: {}", target);
     }
 
-    std::thread::sleep(std::time::Duration::from_secs(SEND_ENTER_DELAY_SECS));
+    tokio::time::sleep(std::time::Duration::from_secs(SEND_ENTER_DELAY_SECS)).await;
 
     let enter = enter_args(target);
-    let status = Command::new("tmux").args(&enter).status()?;
+    let status = Command::new("tmux").args(&enter).status().await?;
     if !status.success() {
         bail!("tmux send-keys Enter failed for target: {}", target);
     }
@@ -209,36 +209,37 @@ fn split_compound_commands(body: &str) -> Option<Vec<&str>> {
 /// Claude Code's TUI cannot parse as one input.
 ///
 /// Plain task text containing `&&` (e.g. "check if A && B") is sent as-is.
-pub fn inject_body(target: &str, body: &str) -> Result<()> {
+pub async fn inject_body(target: &str, body: &str) -> Result<()> {
     if let Some(parts) = split_compound_commands(body) {
         // Multiple slash commands: send each separately with delay between
         for (i, part) in parts.iter().enumerate() {
-            inject_single(target, part)?;
+            inject_single(target, part).await?;
             if i < parts.len() - 1 {
                 // Wait for the command to execute before sending the next
-                std::thread::sleep(std::time::Duration::from_secs(MULTI_CMD_DELAY_SECS));
+                tokio::time::sleep(std::time::Duration::from_secs(MULTI_CMD_DELAY_SECS)).await;
             }
         }
     } else {
         // Single command or plain task text: send as-is
-        inject_single(target, body)?;
+        inject_single(target, body).await?;
     }
 
     Ok(())
 }
 
 /// Check whether a tmux session exists
-pub fn session_exists(session_name: &str) -> bool {
+pub async fn session_exists(session_name: &str) -> bool {
     Command::new("tmux")
         .args(["has-session", "-t", session_name])
         .output()
+        .await
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
 /// List all live tmux session names.
-pub fn list_live_session_names() -> Vec<String> {
-    let output = match Command::new("tmux").args(list_sessions_args()).output() {
+pub async fn list_live_session_names() -> Vec<String> {
+    let output = match Command::new("tmux").args(list_sessions_args()).output().await {
         Ok(o) => o,
         Err(_) => return Vec::new(),
     };
@@ -251,24 +252,26 @@ pub fn list_live_session_names() -> Vec<String> {
 }
 
 /// Kill a tmux window by name (idempotent — ignores errors if window does not exist).
-pub fn kill_window(window_name: &str) -> Result<()> {
+pub async fn kill_window(window_name: &str) -> Result<()> {
     let _ = Command::new("tmux")
         .args(kill_window_args(window_name))
-        .status();
+        .status()
+        .await;
     Ok(())
 }
 
 /// Kill a tmux session by name (idempotent — ignores errors if session does not exist).
-pub fn kill_session(session_name: &str) -> Result<()> {
+pub async fn kill_session(session_name: &str) -> Result<()> {
     let _ = Command::new("tmux")
         .args(kill_session_args(session_name))
         .stderr(std::process::Stdio::null())
-        .status();
+        .status()
+        .await;
     Ok(())
 }
 
 /// Create a view window with tiled panes, one per session, each attaching to that session.
-pub fn create_view_window(window_name: &str, sessions: &[String]) -> Result<()> {
+pub async fn create_view_window(window_name: &str, sessions: &[String]) -> Result<()> {
     if sessions.is_empty() {
         return Ok(());
     }
@@ -277,7 +280,8 @@ pub fn create_view_window(window_name: &str, sessions: &[String]) -> Result<()> 
     let first_cmd = format!("tmux attach-session -t {}", sessions[0]);
     let status = Command::new("tmux")
         .args(new_window_args(window_name, &first_cmd))
-        .status()?;
+        .status()
+        .await?;
     if !status.success() {
         bail!("tmux new-window failed for window: {}", window_name);
     }
@@ -287,13 +291,15 @@ pub fn create_view_window(window_name: &str, sessions: &[String]) -> Result<()> 
         let cmd = format!("tmux attach-session -t {}", session);
         Command::new("tmux")
             .args(split_window_args(window_name, &cmd))
-            .status()?;
+            .status()
+            .await?;
     }
 
     // Apply tiled layout
     Command::new("tmux")
         .args(select_layout_args(window_name, "tiled"))
-        .status()?;
+        .status()
+        .await?;
 
     Ok(())
 }
@@ -305,7 +311,7 @@ pub fn create_view_window(window_name: &str, sessions: &[String]) -> Result<()> 
 ///
 /// Each pane runs `sh -c 'TMUX= tmux attach-session -t <agent>'` to bypass the
 /// nested-tmux restriction ($TMUX set in the calling environment).
-pub fn create_view_session(session_name: &str, agent_sessions: &[String]) -> Result<()> {
+pub async fn create_view_session(session_name: &str, agent_sessions: &[String]) -> Result<()> {
     if agent_sessions.is_empty() {
         return Ok(());
     }
@@ -314,7 +320,8 @@ pub fn create_view_session(session_name: &str, agent_sessions: &[String]) -> Res
     let orch_cmd = format!("sh -c 'TMUX= tmux attach-session -t {}'", agent_sessions[0]);
     let status = Command::new("tmux")
         .args(launch_args(session_name, &orch_cmd))
-        .status()?;
+        .status()
+        .await?;
     if !status.success() {
         bail!(
             "tmux new-session failed for monitor session: {}",
@@ -328,7 +335,8 @@ pub fn create_view_session(session_name: &str, agent_sessions: &[String]) -> Res
             format!("sh -c 'TMUX= tmux attach-session -t {}'", agent_sessions[1]);
         Command::new("tmux")
             .args(&["split-window", "-t", session_name, "-h", &first_worker_cmd])
-            .status()?;
+            .status()
+            .await?;
 
         // Remaining workers: split vertically within the right column
         for agent in agent_sessions.iter().skip(2) {
@@ -336,7 +344,8 @@ pub fn create_view_session(session_name: &str, agent_sessions: &[String]) -> Res
             // Target the last pane (right column) for vertical split
             Command::new("tmux")
                 .args(&["split-window", "-t", session_name, "-v", &cmd])
-                .status()?;
+                .status()
+                .await?;
         }
     }
 
@@ -344,16 +353,17 @@ pub fn create_view_session(session_name: &str, agent_sessions: &[String]) -> Res
     let first_pane = format!("{}.0", session_name);
     Command::new("tmux")
         .args(["select-pane", "-t", &first_pane])
-        .status()?;
+        .status()
+        .await?;
 
     Ok(())
 }
 
 /// Resolve tmux session name from a pane ID (e.g. "%3" → "my-agent").
 /// Returns None if tmux is not running or pane ID is invalid.
-pub fn session_name_from_pane(pane_id: &str) -> Option<String> {
+pub async fn session_name_from_pane(pane_id: &str) -> Option<String> {
     let args = list_panes_args(pane_id);
-    let output = Command::new("tmux").args(&args).output().ok()?;
+    let output = Command::new("tmux").args(&args).output().await.ok()?;
     if !output.status.success() {
         return None;
     }
@@ -376,10 +386,10 @@ fn wrap_with_agent_env(session_name: &str, command: &str) -> String {
 ///
 /// Passes the command directly to `new-session` to avoid shell readiness race conditions.
 /// Sets `SQUAD_AGENT_NAME` environment variable for reliable hook identification.
-pub fn launch_agent(session_name: &str, command: &str) -> Result<()> {
+pub async fn launch_agent(session_name: &str, command: &str) -> Result<()> {
     let wrapped = wrap_with_agent_env(session_name, command);
     let args = launch_args(session_name, &wrapped);
-    let status = Command::new("tmux").args(&args).status()?;
+    let status = Command::new("tmux").args(&args).status().await?;
     if !status.success() {
         bail!("Failed to create tmux session: {}", session_name);
     }
@@ -388,10 +398,10 @@ pub fn launch_agent(session_name: &str, command: &str) -> Result<()> {
 
 /// Launch an agent in a new detached tmux session at a specific working directory.
 /// Sets `SQUAD_AGENT_NAME` environment variable for reliable hook identification.
-pub fn launch_agent_in_dir(session_name: &str, command: &str, start_dir: &str) -> Result<()> {
+pub async fn launch_agent_in_dir(session_name: &str, command: &str, start_dir: &str) -> Result<()> {
     let wrapped = wrap_with_agent_env(session_name, command);
     let args = launch_args_with_dir(session_name, &wrapped, start_dir);
-    let status = Command::new("tmux").args(&args).status()?;
+    let status = Command::new("tmux").args(&args).status().await?;
     if !status.success() {
         bail!("Failed to create tmux session: {}", session_name);
     }

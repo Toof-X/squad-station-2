@@ -7,7 +7,7 @@ pub async fn run(
     json: bool,
 ) -> anyhow::Result<()> {
     // 1. Resolve DB path — look for squad.yml in current directory
-    let config_path = std::path::Path::new("squad.yml");
+    let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
     let db_path = if config_path.exists() {
         let cfg = config::load_config(config_path)?;
         config::resolve_db_path(&cfg)?

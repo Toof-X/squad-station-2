@@ -2,7 +2,7 @@ use crate::{commands::context, config, db, tmux};
 
 pub async fn run(source_name: String, json: bool) -> anyhow::Result<()> {
     // 1. Resolve DB path (same pattern as register.rs)
-    let config_path = std::path::Path::new("squad.yml");
+    let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
     let db_path = if config_path.exists() {
         let cfg = config::load_config(config_path)?;
         config::resolve_db_path(&cfg)?
@@ -46,7 +46,7 @@ pub async fn run(source_name: String, json: bool) -> anyhow::Result<()> {
         let project_root_str = project_root.to_string_lossy().to_string();
         let cmd = get_launch_command(&source.tool, source.model.as_deref());
 
-        if let Err(e) = tmux::launch_agent_in_dir(&clone_name, &cmd, &project_root_str) {
+        if let Err(e) = tmux::launch_agent_in_dir(&clone_name, &cmd, &project_root_str).await {
             // CLONE-03: Rollback DB record on tmux failure
             let _ = db::agents::delete_agent_by_name(&pool, &clone_name).await;
             anyhow::bail!("Clone failed: tmux session launch error: {e:#}");
@@ -95,7 +95,7 @@ pub async fn generate_clone_name(
     // Collect all existing names from DB and tmux
     let db_agents = db::agents::list_agents(pool).await?;
     let db_names: Vec<&str> = db_agents.iter().map(|a| a.name.as_str()).collect();
-    let tmux_names = tmux::list_live_session_names();
+    let tmux_names = tmux::list_live_session_names().await;
 
     // Find highest N among names matching `{base}-N`
     let mut max_n: u32 = 1; // base agent is implicitly "-1"

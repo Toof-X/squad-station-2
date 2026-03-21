@@ -101,12 +101,12 @@ fn capture_pane(session_name: &str, lines: u16) -> String {
 // ---------------------------------------------------------------------------
 
 async fn refresh_agents(app: &mut MonitorApp, pane_lines: u16) -> anyhow::Result<()> {
-    let config = config::load_config(std::path::Path::new("squad.yml"))?;
+    let config = config::load_config(std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE))?;
     let db_path = config::resolve_db_path(&config)?;
     let pool = db::connect(&db_path).await?;
 
     let agents = db::agents::list_agents(&pool).await?;
-    let live_sessions = tmux::list_live_session_names();
+    let live_sessions = tmux::list_live_session_names().await;
 
     app.agents = agents
         .iter()

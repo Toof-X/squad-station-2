@@ -22,7 +22,7 @@ pub enum Commands {
     /// Initialize squad from a config file
     Init {
         /// Path to squad config file
-        #[arg(default_value = "squad.yml")]
+        #[arg(default_value = crate::config::DEFAULT_CONFIG_FILE)]
         config: PathBuf,
         /// Launch interactive TUI wizard instead of using existing squad.yml
         #[arg(long)]
@@ -112,13 +112,13 @@ pub enum Commands {
     /// Kill all tmux sessions and remove database (graceful teardown)
     Close {
         /// Path to squad config file
-        #[arg(default_value = "squad.yml")]
+        #[arg(default_value = crate::config::DEFAULT_CONFIG_FILE)]
         config: PathBuf,
     },
     /// Kill all sessions and delete database, then relaunch
     Reset {
         /// Path to squad config file
-        #[arg(default_value = "squad.yml")]
+        #[arg(default_value = crate::config::DEFAULT_CONFIG_FILE)]
         config: PathBuf,
         /// Skip relaunching sessions after reset
         #[arg(long)]
@@ -152,7 +152,7 @@ pub enum Commands {
     /// Kill all squad tmux sessions and delete the database
     Clean {
         /// Path to squad config file
-        #[arg(default_value = "squad.yml")]
+        #[arg(default_value = crate::config::DEFAULT_CONFIG_FILE)]
         config: PathBuf,
         /// Skip confirmation prompt
         #[arg(long, short = 'y')]

@@ -22,7 +22,7 @@ struct AgentStatusSummary {
 
 pub async fn run(json: bool) -> anyhow::Result<()> {
     // 1. Load config + connect
-    let config = config::load_config(std::path::Path::new("squad.yml"))?;
+    let config = config::load_config(std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE))?;
     let db_path = config::resolve_db_path(&config)?;
     let pool = db::connect(&db_path).await?;
 
@@ -43,10 +43,7 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
     // 5. Count pending messages per agent
     let mut summaries: Vec<AgentStatusSummary> = Vec::new();
     for agent in &agents {
-        let pending =
-            db::messages::list_messages(&pool, Some(&agent.name), Some("processing"), 9999)
-                .await?
-                .len();
+        let pending = db::messages::count_processing(&pool, &agent.name).await? as usize;
         summaries.push(AgentStatusSummary {
             name: agent.name.clone(),
             role: agent.role.clone(),

@@ -9,9 +9,10 @@ pub async fn run(body: String, agent: Option<String>, json: bool) -> anyhow::Res
         Some(name) => name,
         None => {
             // Try to get session name from tmux
-            let output = std::process::Command::new("tmux")
+            let output = tokio::process::Command::new("tmux")
                 .args(["display-message", "-p", "#S"])
-                .output();
+                .output()
+                .await;
             match output {
                 Ok(o) if o.status.success() => {
                     String::from_utf8_lossy(&o.stdout).trim().to_string()
@@ -22,7 +23,7 @@ pub async fn run(body: String, agent: Option<String>, json: bool) -> anyhow::Res
     };
 
     // Load config and connect to DB
-    let config_path = std::path::Path::new("squad.yml");
+    let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
     let config = config::load_config(config_path)?;
     let db_path = config::resolve_db_path(&config)?;
     let pool = db::connect(&db_path).await?;
@@ -49,9 +50,9 @@ pub async fn run(body: String, agent: Option<String>, json: bool) -> anyhow::Res
     let notified = if let Some(orch) = orchestrator {
         if orch.tool == "antigravity" {
             false // DB-only orchestrator
-        } else if tmux::session_exists(&orch.name) {
+        } else if tmux::session_exists(&orch.name).await {
             let notification = format!("[SQUAD INPUT NEEDED] Agent '{}': {}", agent, body);
-            tmux::send_keys_literal(&orch.name, &notification)?;
+            tmux::send_keys_literal(&orch.name, &notification).await?;
             true
         } else {
             false

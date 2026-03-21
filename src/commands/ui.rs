@@ -277,7 +277,7 @@ fn draw_ui(frame: &mut Frame, app: &mut App) {
 // ---------------------------------------------------------------------------
 
 pub async fn run() -> anyhow::Result<()> {
-    let config = config::load_config(std::path::Path::new("squad.yml"))?;
+    let config = config::load_config(std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE))?;
     let db_path = config::resolve_db_path(&config)?;
 
     // Install panic hook to restore terminal on panic

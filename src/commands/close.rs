@@ -33,8 +33,8 @@ pub async fn run(config_path: PathBuf, json: bool) -> Result<()> {
     let mut skipped_names: Vec<String> = Vec::new();
 
     for name in &session_names {
-        if tmux::session_exists(name) {
-            tmux::kill_session(name)?;
+        if tmux::session_exists(name).await {
+            tmux::kill_session(name).await?;
             killed += 1;
             killed_names.push(name.clone());
         } else {
@@ -45,13 +45,13 @@ pub async fn run(config_path: PathBuf, json: bool) -> Result<()> {
 
     // Also kill the monitor session
     let monitor_name = format!("{}-monitor", config.project);
-    if tmux::session_exists(&monitor_name) {
-        tmux::kill_session(&monitor_name)?;
+    if tmux::session_exists(&monitor_name).await {
+        tmux::kill_session(&monitor_name).await?;
         killed += 1;
         killed_names.push(monitor_name);
     }
 
-    let remaining = tmux::list_live_session_names();
+    let remaining = tmux::list_live_session_names().await;
 
     if json {
         let output = serde_json::json!({

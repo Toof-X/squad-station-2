@@ -4,7 +4,7 @@ use std::io::IsTerminal;
 use crate::{config, db};
 
 pub async fn run_freeze(json: bool) -> anyhow::Result<()> {
-    let config_path = std::path::Path::new("squad.yml");
+    let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
     let config = config::load_config(config_path)?;
     let db_path = config::resolve_db_path(&config)?;
     let pool = db::connect(&db_path).await?;
@@ -42,7 +42,7 @@ pub async fn run_freeze(json: bool) -> anyhow::Result<()> {
 }
 
 pub async fn run_unfreeze(json: bool) -> anyhow::Result<()> {
-    let config_path = std::path::Path::new("squad.yml");
+    let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
     let config = config::load_config(config_path)?;
     let db_path = config::resolve_db_path(&config)?;
     let pool = db::connect(&db_path).await?;

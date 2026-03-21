@@ -70,15 +70,15 @@ pub fn stop_watchdog(squad_dir: &Path) -> bool {
 
 /// Kill all squad tmux sessions (agents + monitor).
 /// Returns (killed_count, killed_names, skipped_names).
-pub fn kill_all_sessions(config: &config::SquadConfig) -> Result<(u32, Vec<String>, Vec<String>)> {
+pub async fn kill_all_sessions(config: &config::SquadConfig) -> Result<(u32, Vec<String>, Vec<String>)> {
     let session_names = compute_session_names(config);
     let mut killed = 0u32;
     let mut killed_names: Vec<String> = Vec::new();
     let mut skipped_names: Vec<String> = Vec::new();
 
     for name in &session_names {
-        if tmux::session_exists(name) {
-            tmux::kill_session(name)?;
+        if tmux::session_exists(name).await {
+            tmux::kill_session(name).await?;
             killed += 1;
             killed_names.push(name.clone());
         } else {
@@ -88,8 +88,8 @@ pub fn kill_all_sessions(config: &config::SquadConfig) -> Result<(u32, Vec<Strin
 
     // Also kill the monitor session
     let monitor_name = config::sanitize_session_name(&format!("{}-monitor", config.project));
-    if tmux::session_exists(&monitor_name) {
-        tmux::kill_session(&monitor_name)?;
+    if tmux::session_exists(&monitor_name).await {
+        tmux::kill_session(&monitor_name).await?;
         killed += 1;
         killed_names.push(monitor_name);
     }
@@ -132,7 +132,7 @@ pub async fn run(config_path: PathBuf, yes: bool, delete_all: bool, json: bool) 
     let watchdog_stopped = stop_watchdog(squad_dir);
 
     // 2. Kill all tmux sessions
-    let (killed, killed_names, skipped_names) = kill_all_sessions(&config)?;
+    let (killed, killed_names, skipped_names) = kill_all_sessions(&config).await?;
 
     // 3. Delete the database
     let deleted = delete_db_file(&db_path)?;

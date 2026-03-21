@@ -17,7 +17,7 @@ pub async fn run(
     }
 
     // 1. Resolve DB path from squad.yml in cwd
-    let config_path = std::path::Path::new("squad.yml");
+    let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
     let config = config::load_config(config_path)?;
     let db_path = config::resolve_db_path(&config)?;
 
@@ -44,7 +44,7 @@ pub async fn run(
     }
 
     // 4. Check tmux session alive
-    if !tmux::session_exists(&agent) {
+    if !tmux::session_exists(&agent).await {
         bail!(
             "Agent tmux session not running: {}. Run 'squad-station init' to launch.",
             agent
@@ -86,7 +86,7 @@ pub async fn run(
     }
 
     // 6. Inject task into agent tmux session via load-buffer/paste-buffer (TMUX-01, TMUX-02)
-    tmux::inject_body(&agent, &body)?;
+    tmux::inject_body(&agent, &body).await?;
 
     // 7. Output result
     if json {

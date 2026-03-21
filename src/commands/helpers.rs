@@ -6,18 +6,25 @@ use sqlx::SqlitePool;
 /// Reconcile agent statuses against live tmux sessions.
 /// Marks agents as "dead" if their session is gone, or revives to "idle" if session reappears.
 /// Skips db-only agents (e.g. antigravity) that never have tmux sessions.
+/// Session existence checks run in parallel for faster reconciliation with many agents.
 pub async fn reconcile_agent_statuses(pool: &SqlitePool) -> anyhow::Result<()> {
     let agents = db::agents::list_agents(pool).await?;
-    for agent in &agents {
-        // Don't override frozen status — user is in control
-        if agent.status == "frozen" {
-            continue;
-        }
-        // Skip db-only agents (antigravity) — they never have tmux sessions
-        if agent.tool == "antigravity" {
-            continue;
-        }
-        let session_alive = tmux::session_exists(&agent.name);
+
+    // Collect agents that need tmux session checks (skip frozen and db-only)
+    let checkable: Vec<&db::agents::Agent> = agents
+        .iter()
+        .filter(|a| a.status != "frozen" && a.tool != "antigravity")
+        .collect();
+
+    // Check all tmux sessions in parallel
+    let futures: Vec<_> = checkable
+        .iter()
+        .map(|a| tmux::session_exists(&a.name))
+        .collect();
+    let alive_results = futures::future::join_all(futures).await;
+
+    // Apply status updates sequentially (single-writer DB)
+    for (agent, session_alive) in checkable.iter().zip(alive_results) {
         if !session_alive && agent.status != "dead" {
             db::agents::update_agent_status(pool, &agent.name, "dead").await?;
         } else if session_alive && agent.status == "dead" {

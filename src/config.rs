@@ -5,6 +5,9 @@ use std::path::{Path, PathBuf};
 /// Allowed provider values for squad.yml
 const VALID_PROVIDERS: &[&str] = &["antigravity", "claude-code", "gemini-cli"];
 
+/// The default configuration file name
+pub const DEFAULT_CONFIG_FILE: &str = "squad.yml";
+
 /// Valid model identifiers per provider (provider → allowed model slugs)
 fn valid_models_for(provider: &str) -> Option<&'static [&'static str]> {
     match provider {
@@ -114,8 +117,8 @@ fn validate_agent_config(label: &str, agent: &AgentConfig) -> Result<()> {
     if let Some(model) = &agent.model {
         if let Some(valid_models) = valid_models_for(&agent.provider) {
             if !valid_models.contains(&model.as_str()) {
-                bail!(
-                    "Invalid model '{}' for provider '{}' (agent '{}'). Valid models are: {}.",
+                eprintln!(
+                    "Warning: Unknown model '{}' for provider '{}' (agent '{}'). Valid models are typically: {}. Proceeding anyway.",
                     model,
                     agent.provider,
                     label,
@@ -134,11 +137,11 @@ pub fn find_project_root() -> Result<PathBuf> {
     let mut dir = std::env::current_dir()
         .map_err(|e| anyhow!("Cannot determine current directory: {}", e))?;
     loop {
-        if dir.join("squad.yml").exists() {
+        if dir.join(DEFAULT_CONFIG_FILE).exists() {
             return Ok(dir);
         }
         if !dir.pop() {
-            bail!("squad.yml not found in current directory or any parent directory. Run 'squad-station init' with a squad.yml config file.");
+            bail!("{} not found in current directory or any parent directory. Run 'squad-station init' with a {} config file.", DEFAULT_CONFIG_FILE, DEFAULT_CONFIG_FILE);
         }
     }
 }
@@ -147,19 +150,19 @@ pub fn find_project_root() -> Result<PathBuf> {
 /// If the default `squad.yml` path doesn't exist, walks up the directory tree.
 /// Explicit non-default paths (e.g. `/tmp/custom.yml`) are NOT searched up the tree.
 pub fn load_config(path: &Path) -> Result<SquadConfig> {
-    let is_default_path = path == Path::new("squad.yml");
+    let is_default_path = path == Path::new(DEFAULT_CONFIG_FILE);
     let config_path = if path.exists() {
         path.to_path_buf()
     } else if is_default_path {
         // Walk up the directory tree to find squad.yml (supports orchestrator subdirectory)
-        find_project_root()?.join("squad.yml")
+        find_project_root()?.join(DEFAULT_CONFIG_FILE)
     } else {
         // Explicit path given but not found — don't walk up
         path.to_path_buf()
     };
     let content = std::fs::read_to_string(&config_path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            anyhow!("squad.yml not found in current directory or any parent directory. Run 'squad-station init' with a squad.yml config file.")
+            anyhow!("{} not found in current directory or any parent directory. Run 'squad-station init' with a {} config file.", DEFAULT_CONFIG_FILE, DEFAULT_CONFIG_FILE)
         } else {
             anyhow!("Failed to read {}: {}", config_path.display(), e)
         }
@@ -172,17 +175,24 @@ pub fn load_config(path: &Path) -> Result<SquadConfig> {
 /// Resolve the DB path. Uses project root (where squad.yml lives), not CWD.
 /// SQUAD_STATION_DB env var overrides the default path (useful for testing).
 pub fn resolve_db_path(_config: &SquadConfig) -> Result<PathBuf> {
+    let db_path = resolve_db_path_only(_config)?;
+
+    // Ensure the parent directory exists
+    if let Some(parent) = db_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    Ok(db_path)
+}
+
+/// Resolve the database path without creating any directories.
+pub fn resolve_db_path_only(_config: &SquadConfig) -> Result<PathBuf> {
     let db_path = if let Ok(env_path) = std::env::var("SQUAD_STATION_DB") {
         PathBuf::from(env_path)
     } else {
         let project_root = find_project_root()?;
         project_root.join(".squad").join("station.db")
     };
-
-    // Ensure the parent directory exists
-    if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
 
     Ok(db_path)
 }
@@ -258,16 +268,9 @@ mod tests {
     }
 
     #[test]
-    fn invalid_model_rejected() {
-        let err = validate_agent_config("a", &make_agent("claude-code", Some("claude-code-2")))
-            .unwrap_err();
-        assert!(err.to_string().contains("opus, sonnet, haiku"));
-
-        let err =
-            validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-pro"))).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("gemini-3.1-pro-preview, gemini-3-flash-preview"));
+    fn invalid_model_warns_but_succeeds() {
+        assert!(validate_agent_config("a", &make_agent("claude-code", Some("claude-code-2"))).is_ok());
+        assert!(validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-pro"))).is_ok());
     }
 
     #[test]

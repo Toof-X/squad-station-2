@@ -57,6 +57,36 @@ fn prompt_reinit() -> anyhow::Result<ReinitChoice> {
 /// Append new worker agent entries to existing squad.yml content.
 /// Preserves all existing content; new entries are appended at the end.
 /// If new_workers is empty, returns the original content unchanged.
+#[derive(serde::Serialize)]
+struct SquadYmlSdd<'a> {
+    name: &'a str,
+    playbook: String,
+}
+
+#[derive(serde::Serialize)]
+struct SquadYmlAgent<'a> {
+    provider: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<&'a str>,
+    role: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<&'a str>,
+}
+
+#[derive(serde::Serialize)]
+struct SquadYmlDoc<'a> {
+    project: &'a str,
+    sdd: Vec<SquadYmlSdd<'a>>,
+    orchestrator: SquadYmlAgent<'a>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    agents: Vec<SquadYmlAgent<'a>>,
+}
+
+/// Append new worker agent entries to existing squad.yml content.
+/// Preserves all existing content; new entries are appended at the end.
+/// If new_workers is empty, returns the original content unchanged.
 fn append_workers_to_yaml(
     existing_yaml: &str,
     new_workers: &[crate::commands::wizard::AgentInput],
@@ -70,16 +100,21 @@ fn append_workers_to_yaml(
         result.push('\n');
     }
     for agent in new_workers {
-        result.push_str(&format!("  - provider: {}\n", agent.provider));
-        if !agent.name.is_empty() {
-            result.push_str(&format!("    name: {}\n", agent.name));
+        let single = SquadYmlAgent {
+            provider: &agent.provider,
+            name: if agent.name.is_empty() { None } else { Some(&agent.name) },
+            role: "worker",
+            model: agent.model.as_deref(),
+            description: agent.description.as_deref(),
+        };
+        let yaml_str = serde_saphyr::to_string(&single).unwrap_or_default();
+        let cleaned = yaml_str.replace("---\n", "");
+        let mut lines = cleaned.lines();
+        if let Some(first) = lines.next() {
+            result.push_str(&format!("  - {}\n", first));
         }
-        result.push_str("    role: worker\n");
-        if let Some(ref model) = agent.model {
-            result.push_str(&format!("    model: {}\n", model));
-        }
-        if let Some(ref desc) = agent.description {
-            result.push_str(&format!("    description: {}\n", desc));
+        for line in lines {
+            result.push_str(&format!("    {}\n", line));
         }
     }
     result
@@ -92,6 +127,8 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
     // Carries routing_hints from wizard result to DB insertion.
     // routing_hints are NOT stored in squad.yml, so they must be kept separately.
     let mut wizard_routing_hints: Option<std::collections::HashMap<String, Option<String>>> = None;
+    // Deferred SDD playbook creation: save workflow so .squad/ is only created after setup
+    let mut deferred_sdd: Option<crate::commands::wizard::SddWorkflow> = None;
 
     if !config_path.exists() {
         if tui {
@@ -103,12 +140,13 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                     std::fs::create_dir_all(&install_dir)?;
                     project_dir = Some(install_dir.canonicalize().unwrap_or(install_dir.clone()).to_string_lossy().to_string());
                     std::env::set_current_dir(&install_dir)?;
-                    config_path = install_dir.join("squad.yml");
+                    config_path = install_dir.join(crate::config::DEFAULT_CONFIG_FILE);
                     // Capture routing hints before result fields are moved into yaml generation
                     wizard_routing_hints = Some(extract_routing_hints(&result));
+                    // Defer SDD playbook creation — .squad/ will be created after setup completes
+                    deferred_sdd = Some(result.sdd);
                     let yaml = generate_squad_yml(&result);
                     std::fs::write(&config_path, &yaml)?;
-                    create_sdd_playbook(&config_path, &result);
                     println!("Generated squad.yml for project '{}' in {}", result.project, result.install_dir);
                     // Fall through to load_config below
                 }
@@ -130,7 +168,7 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
             ReinitChoice::Overwrite => {
                 // Kill existing sessions from the old config before overwriting
                 if let Ok(old_cfg) = crate::config::load_config(&config_path) {
-                    kill_config_sessions(&old_cfg);
+                    kill_config_sessions(&old_cfg).await;
                 }
                 purge_db_on_init = true;
                 match crate::commands::wizard::run().await? {
@@ -139,7 +177,7 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                         wizard_routing_hints = Some(extract_routing_hints(&result));
                         let yaml = generate_squad_yml(&result);
                         std::fs::write(&config_path, &yaml)?;
-                        create_sdd_playbook(&config_path, &result);
+                        create_sdd_playbook(&config_path, result.sdd);
                         println!("Replaced squad.yml for project '{}'", result.project);
                         // Fall through to load_config below
                     }
@@ -197,8 +235,22 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
     // 1. Parse squad.yml
     let config = config::load_config(&config_path)?;
 
+    // Compute project root from config_path (works for both normal and temp-DB paths)
+    let project_root = config_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(std::path::Path::new("."));
+
     // 2. Resolve DB path
-    let db_path = config::resolve_db_path(&config)?;
+    // For TUI new-project: use temp DB so .squad/ is only created after setup completes
+    let final_db_path = project_root.join(".squad").join("station.db");
+    let (db_path, temp_db_dir) = if project_dir.is_some() {
+        let temp_dir = std::env::temp_dir().join(format!("squad-init-{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir)?;
+        (temp_dir.join("station.db"), Some(temp_dir))
+    } else {
+        (config::resolve_db_path(&config)?, None)
+    };
 
     // 3. Connect to DB (creates file + runs migrations)
     let pool = db::connect(&db_path).await?;
@@ -236,18 +288,14 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         // Antigravity: DB-only orchestrator — register to DB only, no tmux session.
         db_only_names.push(orch_name.clone());
         false
-    } else if tmux::session_exists(&orch_name) {
+    } else if tmux::session_exists(&orch_name).await {
         false
     } else {
         // Orchestrator launches at project root.
         // Context loaded via /squad-orchestrator slash command.
-        let project_root = db_path
-            .parent()
-            .and_then(|p| p.parent())
-            .unwrap_or(std::path::Path::new("."));
         let project_root_str = project_root.to_string_lossy().to_string();
         let cmd = get_launch_command(&config.orchestrator);
-        tmux::launch_agent_in_dir(&orch_name, &cmd, &project_root_str)?;
+        tmux::launch_agent_in_dir(&orch_name, &cmd, &project_root_str).await?;
         true
     };
     let orch_skipped = !orch_launched && !config.orchestrator.is_db_only();
@@ -284,20 +332,16 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
             continue;
         }
 
-        if tmux::session_exists(&agent_name) {
+        if tmux::session_exists(&agent_name).await {
             skipped += 1;
             skipped_names.push(agent_name.clone());
             continue; // Idempotent: skip already-running agents
         }
 
         // GAP-05: Workers launch at project root directory
-        let project_root = db_path
-            .parent()
-            .and_then(|p| p.parent())
-            .unwrap_or(std::path::Path::new("."));
         let project_root_str = project_root.to_string_lossy().to_string();
         let cmd = get_launch_command(agent);
-        match tmux::launch_agent_in_dir(&agent_name, &cmd, &project_root_str) {
+        match tmux::launch_agent_in_dir(&agent_name, &cmd, &project_root_str).await {
             Ok(()) => launched += 1,
             Err(e) => failed.push((agent_name.clone(), format!("{e:#}"))),
         }
@@ -334,15 +378,15 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         monitor_sessions.push(agent_name);
     }
     // Kill existing monitor session before recreating
-    tmux::kill_session(&monitor_name)?;
+    tmux::kill_session(&monitor_name).await?;
     let monitor_created = if !monitor_sessions.is_empty() {
-        tmux::create_view_session(&monitor_name, &monitor_sessions).is_ok()
+        tmux::create_view_session(&monitor_name, &monitor_sessions).await.is_ok()
     } else {
         false
     };
 
     // 8. Output results
-    let db_path_str = db_path.display().to_string();
+    let db_path_str = final_db_path.display().to_string();
 
     if json {
         let output = serde_json::json!({
@@ -387,8 +431,9 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
     }
 
     // 9a. Create .squad/log/ directory for signal and watchdog logs
-    {
-        let log_dir = db_path
+    // (skipped when using temp DB — will be created after .squad/ is finalized)
+    if temp_db_dir.is_none() {
+        let log_dir = final_db_path
             .parent()
             .unwrap_or(std::path::Path::new(".squad"))
             .join("log");
@@ -483,10 +528,6 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
             if std::io::stdin().read_line(&mut answer).is_ok()
                 && !answer.trim().eq_ignore_ascii_case("n")
             {
-                let project_root = config_path
-                    .parent()
-                    .filter(|p| !p.as_os_str().is_empty())
-                    .unwrap_or(std::path::Path::new("."));
                 match install_session_start_hook(&config.orchestrator.provider, project_root) {
                     Ok(true) => println!("  SessionStart hook: installed"),
                     Ok(false) => println!("  SessionStart hook: skipped (unsupported provider)"),
@@ -497,51 +538,158 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
             }
         }
 
-        println!("\nGenerating orchestrator context...");
-        if let Err(e) = crate::commands::context::run(false).await {
-            println!("Warning: Failed to generate context files: {}", e);
-        }
+        // Defer context/watch/reconcile when using temp DB — they call resolve_db_path
+        // which would create .squad/ prematurely. Run them after step 10 finalizes .squad/.
+        if temp_db_dir.is_some() {
+            // Write project directory marker now (before step 10 closes pool)
+            if let Some(ref dir) = project_dir {
+                let marker = std::env::temp_dir().join(".squad-project-dir");
+                let _ = std::fs::write(&marker, dir);
+            }
+        } else {
+            println!("\nGenerating orchestrator context...");
+            if let Err(e) = crate::commands::context::run(false).await {
+                println!("Warning: Failed to generate context files: {}", e);
+            }
 
-        println!("\n{}", bold("Get Started:"));
-        println!();
-        println!("  1. Attach to the orchestrator session:");
-        println!("     {}", cyan(&format!("tmux attach -t {}", orch_name)));
-        println!();
-        println!("  2. Load the orchestrator context by typing:");
-        println!("     {}", yellow("/squad-orchestrator"));
-        if monitor_created {
+            println!("\n{}", bold("Get Started:"));
             println!();
-            println!("  Monitor all agents (interactive panes):");
-            println!("     {}", cyan(&format!("tmux attach -t {}", monitor_name)));
-        }
-        println!();
-        println!("  Monitor all agents (read-only view):");
-        println!("     {}", cyan("squad-station view"));
-        println!();
+            println!("  1. Attach to the orchestrator session:");
+            println!("     {}", cyan(&format!("tmux attach -t {}", orch_name)));
+            println!();
+            println!("  2. Load the orchestrator context by typing:");
+            println!("     {}", yellow("/squad-orchestrator"));
+            if monitor_created {
+                println!();
+                println!("  Monitor all agents (interactive panes):");
+                println!("     {}", cyan(&format!("tmux attach -t {}", monitor_name)));
+            }
+            println!();
+            println!("  Monitor all agents (read-only view):");
+            println!("     {}", cyan("squad-station view"));
+            println!();
 
-        // Auto-start watchdog daemon for self-healing
-        match crate::commands::watch::run(30, 5, true, false).await {
-            Ok(()) => println!("  Watchdog: started (30s interval)"),
-            Err(e) => {
-                let msg = format!("{}", e);
-                if msg.contains("already running") {
-                    println!("  Watchdog: already running");
-                } else {
-                    println!("  Watchdog: failed to start ({})", e);
+            // Auto-start watchdog daemon for self-healing
+            match crate::commands::watch::run(30, 5, true, false).await {
+                Ok(()) => println!("  Watchdog: started (30s interval)"),
+                Err(e) => {
+                    let msg = format!("{}", e);
+                    if msg.contains("already running") {
+                        println!("  Watchdog: already running");
+                    } else {
+                        println!("  Watchdog: failed to start ({})", e);
+                    }
+                }
+            }
+            println!();
+
+            // Reconcile agent statuses before printing diagram
+            crate::commands::helpers::reconcile_agent_statuses(&pool).await?;
+            let agents = db::agents::list_agents(&pool).await?;
+            crate::commands::diagram::print_diagram(&agents);
+
+            // Write project directory to temp file for parent process (run.js) to cd into
+            if let Some(ref dir) = project_dir {
+                let marker = std::env::temp_dir().join(".squad-project-dir");
+                let _ = std::fs::write(&marker, dir);
+            }
+        }
+    }
+
+    // 10. Finalize .squad/ directory for TUI new-project (deferred creation)
+    // Close temp DB pool, create .squad/, move DB files, create SDD playbook + log dir.
+    // Then run deferred context/watch/reconcile that need .squad/ to exist.
+    if let Some(ref temp_dir) = temp_db_dir {
+        pool.close().await;
+
+        let squad_dir = project_root.join(".squad");
+        std::fs::create_dir_all(&squad_dir)?;
+
+        // Move temp DB files to .squad/ (copy+remove fallback for cross-device)
+        let final_db = squad_dir.join("station.db");
+        let temp_db_file = temp_dir.join("station.db");
+        if std::fs::rename(&temp_db_file, &final_db).is_err() {
+            std::fs::copy(&temp_db_file, &final_db)?;
+            let _ = std::fs::remove_file(&temp_db_file);
+        }
+        for ext in &["station.db-wal", "station.db-shm"] {
+            let src = temp_dir.join(ext);
+            let dst = squad_dir.join(ext);
+            if src.exists() {
+                if std::fs::rename(&src, &dst).is_err() {
+                    let _ = std::fs::copy(&src, &dst);
+                    let _ = std::fs::remove_file(&src);
                 }
             }
         }
-        println!();
+        let _ = std::fs::remove_dir_all(temp_dir);
 
-        // Reconcile agent statuses before printing diagram
-        crate::commands::helpers::reconcile_agent_statuses(&pool).await?;
-        let agents = db::agents::list_agents(&pool).await?;
-        crate::commands::diagram::print_diagram(&agents);
+        // Create SDD playbook in .squad/sdd/
+        if let Some(sdd) = deferred_sdd {
+            create_sdd_playbook(&config_path, sdd);
+        }
 
-        // Write project directory to temp file for parent process (run.js) to cd into
-        if let Some(ref dir) = project_dir {
-            let marker = std::env::temp_dir().join(".squad-project-dir");
-            let _ = std::fs::write(&marker, dir);
+        // Create log directory
+        let _ = std::fs::create_dir_all(squad_dir.join("log"));
+
+        // Now .squad/ exists — run deferred operations
+        if !json {
+            let cyan = |s: &str| {
+                s.if_supports_color(Stream::Stdout, |s| s.cyan())
+                    .to_string()
+            };
+            let yellow = |s: &str| {
+                s.if_supports_color(Stream::Stdout, |s| s.yellow())
+                    .to_string()
+            };
+            let bold = |s: &str| {
+                s.if_supports_color(Stream::Stdout, |s| s.bold())
+                    .to_string()
+            };
+
+            println!("\nGenerating orchestrator context...");
+            if let Err(e) = crate::commands::context::run(false).await {
+                println!("Warning: Failed to generate context files: {}", e);
+            }
+
+            println!("\n{}", bold("Get Started:"));
+            println!();
+            println!("  1. Attach to the orchestrator session:");
+            println!("     {}", cyan(&format!("tmux attach -t {}", orch_name)));
+            println!();
+            println!("  2. Load the orchestrator context by typing:");
+            println!("     {}", yellow("/squad-orchestrator"));
+            if monitor_created {
+                println!();
+                println!("  Monitor all agents (interactive panes):");
+                println!("     {}", cyan(&format!("tmux attach -t {}", monitor_name)));
+            }
+            println!();
+            println!("  Monitor all agents (read-only view):");
+            println!("     {}", cyan("squad-station view"));
+            println!();
+
+            // Reconnect to finalized DB for reconcile + diagram
+            let final_pool = db::connect(&final_db).await?;
+
+            // Auto-start watchdog daemon for self-healing
+            match crate::commands::watch::run(30, 5, true, false).await {
+                Ok(()) => println!("  Watchdog: started (30s interval)"),
+                Err(e) => {
+                    let msg = format!("{}", e);
+                    if msg.contains("already running") {
+                        println!("  Watchdog: already running");
+                    } else {
+                        println!("  Watchdog: failed to start ({})", e);
+                    }
+                }
+            }
+            println!();
+
+            // Reconcile agent statuses before printing diagram
+            crate::commands::helpers::reconcile_agent_statuses(&final_pool).await?;
+            let agents = db::agents::list_agents(&final_pool).await?;
+            crate::commands::diagram::print_diagram(&agents);
         }
     }
 
@@ -550,18 +698,18 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
 
 /// Kill all tmux sessions (orchestrator + workers + monitor) for a given config.
 /// Used before overwriting squad.yml so stale sessions don't persist.
-fn kill_config_sessions(cfg: &config::SquadConfig) {
+async fn kill_config_sessions(cfg: &config::SquadConfig) {
     let orch_role = cfg.orchestrator.name.as_deref().unwrap_or("orchestrator");
     let orch_name = config::sanitize_session_name(&format!("{}-{}", cfg.project, orch_role));
     let monitor_name = config::sanitize_session_name(&format!("{}-monitor", cfg.project));
 
-    let _ = tmux::kill_session(&orch_name);
-    let _ = tmux::kill_session(&monitor_name);
+    let _ = tmux::kill_session(&orch_name).await;
+    let _ = tmux::kill_session(&monitor_name).await;
 
     for agent in &cfg.agents {
         let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
         let session_name = config::sanitize_session_name(&format!("{}-{}", cfg.project, role_suffix));
-        let _ = tmux::kill_session(&session_name);
+        let _ = tmux::kill_session(&session_name).await;
     }
 }
 
@@ -569,7 +717,7 @@ fn kill_config_sessions(cfg: &config::SquadConfig) {
 /// Creates the directory if it doesn't exist. Skips silently if the file already exists.
 fn create_sdd_playbook(
     config_path: &std::path::Path,
-    result: &crate::commands::wizard::WizardResult,
+    sdd: crate::commands::wizard::SddWorkflow,
 ) {
     let project_dir = config_path.parent().unwrap_or(std::path::Path::new("."));
     let sdd_dir = project_dir.join(".squad").join("sdd");
@@ -577,12 +725,12 @@ fn create_sdd_playbook(
         eprintln!("Warning: could not create .squad/sdd/: {}", e);
         return;
     }
-    let filename = format!("{}-playbook.md", result.sdd.as_str());
+    let filename = format!("{}-playbook.md", sdd.as_str());
     let playbook_path = sdd_dir.join(&filename);
     if playbook_path.exists() {
         return; // already present — don't overwrite user edits
     }
-    if let Err(e) = std::fs::write(&playbook_path, result.sdd.playbook_content()) {
+    if let Err(e) = std::fs::write(&playbook_path, sdd.playbook_content()) {
         eprintln!("Warning: could not write {}: {}", playbook_path.display(), e);
     }
 }
@@ -590,46 +738,33 @@ fn create_sdd_playbook(
 /// Generate a squad.yml YAML string from a completed WizardResult.
 /// Optional fields (name, model, description) are omitted when empty/None.
 fn generate_squad_yml(result: &crate::commands::wizard::WizardResult) -> String {
-    let mut yaml = format!("project: {}\n", result.project);
-
-    // SDD section
     let sdd_name = result.sdd.as_str();
-    yaml.push_str(&format!(
-        "\nsdd:\n  - name: {}\n    playbook: \".squad/sdd/{}-playbook.md\"\n",
-        sdd_name, sdd_name
-    ));
 
-    // Orchestrator section
-    yaml.push_str("\norchestrator:\n");
-    yaml.push_str(&format!("  provider: {}\n", result.orchestrator.provider));
-    if !result.orchestrator.name.is_empty() {
-        yaml.push_str(&format!("  name: {}\n", result.orchestrator.name));
-    }
-    yaml.push_str("  role: orchestrator\n");
-    if let Some(ref model) = result.orchestrator.model {
-        yaml.push_str(&format!("  model: {}\n", model));
-    }
-    if let Some(ref desc) = result.orchestrator.description {
-        yaml.push_str(&format!("  description: {}\n", desc));
-    }
+    let doc = SquadYmlDoc {
+        project: &result.project,
+        sdd: vec![SquadYmlSdd {
+            name: sdd_name,
+            playbook: format!(".squad/sdd/{}-playbook.md", sdd_name),
+        }],
+        orchestrator: SquadYmlAgent {
+            provider: &result.orchestrator.provider,
+            name: if result.orchestrator.name.is_empty() { None } else { Some(&result.orchestrator.name) },
+            role: "orchestrator",
+            model: result.orchestrator.model.as_deref(),
+            description: result.orchestrator.description.as_deref(),
+        },
+        agents: result.agents.iter().map(|a| SquadYmlAgent {
+            provider: &a.provider,
+            name: if a.name.is_empty() { None } else { Some(&a.name) },
+            role: "worker",
+            model: a.model.as_deref(),
+            description: a.description.as_deref(),
+        }).collect(),
+    };
 
-    // Agents section
-    yaml.push_str("\nagents:\n");
-    for agent in &result.agents {
-        yaml.push_str(&format!("  - provider: {}\n", agent.provider));
-        if !agent.name.is_empty() {
-            yaml.push_str(&format!("    name: {}\n", agent.name));
-        }
-        yaml.push_str("    role: worker\n");
-        if let Some(ref model) = agent.model {
-            yaml.push_str(&format!("    model: {}\n", model));
-        }
-        if let Some(ref desc) = agent.description {
-            yaml.push_str(&format!("    description: {}\n", desc));
-        }
-    }
-
-    yaml
+    serde_saphyr::to_string(&doc)
+        .unwrap_or_else(|_| "".to_string())
+        .replace("---\n", "")
 }
 
 fn auto_install_hooks(provider: &str) -> anyhow::Result<bool> {
@@ -1047,7 +1182,7 @@ mod tests {
         let result = make_wizard_result();
         let yaml = generate_squad_yml(&result);
         assert!(
-            yaml.contains("playbook: \".squad/sdd/gsd-playbook.md\""),
+            yaml.contains("playbook: .squad/sdd/gsd-playbook.md") || yaml.contains("playbook: \".squad/sdd/gsd-playbook.md\""),
             "SDD playbook path must be correct, got:\n{}",
             yaml
         );

@@ -1,14 +1,12 @@
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
-use crate::commands::context::{
-    compute_alignment, format_busy_duration, AgentMetrics, AlignmentResult,
-};
+use crate::commands::context::{build_agent_metrics, AgentMetrics, AlignmentResult};
 use crate::commands::helpers::reconcile_agent_statuses;
 use crate::{config, db};
 
 pub async fn run(json: bool) -> anyhow::Result<()> {
-    let config = config::load_config(std::path::Path::new("squad.yml"))?;
+    let config = config::load_config(std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE))?;
     let db_path = config::resolve_db_path(&config)?;
     let pool = db::connect(&db_path).await?;
 
@@ -27,26 +25,7 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
     }
 
     // Build per-agent metrics (skip orchestrator and dead)
-    let mut metrics: Vec<AgentMetrics> = Vec::new();
-    for agent in &agents {
-        if agent.role == "orchestrator" || agent.status == "dead" {
-            continue;
-        }
-
-        let pending_count = db::messages::count_processing(&pool, &agent.name).await?;
-        let busy_for = format_busy_duration(&agent.status, &agent.status_updated_at);
-        let alignment = match db::messages::peek_message(&pool, &agent.name).await? {
-            Some(msg) => compute_alignment(&msg.task, agent.description.as_deref()),
-            None => AlignmentResult::None,
-        };
-
-        metrics.push(AgentMetrics {
-            agent_name: agent.name.clone(),
-            pending_count,
-            busy_for,
-            alignment,
-        });
-    }
+    let metrics: Vec<AgentMetrics> = build_agent_metrics(&pool, &agents).await?;
 
     if json {
         let json_metrics: Vec<serde_json::Value> = metrics

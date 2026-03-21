@@ -48,7 +48,7 @@ pub async fn run(
     daemon: bool,
     stop: bool,
 ) -> Result<()> {
-    let config_path = std::path::Path::new("squad.yml");
+    let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
     let config = config::load_config(config_path)?;
     let db_path = config::resolve_db_path(&config)?;
     let squad_dir = db_path
@@ -152,9 +152,12 @@ pub async fn run(
         !SHUTDOWN.load(std::sync::atomic::Ordering::Relaxed)
     };
 
+    // Create DB pool once and reuse across ticks (avoids repeated migration checks)
+    let pool = db::connect(&db_path).await?;
+
     while is_running() {
         if let Err(e) = tick(
-            &db_path,
+            &pool,
             &squad_dir,
             stall_threshold_mins,
             &mut nudge_state,
@@ -174,6 +177,7 @@ pub async fn run(
         }
     }
 
+    pool.close().await;
     log_watch(&squad_dir, "INFO", "watchdog stopped");
     let _ = std::fs::remove_file(&pid_file);
     Ok(())
@@ -196,16 +200,14 @@ extern "C" fn signal_trampoline(_sig: libc::c_int) {
 }
 
 async fn tick(
-    db_path: &std::path::Path,
+    pool: &sqlx::SqlitePool,
     squad_dir: &std::path::Path,
     stall_threshold_mins: u64,
     nudge_state: &mut NudgeState,
     last_msg_count: &mut Option<i64>,
 ) -> Result<()> {
-    let pool = db::connect(db_path).await?;
-
     // Pass 1: Individual agent reconciliation
-    let results = reconcile::reconcile_agents(&pool, false).await?;
+    let results = reconcile::reconcile_agents(pool, false).await?;
     for r in &results {
         if r.action != "skip" {
             log_watch(
@@ -217,7 +219,7 @@ async fn tick(
     }
 
     // Check for new message activity (resets nudge state)
-    let current_count = db::messages::total_count(&pool).await?;
+    let current_count = db::messages::total_count(pool).await?;
     if let Some(prev) = last_msg_count {
         if current_count != *prev {
             nudge_state.reset();
@@ -226,16 +228,16 @@ async fn tick(
     *last_msg_count = Some(current_count);
 
     // Pass 2: Global stall detection
-    let agents = db::agents::list_agents(&pool).await?;
+    let agents = db::agents::list_agents(pool).await?;
     let non_dead: Vec<_> = agents.iter().filter(|a| a.status != "dead").collect();
 
     if !non_dead.is_empty() {
         let all_idle = non_dead.iter().all(|a| a.status == "idle");
-        let processing_count = db::messages::count_processing_all(&pool).await.unwrap_or(0);
+        let processing_count = db::messages::count_processing_all(pool).await.unwrap_or(0);
 
         if all_idle && processing_count == 0 {
             // Check how long since last activity
-            let last_activity = db::messages::last_activity_timestamp(&pool).await?;
+            let last_activity = db::messages::last_activity_timestamp(pool).await?;
 
             if let Some(ref ts) = last_activity {
                 if let Ok(last_ts) = chrono::DateTime::parse_from_rfc3339(ts) {
@@ -246,8 +248,8 @@ async fn tick(
                         let now = chrono::Utc::now();
                         if nudge_state.should_nudge(now) {
                             // Find orchestrator and nudge
-                            if let Ok(Some(orch)) = db::agents::get_orchestrator(&pool).await {
-                                if orch.tool != "antigravity" && tmux::session_exists(&orch.name) {
+                            if let Ok(Some(orch)) = db::agents::get_orchestrator(pool).await {
+                                if orch.tool != "antigravity" && tmux::session_exists(&orch.name).await {
                                     let msg = match nudge_state.count {
                                         0 => format!(
                                             "[SQUAD WATCHDOG] System idle for {}m — all agents idle, no pending tasks. Run: squad-station status",
@@ -262,7 +264,7 @@ async fn tick(
                                             idle_mins
                                         ),
                                     };
-                                    let _ = tmux::send_keys_literal(&orch.name, &msg);
+                                    let _ = tmux::send_keys_literal(&orch.name, &msg).await;
                                     log_watch(
                                         squad_dir,
                                         "NUDGE",
@@ -310,7 +312,6 @@ async fn tick(
         }
     }
 
-    pool.close().await;
     Ok(())
 }
 

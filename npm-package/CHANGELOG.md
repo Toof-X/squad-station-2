@@ -2,6 +2,24 @@
 
 All notable changes to Squad Station are documented in this file.
 
+## v0.5.9 - 2026-03-21
+
+### ⚡ Performance
+
+- Replaced `list_messages().len()` with `count_processing()` in `status.rs` — eliminates unnecessary row fetching and deserialization
+- Parallelized tmux `session_exists` checks in `reconcile_agent_statuses` using `futures::future::join_all` — faster with many agents
+- Converted `capture_pane`/`capture_pane_alternate` from sync `std::process::Command` to async `tokio::process::Command` — unblocks tokio runtime during reconciliation
+- Converted `detect_tmux_session` to async — prevents blocking on the SessionStart hook hot path
+- Reused DB pool across watchdog ticks — avoids repeated connection + migration checks every 30s
+- Extracted shared `build_agent_metrics` function — deduplicates fleet/context metrics logic
+
+### 🐛 Bug Fixes
+
+- Fixed needless double-borrow `&&SqlitePool` in watchdog tick function
+- Fixed missing `.await` on tmux calls in `notify.rs`, `reset.rs`, and `view.rs`
+- Converted sync `std::process::Command` to async in `notify.rs` agent detection
+- Fixed missing `config` import in `main.rs`
+
 ## v0.5.8 - 2026-03-20
 
 ### 🐛 Bug Fixes

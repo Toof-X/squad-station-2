@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 
 // Re-use the library crate's modules so the binary and integration tests share the same code.
-use squad_station::{cli, commands};
+use squad_station::{cli, commands, config};
 
 #[tokio::main]
 async fn main() {
@@ -25,11 +25,11 @@ async fn run(cli: cli::Cli) -> Result<()> {
             use std::io::IsTerminal;
             use std::path::PathBuf;
             if cli.tui && std::io::stdin().is_terminal() {
-                let has_config = std::path::Path::new("squad.yml").exists();
+                let has_config = std::path::Path::new(config::DEFAULT_CONFIG_FILE).exists();
                 let action = commands::welcome::run_welcome_tui(has_config).await?;
                 match action {
                     Some(commands::welcome::WelcomeAction::LaunchInit) => {
-                        commands::init::run(PathBuf::from("squad.yml"), false, true).await?;
+                        commands::init::run(PathBuf::from(config::DEFAULT_CONFIG_FILE), false, true).await?;
                     }
                     Some(commands::welcome::WelcomeAction::LaunchDashboard) => {
                         commands::ui::run().await?;

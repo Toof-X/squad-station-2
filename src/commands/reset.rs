@@ -16,7 +16,7 @@ pub async fn run(config_path: PathBuf, no_relaunch: bool, json: bool) -> Result<
     clean::stop_watchdog(squad_dir);
 
     // Kill all sessions
-    let (killed, _, _) = clean::kill_all_sessions(&config)?;
+    let (killed, _, _) = clean::kill_all_sessions(&config).await?;
     let session_count = clean::compute_session_names(&config).len() as u32;
     let skipped = session_count.saturating_sub(killed);
 

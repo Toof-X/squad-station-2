@@ -54,7 +54,7 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
 
     // GUARD 2: Config/DB connection -- warning to stderr + exit 0 on failure
     // Per locked decision: real errors go to stderr but NEVER fail the provider (exit 0 always).
-    let config_path = std::path::Path::new("squad.yml");
+    let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
     let config = match config::load_config(config_path) {
         Ok(c) => c,
         Err(e) => {
@@ -195,9 +195,9 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
                     &format!("task={} notified=false reason=antigravity", task_id_str),
                 );
                 false
-            } else if tmux::session_exists(&orch.name) {
+            } else if tmux::session_exists(&orch.name).await {
                 // Only notify if orchestrator tmux session is running.
-                match tmux::send_keys_literal(&orch.name, &notification) {
+                match tmux::send_keys_literal(&orch.name, &notification).await {
                     Ok(()) => {
                         log_signal(
                             &project_root,
