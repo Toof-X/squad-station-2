@@ -472,6 +472,72 @@ pub async fn run(inject: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Generate an initial context file from config before DB is available.
+/// Creates `.claude/commands/squad-orchestrator.md` (or gemini equivalent) so that
+/// Claude Code can find the slash command immediately on startup.
+/// Called before tmux sessions launch; `context::run()` updates it later with full metrics.
+pub fn write_initial_context(
+    project_root: &std::path::Path,
+    config: &config::SquadConfig,
+) -> anyhow::Result<()> {
+    // Build Agent-like structs from config (no DB needed)
+    let now = chrono::Utc::now().to_rfc3339();
+    let orch_role = config.orchestrator.name.as_deref().unwrap_or("orchestrator");
+    let orch_session = config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
+    let mut agents = vec![Agent {
+        id: String::new(),
+        name: orch_session,
+        tool: config.orchestrator.provider.clone(),
+        role: "orchestrator".to_string(),
+        command: None,
+        created_at: now.clone(),
+        status: "idle".to_string(),
+        status_updated_at: now.clone(),
+        model: config.orchestrator.model.clone(),
+        description: config.orchestrator.description.clone(),
+        current_task: None,
+        routing_hints: None,
+    }];
+    for agent in &config.agents {
+        let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
+        let session = config::sanitize_session_name(&format!("{}-{}", config.project, role_suffix));
+        agents.push(Agent {
+            id: String::new(),
+            name: session,
+            tool: agent.provider.clone(),
+            role: agent.role.clone(),
+            command: None,
+            created_at: now.clone(),
+            status: "idle".to_string(),
+            status_updated_at: now.clone(),
+            model: agent.model.clone(),
+            description: agent.description.clone(),
+            current_task: None,
+            routing_hints: None,
+        });
+    }
+
+    let project_root_str = project_root.to_string_lossy().to_string();
+    let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);
+    let prompt_content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[]);
+
+    let (cmd_subdir, filename, file_content) = match config.orchestrator.provider.as_str() {
+        "gemini-cli" => {
+            let toml = format!(
+                "description = \"Squad Station orchestrator — coordinate AI agent squads\"\n\
+                 prompt = \"\"\"\n{}\n\"\"\"",
+                prompt_content
+            );
+            (".gemini/commands", "squad-orchestrator.toml", toml)
+        }
+        _ => (".claude/commands", "squad-orchestrator.md", prompt_content),
+    };
+    let cmd_dir = project_root.join(cmd_subdir);
+    std::fs::create_dir_all(&cmd_dir)?;
+    std::fs::write(cmd_dir.join(filename), &file_content)?;
+    Ok(())
+}
+
 /// Hook injection mode: output orchestrator context to stdout for SessionStart hooks.
 /// Injects if squad.yml exists. When in tmux, skips worker sessions (only orchestrator gets context).
 async fn run_inject(
@@ -503,10 +569,40 @@ async fn run_inject(
         return Ok(()); // Not in tmux — silent exit
     }
 
-    // Generate content
-    let db_path = config::resolve_db_path(config)?;
-    let pool = db::connect(&db_path).await?;
-    let agents = db::agents::list_agents(&pool).await?;
+    // Generate content — use resolve_db_path_only to avoid creating .squad/ prematurely.
+    // During TUI init, .squad/ doesn't exist yet; fall back to config-based context.
+    let db_path = config::resolve_db_path_only(config)?;
+    let agents = if db_path.exists() {
+        let pool = db::connect(&db_path).await?;
+        db::agents::list_agents(&pool).await?
+    } else {
+        // DB not yet available (e.g. during init before .squad/ is finalized).
+        // Build agent list from config so inject still provides useful context.
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut agents = Vec::new();
+        let orch_r = config.orchestrator.name.as_deref().unwrap_or("orchestrator");
+        let orch_s = config::sanitize_session_name(&format!("{}-{}", config.project, orch_r));
+        agents.push(crate::db::agents::Agent {
+            id: String::new(), name: orch_s, tool: config.orchestrator.provider.clone(),
+            role: "orchestrator".to_string(), command: None, created_at: now.clone(),
+            status: "idle".to_string(), status_updated_at: now.clone(),
+            model: config.orchestrator.model.clone(),
+            description: config.orchestrator.description.clone(),
+            current_task: None, routing_hints: None,
+        });
+        for a in &config.agents {
+            let suffix = a.name.as_deref().unwrap_or(&a.role);
+            let s = config::sanitize_session_name(&format!("{}-{}", config.project, suffix));
+            agents.push(crate::db::agents::Agent {
+                id: String::new(), name: s, tool: a.provider.clone(),
+                role: a.role.clone(), command: None, created_at: now.clone(),
+                status: "idle".to_string(), status_updated_at: now.clone(),
+                model: a.model.clone(), description: a.description.clone(),
+                current_task: None, routing_hints: None,
+            });
+        }
+        agents
+    };
 
     let project_root_str = project_root.to_string_lossy().to_string();
     let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);

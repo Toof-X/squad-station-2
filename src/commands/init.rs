@@ -140,6 +140,14 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                     std::fs::create_dir_all(&install_dir)?;
                     project_dir = Some(install_dir.canonicalize().unwrap_or(install_dir.clone()).to_string_lossy().to_string());
                     std::env::set_current_dir(&install_dir)?;
+                    // Initialize git repo so Claude Code recognizes the project root
+                    // and can find .claude/commands/ slash commands
+                    if !install_dir.join(".git").exists() {
+                        let _ = std::process::Command::new("git")
+                            .args(["init", "-q"])
+                            .current_dir(&install_dir)
+                            .status();
+                    }
                     config_path = install_dir.join(crate::config::DEFAULT_CONFIG_FILE);
                     // Capture routing hints before result fields are moved into yaml generation
                     wizard_routing_hints = Some(extract_routing_hints(&result));
@@ -235,21 +243,31 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
     // 1. Parse squad.yml
     let config = config::load_config(&config_path)?;
 
-    // Compute project root from config_path (works for both normal and temp-DB paths)
+    // Compute project root from config_path
     let project_root = config_path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(std::path::Path::new("."));
 
-    // 2. Resolve DB path
-    // For TUI new-project: use temp DB so .squad/ is only created after setup completes
-    let final_db_path = project_root.join(".squad").join("station.db");
-    let (db_path, temp_db_dir) = if project_dir.is_some() {
-        let temp_dir = std::env::temp_dir().join(format!("squad-init-{}", std::process::id()));
-        std::fs::create_dir_all(&temp_dir)?;
-        (temp_dir.join("station.db"), Some(temp_dir))
+    let is_new_tui_project = project_dir.is_some();
+
+    // 2. Resolve DB path and create .squad/
+    let db_path = if is_new_tui_project {
+        // TUI new-project: create .squad/ directly — sessions launch AFTER full setup
+        let squad_dir = project_root.join(".squad");
+        std::fs::create_dir_all(&squad_dir)?;
+
+        // Create SDD playbook
+        if let Some(sdd) = deferred_sdd {
+            create_sdd_playbook(&config_path, sdd);
+        }
+
+        // Create log directory
+        let _ = std::fs::create_dir_all(squad_dir.join("log"));
+
+        squad_dir.join("station.db")
     } else {
-        (config::resolve_db_path(&config)?, None)
+        config::resolve_db_path(&config)?
     };
 
     // 3. Connect to DB (creates file + runs migrations)
@@ -260,14 +278,13 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         let _ = db::agents::delete_all_agents(&pool).await;
     }
 
-    // 4. Register orchestrator with hardcoded role="orchestrator"
+    // 4. Register ALL agents to DB first (before launching any sessions)
     let orch_role = config
         .orchestrator
         .name
         .as_deref()
         .unwrap_or("orchestrator");
     let orch_name = config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
-    // Look up routing hints by the raw role name (orch_role) not the sanitized session name
     let orch_hints = wizard_routing_hints.as_ref()
         .and_then(|m| m.get(orch_role).cloned())
         .flatten();
@@ -282,34 +299,7 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
     )
     .await?;
 
-    // 5. Launch orchestrator tmux session (or skip if db-only provider)
-    let mut db_only_names: Vec<String> = vec![];
-    let orch_launched = if config.orchestrator.is_db_only() {
-        // Antigravity: DB-only orchestrator — register to DB only, no tmux session.
-        db_only_names.push(orch_name.clone());
-        false
-    } else if tmux::session_exists(&orch_name).await {
-        false
-    } else {
-        // Orchestrator launches at project root.
-        // Context loaded via /squad-orchestrator slash command.
-        let project_root_str = project_root.to_string_lossy().to_string();
-        let cmd = get_launch_command(&config.orchestrator);
-        tmux::launch_agent_in_dir(&orch_name, &cmd, &project_root_str).await?;
-        true
-    };
-    let orch_skipped = !orch_launched && !config.orchestrator.is_db_only();
-
-    // 6. Register and launch each worker agent — continue on partial failure
     let mut failed: Vec<(String, String)> = vec![];
-    let mut skipped_names: Vec<String> = vec![];
-    let mut launched: u32 = if orch_launched { 1 } else { 0 };
-    let mut skipped: u32 = if orch_skipped { 1 } else { 0 };
-
-    if orch_skipped {
-        skipped_names.push(orch_name.clone());
-    }
-
     for agent in &config.agents {
         let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
         let agent_name =
@@ -329,25 +319,10 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         .await
         {
             failed.push((agent_name.clone(), format!("{e:#}")));
-            continue;
-        }
-
-        if tmux::session_exists(&agent_name).await {
-            skipped += 1;
-            skipped_names.push(agent_name.clone());
-            continue; // Idempotent: skip already-running agents
-        }
-
-        // GAP-05: Workers launch at project root directory
-        let project_root_str = project_root.to_string_lossy().to_string();
-        let cmd = get_launch_command(agent);
-        match tmux::launch_agent_in_dir(&agent_name, &cmd, &project_root_str).await {
-            Ok(()) => launched += 1,
-            Err(e) => failed.push((agent_name.clone(), format!("{e:#}"))),
         }
     }
 
-    // 6b. Clean stale agents: delete any DB agents not in current config
+    // 4b. Clean stale agents: delete any DB agents not in current config
     {
         let mut expected_names: Vec<String> = vec![orch_name.clone()];
         for agent in &config.agents {
@@ -365,83 +340,13 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         }
     }
 
-    // 7. Create monitor session with interactive panes for all agents
+    // 5. Setup hooks, context, watchdog — BEFORE launching sessions (TUI new-project)
+    //    For non-TUI, this happens after session launch (existing behavior preserved).
+    let mut any_hooks_installed = false;
+    #[allow(unused_assignments)]
+    let mut monitor_created = false;
     let monitor_name = format!("{}-monitor", config.project);
-    let mut monitor_sessions: Vec<String> = vec![];
-    if !config.orchestrator.is_db_only() {
-        monitor_sessions.push(orch_name.clone());
-    }
-    for agent in &config.agents {
-        let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
-        let agent_name =
-            config::sanitize_session_name(&format!("{}-{}", config.project, role_suffix));
-        monitor_sessions.push(agent_name);
-    }
-    // Kill existing monitor session before recreating
-    tmux::kill_session(&monitor_name).await?;
-    let monitor_created = if !monitor_sessions.is_empty() {
-        tmux::create_view_session(&monitor_name, &monitor_sessions).await.is_ok()
-    } else {
-        false
-    };
 
-    // 8. Output results
-    let db_path_str = final_db_path.display().to_string();
-
-    if json {
-        let output = serde_json::json!({
-            "launched": launched,
-            "skipped": skipped,
-            "failed": failed,
-            "db_path": db_path_str,
-            "monitor": if monitor_created { Some(&monitor_name) } else { None },
-        });
-        println!("{}", serde_json::to_string(&output)?);
-    } else {
-        let total_agents = config.agents.len() + 1; // workers + orchestrator
-        println!(
-            "Initialized squad '{}' with {} agent(s) ({} launched, {} skipped)",
-            config.project, total_agents, launched, skipped
-        );
-        for name in &skipped_names {
-            println!("  - {}: already running (skipped)", name);
-        }
-        for name in &db_only_names {
-            println!(
-                "  {}: db-only (antigravity orchestrator — no tmux session)",
-                name
-            );
-        }
-        for (name, error) in &failed {
-            println!("  x {}: {}", name, error);
-        }
-        println!("  Database: {}", db_path_str);
-    }
-
-    // 8. Exit code: return Err only if ALL agents failed (including orchestrator)
-    // DB-only orchestrator is excluded from total: it is never launched and never fails.
-    let total = config.agents.len()
-        + if config.orchestrator.is_db_only() {
-            0
-        } else {
-            1
-        };
-    if !failed.is_empty() && failed.len() == total {
-        anyhow::bail!("All {} agent(s) failed to launch", total);
-    }
-
-    // 9a. Create .squad/log/ directory for signal and watchdog logs
-    // (skipped when using temp DB — will be created after .squad/ is finalized)
-    if temp_db_dir.is_none() {
-        let log_dir = final_db_path
-            .parent()
-            .unwrap_or(std::path::Path::new(".squad"))
-            .join("log");
-        let _ = std::fs::create_dir_all(&log_dir);
-    }
-
-    // 9. Hook setup: auto-install for ALL providers used in the squad (not just orchestrator).
-    // In JSON mode, skip stdout instructions (to preserve machine-parseable output).
     if !json {
         let green = |s: &str| {
             s.if_supports_color(Stream::Stdout, |s| s.green())
@@ -460,116 +365,280 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                 .to_string()
         };
 
-        println!("\n{}", green("══════════════════════════════════"));
-        println!("  {}", bold("Squad Setup Complete"));
-        println!("{}\n", green("══════════════════════════════════"));
+        // For TUI new-project: install hooks + generate context BEFORE launching sessions
+        if is_new_tui_project {
+            println!("\n{}", green("══════════════════════════════════"));
+            println!("  {}", bold("Setting up project..."));
+            println!("{}\n", green("══════════════════════════════════"));
 
-        // Collect all unique providers across orchestrator + workers
-        let mut providers_seen: Vec<String> = vec![config.orchestrator.provider.clone()];
-        for agent in &config.agents {
-            if !providers_seen.contains(&agent.provider) {
-                providers_seen.push(agent.provider.clone());
+            // Install hooks
+            let mut providers_seen: Vec<String> = vec![config.orchestrator.provider.clone()];
+            for agent in &config.agents {
+                if !providers_seen.contains(&agent.provider) {
+                    providers_seen.push(agent.provider.clone());
+                }
             }
-        }
+            for provider in &providers_seen {
+                match auto_install_hooks(provider) {
+                    Ok(true) => {
+                        any_hooks_installed = true;
+                        println!("  Hooks: installed for {}", provider);
+                    }
+                    Ok(false) => {
+                        println!("  Hooks: skipped for {} (unsupported provider)", provider);
+                    }
+                    Err(e) => {
+                        println!("  Hooks: failed for {} ({})", provider, e);
+                    }
+                }
+            }
 
-        let mut any_hooks_installed = false;
-        for provider in &providers_seen {
-            match auto_install_hooks(provider) {
-                Ok(true) => {
-                    any_hooks_installed = true;
-                    println!("  Hooks: installed for {}", provider);
+            // Auto-inject prompt
+            if any_hooks_installed {
+                println!();
+                println!(
+                    "  {}",
+                    bold("Auto-inject orchestrator context on session start?")
+                );
+                println!(
+                    "  When enabled, the orchestrator automatically receives its role and agent roster"
+                );
+                println!("  whenever the AI starts a new session, resumes, or compacts context.");
+                println!(
+                    "  If disabled, you must manually run {} each time.",
+                    yellow("/squad-orchestrator")
+                );
+                print!("\n  Enable auto-inject? [Y/n] ");
+                use std::io::Write;
+                std::io::stdout().flush().ok();
+
+                let mut answer = String::new();
+                if std::io::stdin().read_line(&mut answer).is_ok()
+                    && !answer.trim().eq_ignore_ascii_case("n")
+                {
+                    match install_session_start_hook(&config.orchestrator.provider, project_root) {
+                        Ok(true) => println!("  SessionStart hook: installed"),
+                        Ok(false) => println!("  SessionStart hook: skipped (unsupported provider)"),
+                        Err(e) => println!("  SessionStart hook: failed ({})", e),
+                    }
+                } else {
+                    println!("  SessionStart hook: skipped");
                 }
-                Ok(false) => {
-                    println!("  Hooks: skipped for {} (unsupported provider)", provider);
-                }
+            }
+
+            // Generate full context (DB has all agents now)
+            println!("\nGenerating orchestrator context...");
+            if let Err(e) = crate::commands::context::run(false).await {
+                println!("Warning: Failed to generate context files: {}", e);
+            }
+
+            // Start watchdog
+            match crate::commands::watch::run(30, 5, true, false).await {
+                Ok(()) => println!("  Watchdog: started (30s interval)"),
                 Err(e) => {
-                    println!("  Hooks: failed for {} ({})", provider, e);
+                    let msg = format!("{}", e);
+                    if msg.contains("already running") {
+                        println!("  Watchdog: already running");
+                    } else {
+                        println!("  Watchdog: failed to start ({})", e);
+                    }
                 }
             }
         }
 
-        if !any_hooks_installed {
-            println!("Please manually configure the following hooks to enable task completion signals:\n");
-            let hook_providers: &[(&str, &str, &str)] = &[
-                (".claude/settings.json", "Stop", "*"),
-                (".claude/settings.json", "Notification", "permission_prompt"),
-                (".claude/settings.json", "PostToolUse", "AskUserQuestion"),
-                (".gemini/settings.json", "AfterAgent", "*"),
-                (".gemini/settings.json", "Notification", "*"),
-            ];
-            for &(settings_path, hook_event, matcher) in hook_providers {
-                print_hook_instructions(settings_path, hook_event, matcher);
-            }
-        }
+        // 6. Launch tmux sessions
+        let mut db_only_names: Vec<String> = vec![];
+        let mut skipped_names: Vec<String> = vec![];
+        let mut launched: u32 = 0;
+        let mut skipped: u32 = 0;
 
-        let hook_installed = any_hooks_installed;
-
-        // Ask user if they want auto-inject of orchestrator context on session start/compact/clear.
-        // Only prompt when base hooks were successfully auto-installed (supported provider).
-        if hook_installed {
-            println!();
-            println!(
-                "  {}",
-                bold("Auto-inject orchestrator context on session start?")
-            );
-            println!(
-                "  When enabled, the orchestrator automatically receives its role and agent roster"
-            );
-            println!("  whenever the AI starts a new session, resumes, or compacts context.");
-            println!(
-                "  If disabled, you must manually run {} each time.",
-                yellow("/squad-orchestrator")
-            );
-            print!("\n  Enable auto-inject? [Y/n] ");
-            use std::io::Write;
-            std::io::stdout().flush().ok();
-
-            let mut answer = String::new();
-            if std::io::stdin().read_line(&mut answer).is_ok()
-                && !answer.trim().eq_ignore_ascii_case("n")
-            {
-                match install_session_start_hook(&config.orchestrator.provider, project_root) {
-                    Ok(true) => println!("  SessionStart hook: installed"),
-                    Ok(false) => println!("  SessionStart hook: skipped (unsupported provider)"),
-                    Err(e) => println!("  SessionStart hook: failed ({})", e),
-                }
-            } else {
-                println!("  SessionStart hook: skipped");
-            }
-        }
-
-        // Defer context/watch/reconcile when using temp DB — they call resolve_db_path
-        // which would create .squad/ prematurely. Run them after step 10 finalizes .squad/.
-        if temp_db_dir.is_some() {
-            // Write project directory marker now (before step 10 closes pool)
-            if let Some(ref dir) = project_dir {
-                let marker = std::env::temp_dir().join(".squad-project-dir");
-                let _ = std::fs::write(&marker, dir);
-            }
+        // Launch orchestrator
+        let orch_launched = if config.orchestrator.is_db_only() {
+            db_only_names.push(orch_name.clone());
+            false
+        } else if tmux::session_exists(&orch_name).await {
+            skipped += 1;
+            skipped_names.push(orch_name.clone());
+            false
         } else {
+            let project_root_str = project_root.to_string_lossy().to_string();
+            let cmd = get_launch_command(&config.orchestrator);
+            tmux::launch_agent_in_dir(&orch_name, &cmd, &project_root_str).await?;
+            launched += 1;
+            true
+        };
+        let _ = orch_launched; // used for counting only
+
+        // Launch workers
+        for agent in &config.agents {
+            let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
+            let agent_name =
+                config::sanitize_session_name(&format!("{}-{}", config.project, role_suffix));
+
+            // Skip agents that failed registration
+            if failed.iter().any(|(n, _)| n == &agent_name) {
+                continue;
+            }
+
+            if tmux::session_exists(&agent_name).await {
+                skipped += 1;
+                skipped_names.push(agent_name.clone());
+                continue;
+            }
+
+            let project_root_str = project_root.to_string_lossy().to_string();
+            let cmd = get_launch_command(agent);
+            match tmux::launch_agent_in_dir(&agent_name, &cmd, &project_root_str).await {
+                Ok(()) => launched += 1,
+                Err(e) => failed.push((agent_name.clone(), format!("{e:#}"))),
+            }
+        }
+
+        // 7. Create monitor session
+        let mut monitor_sessions: Vec<String> = vec![];
+        if !config.orchestrator.is_db_only() {
+            monitor_sessions.push(orch_name.clone());
+        }
+        for agent in &config.agents {
+            let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
+            let agent_name =
+                config::sanitize_session_name(&format!("{}-{}", config.project, role_suffix));
+            monitor_sessions.push(agent_name);
+        }
+        tmux::kill_session(&monitor_name).await?;
+        monitor_created = if !monitor_sessions.is_empty() {
+            tmux::create_view_session(&monitor_name, &monitor_sessions).await.is_ok()
+        } else {
+            false
+        };
+
+        // 8. Output results
+        let db_path_str = db_path.display().to_string();
+        let total_agents = config.agents.len() + 1;
+        println!(
+            "\nInitialized squad '{}' with {} agent(s) ({} launched, {} skipped)",
+            config.project, total_agents, launched, skipped
+        );
+        for name in &skipped_names {
+            println!("  - {}: already running (skipped)", name);
+        }
+        for name in &db_only_names {
+            println!(
+                "  {}: db-only (antigravity orchestrator — no tmux session)",
+                name
+            );
+        }
+        for (name, error) in &failed {
+            println!("  x {}: {}", name, error);
+        }
+        println!("  Database: {}", db_path_str);
+
+        // For non-TUI: run hooks/context/watch AFTER sessions (existing behavior)
+        if !is_new_tui_project {
+            // Create log directory
+            let log_dir = db_path
+                .parent()
+                .unwrap_or(std::path::Path::new(".squad"))
+                .join("log");
+            let _ = std::fs::create_dir_all(&log_dir);
+
+            println!("\n{}", green("══════════════════════════════════"));
+            println!("  {}", bold("Squad Setup Complete"));
+            println!("{}\n", green("══════════════════════════════════"));
+
+            let mut providers_seen: Vec<String> = vec![config.orchestrator.provider.clone()];
+            for agent in &config.agents {
+                if !providers_seen.contains(&agent.provider) {
+                    providers_seen.push(agent.provider.clone());
+                }
+            }
+            for provider in &providers_seen {
+                match auto_install_hooks(provider) {
+                    Ok(true) => {
+                        any_hooks_installed = true;
+                        println!("  Hooks: installed for {}", provider);
+                    }
+                    Ok(false) => {
+                        println!("  Hooks: skipped for {} (unsupported provider)", provider);
+                    }
+                    Err(e) => {
+                        println!("  Hooks: failed for {} ({})", provider, e);
+                    }
+                }
+            }
+
+            if !any_hooks_installed {
+                println!("Please manually configure the following hooks to enable task completion signals:\n");
+                let hook_providers: &[(&str, &str, &str)] = &[
+                    (".claude/settings.json", "Stop", "*"),
+                    (".claude/settings.json", "Notification", "permission_prompt"),
+                    (".claude/settings.json", "PostToolUse", "AskUserQuestion"),
+                    (".gemini/settings.json", "AfterAgent", "*"),
+                    (".gemini/settings.json", "Notification", "*"),
+                ];
+                for &(settings_path, hook_event, matcher) in hook_providers {
+                    print_hook_instructions(settings_path, hook_event, matcher);
+                }
+            }
+
+            if any_hooks_installed {
+                println!();
+                println!(
+                    "  {}",
+                    bold("Auto-inject orchestrator context on session start?")
+                );
+                println!(
+                    "  When enabled, the orchestrator automatically receives its role and agent roster"
+                );
+                println!("  whenever the AI starts a new session, resumes, or compacts context.");
+                println!(
+                    "  If disabled, you must manually run {} each time.",
+                    yellow("/squad-orchestrator")
+                );
+                print!("\n  Enable auto-inject? [Y/n] ");
+                use std::io::Write;
+                std::io::stdout().flush().ok();
+
+                let mut answer = String::new();
+                if std::io::stdin().read_line(&mut answer).is_ok()
+                    && !answer.trim().eq_ignore_ascii_case("n")
+                {
+                    match install_session_start_hook(&config.orchestrator.provider, project_root) {
+                        Ok(true) => println!("  SessionStart hook: installed"),
+                        Ok(false) => println!("  SessionStart hook: skipped (unsupported provider)"),
+                        Err(e) => println!("  SessionStart hook: failed ({})", e),
+                    }
+                } else {
+                    println!("  SessionStart hook: skipped");
+                }
+            }
+
             println!("\nGenerating orchestrator context...");
             if let Err(e) = crate::commands::context::run(false).await {
                 println!("Warning: Failed to generate context files: {}", e);
             }
+        }
 
-            println!("\n{}", bold("Get Started:"));
+        // 9. Get Started + final status (both paths)
+        println!("\n{}", bold("Get Started:"));
+        println!();
+        println!("  1. Attach to the orchestrator session:");
+        println!("     {}", cyan(&format!("tmux attach -t {}", orch_name)));
+        println!();
+        println!("  2. Load the orchestrator context by typing:");
+        println!("     {}", yellow("/squad-orchestrator"));
+        if monitor_created {
             println!();
-            println!("  1. Attach to the orchestrator session:");
-            println!("     {}", cyan(&format!("tmux attach -t {}", orch_name)));
-            println!();
-            println!("  2. Load the orchestrator context by typing:");
-            println!("     {}", yellow("/squad-orchestrator"));
-            if monitor_created {
-                println!();
-                println!("  Monitor all agents (interactive panes):");
-                println!("     {}", cyan(&format!("tmux attach -t {}", monitor_name)));
-            }
-            println!();
-            println!("  Monitor all agents (read-only view):");
-            println!("     {}", cyan("squad-station view"));
-            println!();
+            println!("  Monitor all agents (interactive panes):");
+            println!("     {}", cyan(&format!("tmux attach -t {}", monitor_name)));
+        }
+        println!();
+        println!("  Monitor all agents (read-only view):");
+        println!("     {}", cyan("squad-station view"));
+        println!();
 
-            // Auto-start watchdog daemon for self-healing
+        if !is_new_tui_project {
+            // Non-TUI: start watchdog after sessions
             match crate::commands::watch::run(30, 5, true, false).await {
                 Ok(()) => println!("  Watchdog: started (30s interval)"),
                 Err(e) => {
@@ -582,115 +651,85 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                 }
             }
             println!();
-
-            // Reconcile agent statuses before printing diagram
-            crate::commands::helpers::reconcile_agent_statuses(&pool).await?;
-            let agents = db::agents::list_agents(&pool).await?;
-            crate::commands::diagram::print_diagram(&agents);
-
-            // Write project directory to temp file for parent process (run.js) to cd into
-            if let Some(ref dir) = project_dir {
-                let marker = std::env::temp_dir().join(".squad-project-dir");
-                let _ = std::fs::write(&marker, dir);
-            }
-        }
-    }
-
-    // 10. Finalize .squad/ directory for TUI new-project (deferred creation)
-    // Close temp DB pool, create .squad/, move DB files, create SDD playbook + log dir.
-    // Then run deferred context/watch/reconcile that need .squad/ to exist.
-    if let Some(ref temp_dir) = temp_db_dir {
-        pool.close().await;
-
-        let squad_dir = project_root.join(".squad");
-        std::fs::create_dir_all(&squad_dir)?;
-
-        // Move temp DB files to .squad/ (copy+remove fallback for cross-device)
-        let final_db = squad_dir.join("station.db");
-        let temp_db_file = temp_dir.join("station.db");
-        if std::fs::rename(&temp_db_file, &final_db).is_err() {
-            std::fs::copy(&temp_db_file, &final_db)?;
-            let _ = std::fs::remove_file(&temp_db_file);
-        }
-        for ext in &["station.db-wal", "station.db-shm"] {
-            let src = temp_dir.join(ext);
-            let dst = squad_dir.join(ext);
-            if src.exists() {
-                if std::fs::rename(&src, &dst).is_err() {
-                    let _ = std::fs::copy(&src, &dst);
-                    let _ = std::fs::remove_file(&src);
-                }
-            }
-        }
-        let _ = std::fs::remove_dir_all(temp_dir);
-
-        // Create SDD playbook in .squad/sdd/
-        if let Some(sdd) = deferred_sdd {
-            create_sdd_playbook(&config_path, sdd);
         }
 
-        // Create log directory
-        let _ = std::fs::create_dir_all(squad_dir.join("log"));
+        // Reconcile agent statuses before printing diagram
+        crate::commands::helpers::reconcile_agent_statuses(&pool).await?;
+        let agents = db::agents::list_agents(&pool).await?;
+        crate::commands::diagram::print_diagram(&agents);
 
-        // Now .squad/ exists — run deferred operations
-        if !json {
-            let cyan = |s: &str| {
-                s.if_supports_color(Stream::Stdout, |s| s.cyan())
-                    .to_string()
-            };
-            let yellow = |s: &str| {
-                s.if_supports_color(Stream::Stdout, |s| s.yellow())
-                    .to_string()
-            };
-            let bold = |s: &str| {
-                s.if_supports_color(Stream::Stdout, |s| s.bold())
-                    .to_string()
-            };
-
-            println!("\nGenerating orchestrator context...");
-            if let Err(e) = crate::commands::context::run(false).await {
-                println!("Warning: Failed to generate context files: {}", e);
-            }
-
-            println!("\n{}", bold("Get Started:"));
-            println!();
-            println!("  1. Attach to the orchestrator session:");
-            println!("     {}", cyan(&format!("tmux attach -t {}", orch_name)));
-            println!();
-            println!("  2. Load the orchestrator context by typing:");
-            println!("     {}", yellow("/squad-orchestrator"));
-            if monitor_created {
-                println!();
-                println!("  Monitor all agents (interactive panes):");
-                println!("     {}", cyan(&format!("tmux attach -t {}", monitor_name)));
-            }
-            println!();
-            println!("  Monitor all agents (read-only view):");
-            println!("     {}", cyan("squad-station view"));
-            println!();
-
-            // Reconnect to finalized DB for reconcile + diagram
-            let final_pool = db::connect(&final_db).await?;
-
-            // Auto-start watchdog daemon for self-healing
-            match crate::commands::watch::run(30, 5, true, false).await {
-                Ok(()) => println!("  Watchdog: started (30s interval)"),
-                Err(e) => {
-                    let msg = format!("{}", e);
-                    if msg.contains("already running") {
-                        println!("  Watchdog: already running");
-                    } else {
-                        println!("  Watchdog: failed to start ({})", e);
-                    }
-                }
-            }
-            println!();
-
-            // Reconcile agent statuses before printing diagram
-            crate::commands::helpers::reconcile_agent_statuses(&final_pool).await?;
-            let agents = db::agents::list_agents(&final_pool).await?;
-            crate::commands::diagram::print_diagram(&agents);
+        // Write project directory to temp file for parent process (run.js) to cd into
+        if let Some(ref dir) = project_dir {
+            let marker = std::env::temp_dir().join(".squad-project-dir");
+            let _ = std::fs::write(&marker, dir);
         }
+    } else {
+        // JSON mode: launch sessions, output JSON, skip interactive setup
+        let mut db_only_names: Vec<String> = vec![];
+        let mut skipped_names: Vec<String> = vec![];
+        let mut launched: u32 = 0;
+        let mut skipped: u32 = 0;
+
+        let orch_launched = if config.orchestrator.is_db_only() {
+            db_only_names.push(orch_name.clone());
+            false
+        } else if tmux::session_exists(&orch_name).await {
+            skipped += 1;
+            skipped_names.push(orch_name.clone());
+            false
+        } else {
+            let project_root_str = project_root.to_string_lossy().to_string();
+            let cmd = get_launch_command(&config.orchestrator);
+            tmux::launch_agent_in_dir(&orch_name, &cmd, &project_root_str).await?;
+            launched += 1;
+            true
+        };
+        let _ = orch_launched;
+
+        for agent in &config.agents {
+            let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
+            let agent_name =
+                config::sanitize_session_name(&format!("{}-{}", config.project, role_suffix));
+            if failed.iter().any(|(n, _)| n == &agent_name) {
+                continue;
+            }
+            if tmux::session_exists(&agent_name).await {
+                skipped += 1;
+                continue;
+            }
+            let project_root_str = project_root.to_string_lossy().to_string();
+            let cmd = get_launch_command(agent);
+            match tmux::launch_agent_in_dir(&agent_name, &cmd, &project_root_str).await {
+                Ok(()) => launched += 1,
+                Err(e) => failed.push((agent_name.clone(), format!("{e:#}"))),
+            }
+        }
+
+        let mut monitor_sessions: Vec<String> = vec![];
+        if !config.orchestrator.is_db_only() {
+            monitor_sessions.push(orch_name.clone());
+        }
+        for agent in &config.agents {
+            let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
+            monitor_sessions.push(config::sanitize_session_name(&format!(
+                "{}-{}", config.project, role_suffix
+            )));
+        }
+        tmux::kill_session(&monitor_name).await?;
+        monitor_created = if !monitor_sessions.is_empty() {
+            tmux::create_view_session(&monitor_name, &monitor_sessions).await.is_ok()
+        } else {
+            false
+        };
+
+        let output = serde_json::json!({
+            "launched": launched,
+            "skipped": skipped,
+            "failed": failed,
+            "db_path": db_path.display().to_string(),
+            "monitor": if monitor_created { Some(&monitor_name) } else { None },
+        });
+        println!("{}", serde_json::to_string(&output)?);
     }
 
     Ok(())
