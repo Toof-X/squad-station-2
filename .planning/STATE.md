@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Browser Visualization
 status: executing
-stopped_at: Completed 27-02-PLAN.md
-last_updated: "2026-03-22T12:28:58.455Z"
+stopped_at: Completed 28-01-PLAN.md
+last_updated: "2026-03-22T12:50:14.945Z"
 last_activity: "2026-03-22 — Plan 27-02 complete: React useSquadWebSocket hook, refactored ConnectionStatus/StatusBar, end-to-end WS streaming human-verified"
 progress:
   total_phases: 4
@@ -66,6 +66,10 @@ Recent decisions affecting v1.9 work:
 - [Phase 27-event-driven-websocket-streaming]: Subscribe to broadcast BEFORE snapshot build in ws_handler to prevent missing events during DB query (race condition prevention)
 - [Phase 27-event-driven-websocket-streaming]: Central hook pattern: useSquadWebSocket() owned by App, passed as props to presentational children — avoids duplicate WS connections
 - [Phase 27-event-driven-websocket-streaming]: State wipe on disconnect (setAgents([]), setMessages([])) in ws.onclose — fresh snapshot on reconnect replaces all state with no stale data merge (RT-04)
+- [Phase 28-react-flow-node-graph]: AgentNodeData extends Record<string,unknown> to satisfy React Flow NodeProps generic constraint
+- [Phase 28-react-flow-node-graph]: nodeTypes defined at module level outside React component — critical for React Flow performance (prevents node re-mounting)
+- [Phase 28-react-flow-node-graph]: Layout key uses agent names only (not full objects) — status-only WS updates don't trigger dagre re-layout
+- [Phase 28-react-flow-node-graph]: Edge animation flags derived from messages with status===processing — edges carry task/priority/timestamp data for Plan 02 custom edge
 
 ### Pending Todos
 
@@ -79,6 +83,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22T11:00:00.000Z
-Stopped at: Completed 27-02-PLAN.md
+Last session: 2026-03-22T12:50:07.376Z
+Stopped at: Completed 28-01-PLAN.md
 Resume file: None

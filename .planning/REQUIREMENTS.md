@@ -23,8 +23,8 @@ Requirements for v1.9: Browser Visualization. Each maps to roadmap phases.
 
 ### Node-Graph Visualization
 
-- [ ] **VIZ-01**: Each agent rendered as a React Flow node showing name, role, model, and live status (idle/busy/dead) with color coding
-- [ ] **VIZ-02**: Hierarchical auto-layout — orchestrator at top, workers below — derived from squad.yml topology
+- [x] **VIZ-01**: Each agent rendered as a React Flow node showing name, role, model, and live status (idle/busy/dead) with color coding
+- [x] **VIZ-02**: Hierarchical auto-layout — orchestrator at top, workers below — derived from squad.yml topology
 - [ ] **VIZ-03**: Continuous animated arrows on edges while a message is in-flight (processing status)
 - [ ] **VIZ-04**: Edge labels or tooltips showing message task, priority, and timestamp
 
@@ -32,7 +32,7 @@ Requirements for v1.9: Browser Visualization. Each maps to roadmap phases.
 
 - [x] **UI-01**: SPA assets bundled via rust-embed and served directly from the binary (no external files)
 - [ ] **UI-02**: Dark and light theme support with toggle
-- [ ] **UI-03**: Connection status indicator in the UI showing WebSocket state (connected/reconnecting/disconnected)
+- [x] **UI-03**: Connection status indicator in the UI showing WebSocket state (connected/reconnecting/disconnected)
 
 ## Constraints
 
@@ -109,13 +109,13 @@ Requirements for v1.9: Browser Visualization. Each maps to roadmap phases.
 | RT-02 | Phase 27 | Complete |
 | RT-03 | Phase 27 | Complete |
 | RT-04 | Phase 27 | Complete |
-| VIZ-01 | Phase 28 | Pending |
-| VIZ-02 | Phase 28 | Pending |
+| VIZ-01 | Phase 28 | Complete |
+| VIZ-02 | Phase 28 | Complete |
 | VIZ-03 | Phase 28 | Pending |
 | VIZ-04 | Phase 28 | Pending |
 | UI-01 | Phase 26 | Complete |
 | UI-02 | Phase 28 | Pending |
-| UI-03 | Phase 28 | Pending |
+| UI-03 | Phase 28 | Complete |
 
 **Coverage:**
 - v1.9 requirements: 15 total
