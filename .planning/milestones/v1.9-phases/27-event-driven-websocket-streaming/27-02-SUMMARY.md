@@ -61,7 +61,7 @@ completed: 2026-03-22
 - **Duration:** ~5 min
 - **Started:** 2026-03-22T10:28:53Z
 - **Completed:** 2026-03-22T10:33:00Z
-- **Tasks:** 1 of 2 completed (Task 2 is human-verify checkpoint)
+- **Tasks:** 2 of 2 completed (Task 2 human-verified approved)
 - **Files modified:** 4
 
 ## Accomplishments
@@ -75,8 +75,9 @@ completed: 2026-03-22
 ## Task Commits
 
 1. **Task 1: Create useSquadWebSocket hook, refactor App/ConnectionStatus/StatusBar** - `48d1aaf` (feat)
+2. **Task 2: Verify end-to-end WebSocket streaming** - human-verified (approved)
 
-**Plan metadata:** pending (awaiting human-verify checkpoint)
+**Plan metadata:** pending (final docs commit)
 
 ## Files Created/Modified
 
@@ -105,9 +106,8 @@ None - no external service configuration required.
 
 ## Next Phase Readiness
 
-- Frontend WS integration complete: hook, connection status display, and real-time agent count all wired
-- Human verification required (Task 2 checkpoint) to confirm end-to-end streaming works with a real server
-- Phase 28 (React Flow dynamic) can consume `agents` and `messages` arrays from `useSquadWebSocket()` directly
+- Frontend WS integration complete and human-verified: snapshot received on connect, agent_update/message_update frames on state change, reconnection with state wipe confirmed
+- Phase 28 (React Flow dynamic) can consume `agents` and `messages` arrays from `useSquadWebSocket()` directly — all types and data flow are in place
 
 ## Self-Check: PASSED
 
