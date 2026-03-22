@@ -60,7 +60,7 @@ completed: 2026-03-22
 - **Duration:** ~10 min
 - **Started:** 2026-03-22T09:49:04Z
 - **Completed:** 2026-03-22T09:59:00Z
-- **Tasks:** 1 of 2 (Task 2 is human-verify checkpoint — awaiting user verification)
+- **Tasks:** 2 of 2 (Task 2: human-verify checkpoint — approved by user)
 - **Files modified:** 6
 
 ## Accomplishments
@@ -75,6 +75,7 @@ completed: 2026-03-22
 Each task was committed atomically:
 
 1. **Task 1: Set up Tailwind CSS v4 and enhance SPA with WS status and API display** - `7a4c661` (feat)
+2. **Task 2: Visual verification of complete browser flow** - human-approved (checkpoint)
 
 ## Files Created/Modified
 - `web/src/components/ConnectionStatus.tsx` — WebSocket connection indicator with colored dot + auto-reconnect
@@ -103,8 +104,8 @@ None - no external service configuration required.
 
 ## Next Phase Readiness
 - Release binary ready at target/release/squad-station — run `squad-station browser` from a project with squad.yml
-- Visual verification (Task 2 checkpoint) still pending: user must confirm browser shows React Flow graph, green WS indicator, and status bar
-- Once approved, Phase 27 can begin streaming real agent/message events over /ws
+- Human verified (Task 2 checkpoint): React Flow graph renders, green WS indicator shows, status bar displays project/agents/uptime/version, Ctrl+C stops cleanly, --port and --no-open flags work, non-feature build prints "not enabled" message
+- Phase 27 can begin: server /ws endpoint is a placeholder echo — replace with real event-driven streaming of agent/message state changes
 
 ---
 *Phase: 26-axum-server-and-cli-command*
