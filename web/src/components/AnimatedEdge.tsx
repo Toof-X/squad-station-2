@@ -45,6 +45,18 @@ export function AnimatedEdge({
   data,
 }: EdgeProps<MessageEdge>) {
   const [hovered, setHovered] = useState(false);
+  const hideTimer = useState<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced hover: small delay before hiding prevents flicker when
+  // cursor moves between the path hit area and the label overlay
+  function showLabel() {
+    if (hideTimer[0]) clearTimeout(hideTimer[0]);
+    hideTimer[1](null);
+    setHovered(true);
+  }
+  function scheduleHide() {
+    hideTimer[1](setTimeout(() => setHovered(false), 100));
+  }
 
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
@@ -71,8 +83,8 @@ export function AnimatedEdge({
         fill="none"
         stroke="transparent"
         strokeWidth={20}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onMouseEnter={showLabel}
+        onMouseLeave={scheduleHide}
         style={{ pointerEvents: 'stroke' }}
       />
 
@@ -95,6 +107,8 @@ export function AnimatedEdge({
       {hasLabel && (
         <EdgeLabelRenderer>
           <div
+            onMouseEnter={showLabel}
+            onMouseLeave={scheduleHide}
             style={{
               position: 'absolute',
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
