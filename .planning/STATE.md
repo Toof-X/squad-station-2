@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Browser Visualization
 status: executing
-stopped_at: Completed 27-01-PLAN.md
-last_updated: "2026-03-22T10:27:56.843Z"
+stopped_at: "Checkpoint: awaiting human-verify for 27-02 Task 2 (end-to-end WebSocket streaming verification)"
+last_updated: "2026-03-22T10:31:08.331Z"
 last_activity: "2026-03-22 — Plan 25-01 complete: spike workspace, React Flow frontend, axum server with rust-embed (SPIKE-1, SPIKE-2, SPIKE-4 validated)"
 progress:
   total_phases: 4
@@ -64,6 +64,8 @@ Recent decisions affecting v1.9 work:
 - [Phase 26-axum-server-and-cli-command]: Tailwind v4 requires NO postcss.config.js or tailwind.config.js — only @tailwindcss/vite plugin and @import directive in index.css
 - [Phase 27-event-driven-websocket-streaming]: Use serde_json::json! macro for WS event serialization — Agent/Message don't derive Clone, avoids modifying existing DB structs (v1.9 additive-only constraint)
 - [Phase 27-event-driven-websocket-streaming]: Subscribe to broadcast BEFORE snapshot build in ws_handler to prevent missing events during DB query (race condition prevention)
+- [Phase 27-event-driven-websocket-streaming]: Central hook pattern: useSquadWebSocket() owned by App, passed as props to presentational children — avoids duplicate WS connections
+- [Phase 27-event-driven-websocket-streaming]: State wipe on disconnect (setAgents([]), setMessages([])) in ws.onclose — fresh snapshot on reconnect replaces all state with no stale data merge (RT-04)
 
 ### Pending Todos
 
@@ -77,6 +79,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22T10:27:52.551Z
-Stopped at: Completed 27-01-PLAN.md
+Last session: 2026-03-22T10:30:55.717Z
+Stopped at: Checkpoint: awaiting human-verify for 27-02 Task 2 (end-to-end WebSocket streaming verification)
 Resume file: None

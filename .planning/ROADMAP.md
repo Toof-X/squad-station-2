@@ -97,7 +97,7 @@ Fleet Status metrics in orchestrator context, dynamic agent cloning command, 11 
 
 - [x] **Phase 25: Architecture Research** - Spike all integration points before writing production code (completed 2026-03-22)
 - [x] **Phase 26: Axum Server & CLI Command** - Embedded web server with SPA assets, `browser` command with port selection and browser launch (completed 2026-03-22)
-- [ ] **Phase 27: Event-Driven WebSocket Streaming** - tmux pane watcher + DB state change detector pushing real-time events to browser clients
+- [x] **Phase 27: Event-Driven WebSocket Streaming** - tmux pane watcher + DB state change detector pushing real-time events to browser clients (completed 2026-03-22)
 - [ ] **Phase 28: React Flow Node Graph** - React + React Flow SPA with hierarchical auto-layout, live status nodes, animated in-flight edges, and UI polish
 
 ## Phase Details
@@ -142,7 +142,7 @@ Plans:
   3. When a new message is created or a message completes in the DB, connected clients receive a push event reflecting the change
   4. If the WebSocket connection drops, the browser client automatically reconnects and receives a fresh full-state snapshot
   5. The event-detection loop is driven by state-change observation (tmux pane watching + DB timestamp comparison), not by fixed-interval polling that ignores unchanged state
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 27-01-PLAN.md — Server-side WS streaming: broadcast channel, polling tasks, delta detection, snapshot builder
 - [ ] 27-02-PLAN.md — Frontend WS hook, ConnectionStatus/StatusBar refactor, end-to-end verification
@@ -180,5 +180,5 @@ Plans:
 | 24. Agent Role Templates in Wizard | v1.8 | 3/3 | Complete | 2026-03-19 |
 | 25. Architecture Research | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 26. Axum Server & CLI Command | 2/2 | Complete    | 2026-03-22 | - |
-| 27. Event-Driven WebSocket Streaming | 1/2 | In Progress|  | - |
+| 27. Event-Driven WebSocket Streaming | 2/2 | Complete   | 2026-03-22 | - |
 | 28. React Flow Node Graph | v1.9 | 0/? | Not started | - |
