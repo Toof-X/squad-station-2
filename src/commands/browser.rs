@@ -135,15 +135,39 @@ fn messages_changed(
 /// Mirrors helpers::reconcile_agent_statuses but uses the server's own writable pool
 /// to avoid coupling server code to CLI helpers.
 /// Check if a tmux pane last line indicates the agent is at an idle prompt.
-/// Claude Code shows "❯" prompt, Gemini CLI shows "$" or ">" at idle.
+/// Returns true for known prompt patterns across supported providers.
 fn is_idle_prompt(last_line: &str) -> bool {
     let trimmed = last_line.trim();
-    // Claude Code idle: line ends with "❯" or contains the prompt character
-    // Also check for status bar lines that appear when at prompt
-    trimmed == "❯"
-        || trimmed.ends_with("❯")
+    if trimmed.is_empty() {
+        return true; // Empty pane = idle (no output)
+    }
+    // Claude Code: prompt "❯", status bar lines at bottom
+    trimmed.ends_with('❯')
         || trimmed.ends_with("bypass permissions on")
         || trimmed.ends_with("(shift+tab to cycle)")
+        || trimmed.ends_with("to cycle)")
+        // Gemini CLI: shell prompts
+        || trimmed.ends_with("$ ")
+        || trimmed == "$"
+        || trimmed == ">"
+}
+
+/// Capture the last non-empty line from a tmux pane using async Command.
+/// Uses tokio::process::Command to avoid spawn_blocking overhead.
+async fn capture_pane_last_line(session_name: &str) -> Option<String> {
+    let output = tokio::process::Command::new("tmux")
+        .args(["capture-pane", "-t", session_name, "-p", "-l", "5"])
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.trim().to_string())
 }
 
 async fn reconcile_for_server(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
@@ -155,48 +179,32 @@ async fn reconcile_for_server(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
         .filter(|a| a.status != "frozen" && a.tool != "antigravity")
         .collect();
 
-    // Check all tmux sessions and capture last line in parallel
-    let session_futures: Vec<_> = checkable
-        .iter()
-        .map(|a| tmux::session_exists(&a.name))
-        .collect();
-    let pane_futures: Vec<_> = checkable
+    // Check all tmux sessions and capture last lines in parallel (all async, no spawn_blocking)
+    let futures: Vec<_> = checkable
         .iter()
         .map(|a| {
             let name = a.name.clone();
-            tokio::task::spawn_blocking(move || {
-                std::process::Command::new("tmux")
-                    .args(["capture-pane", "-t", &name, "-p"])
-                    .output()
-                    .ok()
-                    .and_then(|o| {
-                        if o.status.success() {
-                            String::from_utf8_lossy(&o.stdout)
-                                .lines()
-                                .rev()
-                                .find(|l| !l.trim().is_empty())
-                                .map(|l| l.trim().to_string())
-                        } else {
-                            None
-                        }
-                    })
-            })
+            async move {
+                let alive = tmux::session_exists(&name).await;
+                let last_line = if alive {
+                    capture_pane_last_line(&name).await
+                } else {
+                    None
+                };
+                (alive, last_line)
+            }
         })
         .collect();
 
-    let alive_results = futures::future::join_all(session_futures).await;
-    let pane_results = futures::future::join_all(pane_futures).await;
+    let results = futures::future::join_all(futures).await;
 
     // Apply status updates sequentially (single-writer DB)
-    for (i, agent) in checkable.iter().enumerate() {
-        let session_alive = alive_results[i];
-        let last_line = pane_results[i].as_ref().ok().and_then(|o| o.clone());
-
+    for (agent, (session_alive, last_line)) in checkable.iter().zip(results) {
         if !session_alive && agent.status != "dead" {
             db::agents::update_agent_status(pool, &agent.name, "dead").await?;
         } else if session_alive && agent.status == "dead" {
             db::agents::update_agent_status(pool, &agent.name, "idle").await?;
-        } else if session_alive && agent.status != "dead" {
+        } else if session_alive {
             // Detect busy/idle from pane content
             let pane_idle = last_line
                 .as_deref()
@@ -213,7 +221,7 @@ async fn reconcile_for_server(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Background task: poll agent DB state at 500ms intervals.
+/// Background task: poll agent DB state at 1s intervals.
 /// Runs tmux reconciliation each tick (if writable pool available).
 /// Broadcasts an agent_update event only when agent state has changed.
 async fn poll_agents(
@@ -222,17 +230,22 @@ async fn poll_agents(
     tx: broadcast::Sender<String>,
 ) {
     let mut cached: Vec<db::agents::Agent> = Vec::new();
-    let mut interval = tokio::time::interval(Duration::from_millis(500));
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
     loop {
         interval.tick().await;
         // Run reconciliation if writable pool available
         if let Some(ref pool) = db_write {
-            let _ = reconcile_for_server(pool).await;
+            if let Err(e) = reconcile_for_server(pool).await {
+                eprintln!("browser: reconcile error: {e}");
+            }
         }
         // Read current agents
         let current = match db::agents::list_agents(&db_read).await {
             Ok(a) => a,
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!("browser: poll_agents error: {e}");
+                continue;
+            }
         };
         if agents_changed(&cached, &current) {
             let json = serde_json::json!({
@@ -247,16 +260,19 @@ async fn poll_agents(
     }
 }
 
-/// Background task: poll message DB state at 200ms intervals.
+/// Background task: poll message DB state at 500ms intervals.
 /// Broadcasts a message_update event only when message state has changed.
 async fn poll_messages(db_read: sqlx::SqlitePool, tx: broadcast::Sender<String>) {
     let mut cached: Vec<db::messages::Message> = Vec::new();
-    let mut interval = tokio::time::interval(Duration::from_millis(200));
+    let mut interval = tokio::time::interval(Duration::from_millis(500));
     loop {
         interval.tick().await;
         let current = match db::messages::list_messages(&db_read, None, None, 100).await {
             Ok(m) => m,
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!("browser: poll_messages error: {e}");
+                continue;
+            }
         };
         if messages_changed(&cached, &current) {
             let json = serde_json::json!({
@@ -407,7 +423,7 @@ pub async fn run(port: Option<u16>, no_open: bool) -> anyhow::Result<()> {
         }
     }
 
-    let (tx, _rx) = broadcast::channel::<String>(32);
+    let (tx, _rx) = broadcast::channel::<String>(128);
 
     let state = AppState {
         db,
