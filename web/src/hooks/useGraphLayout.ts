@@ -115,7 +115,7 @@ export function useGraphLayout(
         id: `e-${orchestrator.name}-${worker.name}`,
         source: orchestrator.name,
         target: worker.name,
-        type: 'default',
+        type: 'animated',
       }));
   }, [agents, orchestrator]);
 

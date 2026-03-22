@@ -3,11 +3,13 @@ import '@xyflow/react/dist/style.css';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { StatusBar } from './components/StatusBar';
 import { AgentNode } from './components/AgentNode';
+import { AnimatedEdge } from './components/AnimatedEdge';
 import { useSquadWebSocket } from './hooks/useSquadWebSocket';
 import { useGraphLayout } from './hooks/useGraphLayout';
 
-// Defined at module level — CRITICAL: avoids React Flow re-mounting nodes on every render
+// Defined at module level — CRITICAL: avoids React Flow re-mounting nodes/edges on every render
 const nodeTypes = { agent: AgentNode };
+const edgeTypes = { animated: AnimatedEdge };
 
 export default function App() {
   const { agents, messages, status } = useSquadWebSocket();
@@ -31,6 +33,7 @@ export default function App() {
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           fitView
           proOptions={{ hideAttribution: false }}
         />
