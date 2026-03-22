@@ -266,9 +266,10 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
             "orchestrator_notified": orchestrator_notified,
         });
         println!("{}", serde_json::to_string(&out)?);
-    } else if rows > 0 {
-        let task_id_str = task_id.as_deref().unwrap_or("unknown");
-        if std::io::stdout().is_terminal() {
+    } else if std::io::stdout().is_terminal() {
+        // Interactive terminal: human-readable output
+        if rows > 0 {
+            let task_id_str = task_id.as_deref().unwrap_or("unknown");
             println!(
                 "{} Signaled completion for {} (task_id={})",
                 "✓".green(),
@@ -277,21 +278,25 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
             );
         } else {
             println!(
-                "Signaled completion for {} (task_id={})",
-                agent, task_id_str
-            );
-        }
-    } else {
-        // rows == 0: duplicate signal — silently succeed (MSG-03)
-        if std::io::stdout().is_terminal() {
-            println!(
                 "{} Signal acknowledged (no pending task for {})",
                 "✓".green(),
                 agent
             );
-        } else {
-            println!("Signal acknowledged (no pending task for {})", agent);
         }
+    } else {
+        // Hook context (non-TTY): output empty JSON for Gemini CLI compatibility.
+        // Gemini CLI requires valid JSON on stdout from hooks.
+        // Human-readable info goes to stderr for logging.
+        if rows > 0 {
+            let task_id_str = task_id.as_deref().unwrap_or("unknown");
+            eprintln!(
+                "Signaled completion for {} (task_id={})",
+                agent, task_id_str
+            );
+        } else {
+            eprintln!("Signal acknowledged (no pending task for {})", agent);
+        }
+        print!("{{}}");
     }
 
     Ok(())

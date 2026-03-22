@@ -1002,13 +1002,14 @@ fn install_gemini_hooks(settings_file: &str) -> anyhow::Result<bool> {
     let mut settings = read_or_create_settings(settings_file)?;
     let resolve = agent_resolve_snippet();
 
-    // Gemini CLI: ALL signal output redirected to log. stdout MUST be valid JSON.
+    // Gemini CLI: signal command outputs {} to stdout in non-TTY (hook) context.
+    // No redirect or printf needed — signal handles JSON output natively.
     let signal_cmd = format!(
-        r#"{}; squad-station signal "${{AGENT:-__none__}}" >>.squad/log/signal.log 2>&1; printf '{{}}'"#,
+        r#"{}; squad-station signal "${{AGENT:-__none__}}""#,
         resolve
     );
     let notify_cmd = format!(
-        r#"{}; squad-station notify --body 'Agent needs input' --agent "${{AGENT:-__none__}}" >>.squad/log/signal.log 2>&1; printf '{{}}'"#,
+        r#"{}; squad-station notify --body 'Agent needs input' --agent "${{AGENT:-__none__}}" 2>/dev/null; printf '{{}}'"#,
         resolve
     );
 
