@@ -184,10 +184,12 @@ fn test_signal_no_tmux_pane_exits_zero() {
         "signal without TMUX_PANE should exit 0, got: {:?}",
         output.status
     );
-    // Guard 1 should produce no stdout output (silent exit)
+    // In non-TTY (hook) context, signal outputs {} for Gemini CLI JSON compatibility
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        output.stdout.is_empty(),
-        "signal guard should produce no stdout output"
+        stdout.is_empty() || stdout.trim() == "{}",
+        "signal guard should produce empty or {{}} stdout, got: {}",
+        stdout
     );
 }
 
@@ -334,10 +336,11 @@ fn test_signal_guard_db_error_exits_zero_with_warning() {
         "signal Guard 2 must print a warning to stderr, got stderr: {:?}",
         stderr
     );
-    // Stdout must be empty — warning goes to stderr only
+    // In non-TTY (hook) context, signal outputs {} for Gemini CLI JSON compatibility
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        output.stdout.is_empty(),
-        "signal Guard 2 must produce no stdout output, got: {}",
-        String::from_utf8_lossy(&output.stdout)
+        stdout.is_empty() || stdout.trim() == "{}",
+        "signal Guard 2 must produce empty or {{}} stdout, got: {}",
+        stdout
     );
 }

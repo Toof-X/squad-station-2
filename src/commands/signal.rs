@@ -43,13 +43,24 @@ fn rotate_log(path: &std::path::Path) {
     }
 }
 
+/// Output empty JSON for Gemini CLI hook compatibility when exiting early.
+/// Gemini CLI requires valid JSON on stdout from hooks — empty output = hook failure.
+fn emit_empty_json_if_hook() {
+    if !std::io::stdout().is_terminal() {
+        print!("{{}}");
+    }
+}
+
 pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
     // GUARD 1: No explicit agent name provided -- silent exit 0 (HOOK-03)
     // The hook command passes the session name explicitly via $SQUAD_AGENT_NAME.
     // If no name is provided (e.g. outside tmux, in CI), we silently exit.
     let agent: String = match agent {
         Some(name) => name,
-        None => return Ok(()),
+        None => {
+            emit_empty_json_if_hook();
+            return Ok(());
+        }
     };
 
     // GUARD 2: Config/DB connection -- warning to stderr + exit 0 on failure
@@ -59,6 +70,7 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
         Ok(c) => c,
         Err(e) => {
             eprintln!("squad-station: warning: {e}");
+            emit_empty_json_if_hook();
             return Ok(());
         }
     };
@@ -66,6 +78,7 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
         Ok(p) => p,
         Err(e) => {
             eprintln!("squad-station: warning: {e}");
+            emit_empty_json_if_hook();
             return Ok(());
         }
     };
@@ -82,6 +95,7 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
         Err(e) => {
             eprintln!("squad-station: warning: DB connection failed: {e}");
             log_signal(&project_root, "GUARD", &agent, "reason=db_connection_failed");
+            emit_empty_json_if_hook();
             return Ok(());
         }
     };
@@ -101,11 +115,13 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
                 &agent,
                 "reason=agent_not_found",
             );
+            emit_empty_json_if_hook();
             return Ok(());
         }
         Err(e) => {
             eprintln!("squad-station: warning: get_agent failed: {e}");
             log_signal(&project_root, "GUARD", &agent, "reason=get_agent_error");
+            emit_empty_json_if_hook();
             return Ok(());
         }
     };
@@ -119,6 +135,7 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
             &agent,
             "reason=orchestrator_self_signal",
         );
+        emit_empty_json_if_hook();
         return Ok(());
     }
 

@@ -960,9 +960,12 @@ async fn test_signal_unregistered_agent_guard() {
         "signal for unregistered agent must exit 0, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    // In non-TTY (hook) context, signal outputs {} for Gemini CLI JSON compatibility
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        output.stdout.is_empty(),
-        "signal for unregistered agent must produce no stdout"
+        stdout.is_empty() || stdout.trim() == "{}",
+        "signal for unregistered agent must produce empty or {{}} stdout, got: {}",
+        stdout
     );
 }
 
