@@ -1,5 +1,23 @@
 # Milestones
 
+## v1.9 Browser Visualization (Shipped: 2026-03-22)
+
+**Phases:** 25-28 | **Plans:** 8 | **Files changed:** 47 (+6,807 / -121) | **Timeline:** 1 day (2026-03-22)
+**Git range:** feat(25-01) scaffold workspace → docs(phase-28) complete phase execution
+**Tests:** 362 (all green)
+
+**Key accomplishments:**
+- Architecture research spike validated axum-embed SPA serving, WebSocket upgrade, rust-embed compile-time embedding, read-only DB pool, and Vite + React Flow build pipeline before production code
+- `squad-station browser` command — embedded axum server with feature-gated SPA assets, auto port selection, browser launch, and graceful shutdown (SRV-01 through SRV-04)
+- Event-driven WebSocket streaming — broadcast channel with tmux pane polling (500ms) and DB state change detection (200ms) pushing real-time snapshots and deltas to all connected browser clients (RT-01 through RT-04)
+- React Flow node graph — hierarchical dagre auto-layout with custom AgentNode components showing live status (idle/busy/dead) color coding, driven by WebSocket data (VIZ-01, VIZ-02)
+- Animated edge visualization — SVG animateMotion crawling dots on in-flight message edges with task/priority/timestamp labels (VIZ-03, VIZ-04)
+- Dark/light theme system — useTheme hook with localStorage persistence, Tailwind v4 @custom-variant dark mode, ThemeToggle component, React Flow colorMode sync (UI-02)
+
+**Archives:** [v1.9-ROADMAP.md](milestones/v1.9-ROADMAP.md) | [v1.9-REQUIREMENTS.md](milestones/v1.9-REQUIREMENTS.md) | [v1.9-MILESTONE-AUDIT.md](milestones/v1.9-MILESTONE-AUDIT.md)
+
+---
+
 ## v1.8 Smart Agent Management (Shipped: 2026-03-19)
 
 **Phases:** 22-24 | **Plans:** 7 | **Files changed:** 44 (+7,059 / -144) | **Timeline:** 2 days (2026-03-18 → 2026-03-19)

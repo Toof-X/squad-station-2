@@ -95,20 +95,25 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 - ✓ `current_task` corruption fix when `/clear` overlaps in-flight task — v1.8.1
 - ✓ `init` auto-installs SessionStart hook for context auto-injection (Claude Code + Gemini CLI) — v1.8.1
 
+- ✓ `squad-station browser` starts embedded axum server serving React SPA from rust-embed bundled assets — v1.9
+- ✓ `squad-station browser` auto-opens default system browser to server URL — v1.9
+- ✓ Server graceful shutdown on Ctrl+C/SIGTERM with no orphaned processes — v1.9
+- ✓ `--port` flag for custom port selection, auto-select available port by default — v1.9
+- ✓ WebSocket endpoint pushes state-change events to all connected browser clients — v1.9
+- ✓ Event-driven detection watches tmux panes (500ms) and DB (200ms) for state changes — v1.9
+- ✓ Full topology + message state snapshot on WebSocket connect as initial frame — v1.9
+- ✓ Browser auto-reconnects on WebSocket drop and re-syncs full state — v1.9
+- ✓ Agent nodes with name, role, model, live status (idle/busy/dead) color coding via React Flow — v1.9
+- ✓ Hierarchical dagre auto-layout — orchestrator top, workers below — v1.9
+- ✓ Animated SVG crawling dots on edges while message in-flight — v1.9
+- ✓ Edge labels with message task, priority badge, and timestamp — v1.9
+- ✓ SPA assets bundled via rust-embed, served from binary (no external files) — v1.9
+- ✓ Dark/light theme toggle with localStorage persistence — v1.9
+- ✓ Connection status indicator (connected/reconnecting/disconnected) — v1.9
+
 ### Active
 
-## Current Milestone: v1.9 Browser Visualization
-
-**Goal:** Add a `squad-station browser` command that launches an embedded web server (axum) serving a React + React Flow SPA, displaying a live node-graph topology of orchestrator and agent nodes with animated message flow via WebSocket push from event-driven tmux/DB state changes.
-
-**Target features:**
-- Embedded axum web server bundled in the Rust binary
-- React + React Flow SPA with auto-arranged node graph (hierarchical from squad.yml topology)
-- Real-time agent status visualization (idle/busy/dead) on nodes
-- Continuous animated arrows on edges while messages are in-flight
-- Event-driven WebSocket streaming (tmux pane watching / state change detection)
-- `squad-station browser` command that starts server and opens default browser
-- Complements existing TUI — richer visualization, not a replacement
+(No active requirements — planning next milestone)
 
 ### Out of Scope
 
@@ -122,20 +127,14 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ## Context
 
-Shipped v1.8 Smart Agent Management + merged upstream v0.5.5–v0.5.8 (context auto-inject, /clear management, signal race fixes).
-Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.30, crossterm 0.29, tui-big-text 0.8, serde-saphyr, serde_json, owo-colors 3, uuid (temp file naming), chrono.
+Shipped v1.9 Browser Visualization — live React Flow node graph served from embedded axum server with WebSocket streaming.
+Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.30, crossterm 0.29, tui-big-text 0.8, serde-saphyr, serde_json, owo-colors 3, uuid, chrono. Browser feature: axum 0.7, rust-embed 8, axum-embed 0.1, tower-http 0.5, open 5, React 19, @xyflow/react 12, @dagrejs/dagre 2, Vite 8, Tailwind CSS 4.
 Distribution: npm package (v1.5.15, binaryVersion 0.5.8) + curl | sh installer, both download pre-built binaries from GitHub Releases. Both install paths auto-launch the welcome TUI in interactive terminals.
 CI/CD: GitHub Actions matrix workflow produces 4 musl/darwin binaries on v* tag push.
 Providers supported: claude-code, gemini-cli, antigravity (DB-only IDE orchestrator).
-Hook registration: inline `squad-station signal $TMUX_PANE` (Stop hook) + `squad-station context --inject` (SessionStart hook, auto-installed by init).
-Init flow: TUI wizard (ratatui, requires `--tui` flag) with role template selector generates squad.yml from scratch; re-init prompt handles overwrite/add-agents/abort. Post-init prints ASCII agent fleet diagram. Auto-installs SessionStart hook for context injection.
-Welcome TUI: bare `squad-station` invocation opens ratatui AlternateScreen with BigText title, 5s countdown, Tab-navigable Quick Guide page; Enter routes to init wizard or dashboard.
-Context generation: provider-specific orchestrator file (`.claude/commands/squad-orchestrator.md` or `.gemini/commands/squad-orchestrator.toml`) with Fleet Status metrics, Context Management /clear rules, and Routing Matrix sections. `--inject` flag outputs to stdout for SessionStart hook consumption.
-Clone: `squad-station clone <agent>` creates duplicate agent with auto-incremented name, DB-first + tmux rollback, auto-regenerates orchestrator context.
-Safe injection: load-buffer/paste-buffer pattern for multiline task bodies (no shell-injection artifacts).
-/clear management: `send` auto-completes fire-and-forget commands (`/clear`) that never trigger Stop hook, preventing FIFO queue blockage. Signal handler guards against race conditions when /clear precedes real tasks.
-Database: `.squad/station.db` in project directory (no home-dir dependency, no `dirs` crate). 5 migrations (latest: 0005_routing_hints).
-Test suite: 313 tests (all green).
+Browser visualization: `squad-station browser` (feature-gated) starts axum server serving React Flow SPA from embedded assets. WebSocket pushes topology snapshots and delta events. dagre hierarchical layout, animated edges, dark/light theme.
+Database: `.squad/station.db` in project directory. 5 migrations (latest: 0005_routing_hints). Read-only pool for browser server (5 connections).
+Test suite: 362 tests (all green).
 
 ## Constraints
 
@@ -227,10 +226,10 @@ Test suite: 313 tests (all green).
 | web/ at repo root (not inside spike/) | Frontend is shared across spike and production code; `build.rs` uses `../web` relative path | ✓ Validated in spike — rust-embed `#[folder = "../web/dist/"]` resolves correctly |
 | @xyflow/react v12 (not deprecated reactflow) | Official v12 package, TypeScript-first, SSR-capable; old `reactflow` package deprecated | ✓ Validated in spike — React Flow renders nodes and edges correctly |
 | Vite React-TS template for frontend | Industry standard build tool (2025); `tsc && vite build` produces optimized dist/ | ✓ Validated in spike — builds in <10s, produces correct asset bundle |
-| Event detection via polling + broadcast (not SQLite hooks) | SQLite update hooks don't cross connection boundaries in WAL mode; tokio interval (500ms agent status, 200ms messages) + broadcast::channel is simpler and reliable; polling interval IS the natural debounce; tmux pane polling uses tokio::task::spawn_blocking wrapping std::process::Command | Designed — implementation deferred to Phase 27 |
-| tokio::sync::broadcast for multi-client event fan-out | Handles lagged-receiver errors, message dropping policies; no manual client registry needed | Designed — implementation deferred to Phase 27 |
+| Event detection via polling + broadcast (not SQLite hooks) | SQLite update hooks don't cross connection boundaries in WAL mode; tokio interval (500ms agent status, 200ms messages) + broadcast::channel is simpler and reliable; polling interval IS the natural debounce; tmux pane polling uses tokio::task::spawn_blocking wrapping std::process::Command | ✓ Good — reliable delta detection with natural debounce |
+| tokio::sync::broadcast for multi-client event fan-out | Handles lagged-receiver errors, message dropping policies; no manual client registry needed | ✓ Good — multi-client streaming works correctly |
 | debug-embed feature for rust-embed | Forces compile-time embedding even in debug builds; without it, debug mode reads from disk relative to CWD (fragile) | ✓ Validated in spike — assets embedded in debug build |
 | Graceful shutdown via tokio::signal (Ctrl+C + SIGTERM) | Matches existing `ui` command behavior; `with_graceful_shutdown()` built into axum::serve | ✓ Validated in spike — clean shutdown on Ctrl+C |
 
 ---
-*Last updated: 2026-03-22 after Phase 25-02: spike verification and architecture decisions recorded*
+*Last updated: 2026-03-22 after v1.9 milestone*

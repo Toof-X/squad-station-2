@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Browser Visualization
-status: executing
-stopped_at: "Checkpoint: 28-02 Task 3 awaiting human-verify"
-last_updated: "2026-03-22T13:00:33.840Z"
-last_activity: "2026-03-22 — Plan 27-02 complete: React useSquadWebSocket hook, refactored ConnectionStatus/StatusBar, end-to-end WS streaming human-verified"
+status: completed
+stopped_at: ""
+last_updated: "2026-03-22"
+last_activity: "2026-03-22 — v1.9 Browser Visualization milestone completed and archived"
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 4
+  total_plans: 8
+  completed_plans: 8
+  percent: 100
 ---
 
 # Project State
@@ -21,24 +21,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-22)
 
 **Core value:** Reliable message routing between Orchestrator and agents — stateless CLI, no daemon
-**Current focus:** Phase 25 — Architecture Research (v1.9 Browser Visualization)
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 27 of 28 (Event-Driven WebSocket Streaming)
-Plan: 2 of 2 complete (plans 27-01 and 27-02 complete)
-Status: In progress
-Last activity: 2026-03-22 — Plan 27-02 complete: React useSquadWebSocket hook, refactored ConnectionStatus/StatusBar, end-to-end WS streaming human-verified
+Milestone v1.9 Browser Visualization — SHIPPED 2026-03-22
 
-Progress: [░░░░░░░░░░] 0% (within v1.9; phases 1-24 shipped)
+All 10 milestones (v1.0–v1.9) complete. 28 phases, 362 tests.
 
 ## Code Status
 
 **Rust crate:** v0.5.8 (`Cargo.toml`)
 **npm package:** v1.5.15 (`npm-package/package.json`, binaryVersion: 0.5.8)
-**Last shipped milestone:** v1.8 Smart Agent Management (2026-03-19)
-**Upstream sync:** v0.5.5–v0.5.8 merged 2026-03-20
-**Test suite:** 313 tests, 0 failures
+**Last shipped milestone:** v1.9 Browser Visualization (2026-03-22)
+**Test suite:** 362 tests, 0 failures
 
 ## Accumulated Context
 
@@ -46,47 +42,16 @@ Progress: [░░░░░░░░░░] 0% (within v1.9; phases 1-24 shipped)
 
 All decisions logged in PROJECT.md Key Decisions table.
 
-Recent decisions affecting v1.9 work:
-- [v1.9 constraint]: Additive only — new modules, new command, new files; no modifications to existing shipped core logic
-- [v1.9 constraint]: Event-driven streaming (tmux pane watching + DB state changes), not polling
-- [v1.9 constraint]: React + React Flow SPA bundled via rust-embed in the Rust binary
-- [v1.9 constraint]: Web server is axum with WebSocket support
-- [Phase 25 gate]: Architecture research must complete and decisions recorded before any production code is written
-- [Phase 25-01]: Used axum-embed ServeEmbed for SPA serving — handles ETag, compression, fallback automatically
-- [Phase 25-01]: Read-only DB pool: read_only(true), max_connections(5), no journal_mode, no migrate! — separate from single-writer pool
-- [Phase 25-01]: debug-embed feature forces compile-time embedding in dev — validates release behavior without release build
-- [Phase 25-architecture-research]: axum-embed ServeEmbed for SPA serving — handles ETag, compression, HTML5 fallback (validated in spike)
-- [Phase 25-architecture-research]: Event detection: tokio interval polling (500ms agent, 200ms messages) + broadcast::channel — NOT SQLite hooks (SPIKE-3)
-- [Phase 25-architecture-research]: tokio::task::spawn_blocking for tmux capture-pane polling — must NOT call from async context
-- [Phase 26-axum-server-and-cli-command]: Route ordering in axum: /api/status and /ws registered before nest_service('/') SPA fallback
-- [Phase 26-axum-server-and-cli-command]: Port fallback asymmetry: omitting --port falls back from 3000 to random; explicit --port fails hard if taken
-- [Phase 26-axum-server-and-cli-command]: connect_readonly is NOT feature-gated — general db utility available to any future consumer
-- [Phase 26-axum-server-and-cli-command]: Tailwind v4 requires NO postcss.config.js or tailwind.config.js — only @tailwindcss/vite plugin and @import directive in index.css
-- [Phase 27-event-driven-websocket-streaming]: Use serde_json::json! macro for WS event serialization — Agent/Message don't derive Clone, avoids modifying existing DB structs (v1.9 additive-only constraint)
-- [Phase 27-event-driven-websocket-streaming]: Subscribe to broadcast BEFORE snapshot build in ws_handler to prevent missing events during DB query (race condition prevention)
-- [Phase 27-event-driven-websocket-streaming]: Central hook pattern: useSquadWebSocket() owned by App, passed as props to presentational children — avoids duplicate WS connections
-- [Phase 27-event-driven-websocket-streaming]: State wipe on disconnect (setAgents([]), setMessages([])) in ws.onclose — fresh snapshot on reconnect replaces all state with no stale data merge (RT-04)
-- [Phase 28-react-flow-node-graph]: AgentNodeData extends Record<string,unknown> to satisfy React Flow NodeProps generic constraint
-- [Phase 28-react-flow-node-graph]: nodeTypes defined at module level outside React component — critical for React Flow performance (prevents node re-mounting)
-- [Phase 28-react-flow-node-graph]: Layout key uses agent names only (not full objects) — status-only WS updates don't trigger dagre re-layout
-- [Phase 28-react-flow-node-graph]: Edge animation flags derived from messages with status===processing — edges carry task/priority/timestamp data for Plan 02 custom edge
-- [Phase 28]: 3 staggered SVG animateMotion circles (0s/0.66s/1.33s at 2s) for GPU-accelerated crawling dots — no JS animation loop
-- [Phase 28]: All edges use type 'animated' — AnimatedEdge handles both static/animated states via data.animated flag
-- [Phase 28]: useTheme reads localStorage in useState initializer (not useEffect) to prevent flash-of-wrong-theme
-- [Phase 28]: Tailwind v4 dark mode via @custom-variant dark in index.css + colorMode prop on ReactFlow
-
 ### Pending Todos
 
 None.
 
 ### Blockers/Concerns
 
-- ~~rust-embed requires SPA to be pre-built before `cargo build` — build order must be established in Phase 25~~ RESOLVED: build.rs auto-runs npm install + npm run build before embedding
-- ~~axum + tokio runtime coexistence with existing sync DB patterns needs validation in Phase 25~~ RESOLVED: read-only pool pattern validated in spike, existing runtime unaffected
-- Binary size impact of embedding full React SPA (JS bundles) is unknown — measure in Phase 26
+None.
 
 ## Session Continuity
 
-Last session: 2026-03-22T12:54:17.889Z
-Stopped at: Checkpoint: 28-02 Task 3 awaiting human-verify
+Last session: 2026-03-22
+Stopped at: Milestone v1.9 completed
 Resume file: None
