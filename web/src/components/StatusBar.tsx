@@ -13,7 +13,7 @@ function formatUptime(secs: number): string {
   return `${minutes}m ${seconds}s`;
 }
 
-export function StatusBar() {
+export function StatusBar({ agentCount }: { agentCount?: number }) {
   const [status, setStatus] = useState<StatusData | null>(null);
 
   useEffect(() => {
@@ -40,12 +40,15 @@ export function StatusBar() {
     );
   }
 
+  // Prefer WS-derived agent count (real-time) over REST agent count (polling)
+  const displayAgentCount = agentCount ?? status.agents ?? 0;
+
   return (
     <div className="flex items-center justify-between px-4 py-2 bg-gray-800 text-white text-sm">
       <div className="flex items-center gap-6">
         <span className="font-semibold text-gray-100">{status.project}</span>
         <span className="text-gray-400">
-          {status.agents} agent{status.agents !== 1 ? 's' : ''}
+          {displayAgentCount} agent{displayAgentCount !== 1 ? 's' : ''}
         </span>
         <span className="text-gray-400">up {formatUptime(status.uptime_secs)}</span>
       </div>
