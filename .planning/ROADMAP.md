@@ -142,7 +142,7 @@ Plans:
   3. When a new message is created or a message completes in the DB, connected clients receive a push event reflecting the change
   4. If the WebSocket connection drops, the browser client automatically reconnects and receives a fresh full-state snapshot
   5. The event-detection loop is driven by state-change observation (tmux pane watching + DB timestamp comparison), not by fixed-interval polling that ignores unchanged state
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 27-01-PLAN.md — Server-side WS streaming: broadcast channel, polling tasks, delta detection, snapshot builder
 - [ ] 27-02-PLAN.md — Frontend WS hook, ConnectionStatus/StatusBar refactor, end-to-end verification
@@ -180,5 +180,5 @@ Plans:
 | 24. Agent Role Templates in Wizard | v1.8 | 3/3 | Complete | 2026-03-19 |
 | 25. Architecture Research | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 26. Axum Server & CLI Command | 2/2 | Complete    | 2026-03-22 | - |
-| 27. Event-Driven WebSocket Streaming | v1.9 | 0/2 | Not started | - |
+| 27. Event-Driven WebSocket Streaming | 1/2 | In Progress|  | - |
 | 28. React Flow Node Graph | v1.9 | 0/? | Not started | - |

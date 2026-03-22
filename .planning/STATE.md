@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Browser Visualization
 status: executing
-stopped_at: Completed 26-02-PLAN.md (all tasks complete, human-verify approved)
-last_updated: "2026-03-22T10:05:30.820Z"
+stopped_at: Completed 27-01-PLAN.md
+last_updated: "2026-03-22T10:27:56.843Z"
 last_activity: "2026-03-22 — Plan 25-01 complete: spike workspace, React Flow frontend, axum server with rust-embed (SPIKE-1, SPIKE-2, SPIKE-4 validated)"
 progress:
   total_phases: 4
@@ -62,6 +62,8 @@ Recent decisions affecting v1.9 work:
 - [Phase 26-axum-server-and-cli-command]: Port fallback asymmetry: omitting --port falls back from 3000 to random; explicit --port fails hard if taken
 - [Phase 26-axum-server-and-cli-command]: connect_readonly is NOT feature-gated — general db utility available to any future consumer
 - [Phase 26-axum-server-and-cli-command]: Tailwind v4 requires NO postcss.config.js or tailwind.config.js — only @tailwindcss/vite plugin and @import directive in index.css
+- [Phase 27-event-driven-websocket-streaming]: Use serde_json::json! macro for WS event serialization — Agent/Message don't derive Clone, avoids modifying existing DB structs (v1.9 additive-only constraint)
+- [Phase 27-event-driven-websocket-streaming]: Subscribe to broadcast BEFORE snapshot build in ws_handler to prevent missing events during DB query (race condition prevention)
 
 ### Pending Todos
 
@@ -75,6 +77,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22T09:59:13.279Z
-Stopped at: Completed 26-02-PLAN.md (all tasks complete, human-verify approved)
+Last session: 2026-03-22T10:27:52.551Z
+Stopped at: Completed 27-01-PLAN.md
 Resume file: None

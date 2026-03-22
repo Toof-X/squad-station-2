@@ -16,9 +16,9 @@ Requirements for v1.9: Browser Visualization. Each maps to roadmap phases.
 
 ### Real-Time Streaming
 
-- [ ] **RT-01**: axum WebSocket endpoint pushes state-change events to all connected browser clients
-- [ ] **RT-02**: Event-driven detection watches tmux panes and DB for state changes (agent status transitions, new/completed messages)
-- [ ] **RT-03**: On WebSocket connect, server sends full topology + message state snapshot as initial frame
+- [x] **RT-01**: axum WebSocket endpoint pushes state-change events to all connected browser clients
+- [x] **RT-02**: Event-driven detection watches tmux panes and DB for state changes (agent status transitions, new/completed messages)
+- [x] **RT-03**: On WebSocket connect, server sends full topology + message state snapshot as initial frame
 - [ ] **RT-04**: Browser auto-reconnects on WebSocket drop and re-syncs full state
 
 ### Node-Graph Visualization
@@ -105,9 +105,9 @@ Requirements for v1.9: Browser Visualization. Each maps to roadmap phases.
 | SRV-02 | Phase 26 | Complete |
 | SRV-03 | Phase 26 | Complete |
 | SRV-04 | Phase 26 | Complete |
-| RT-01 | Phase 27 | Pending |
-| RT-02 | Phase 27 | Pending |
-| RT-03 | Phase 27 | Pending |
+| RT-01 | Phase 27 | Complete |
+| RT-02 | Phase 27 | Complete |
+| RT-03 | Phase 27 | Complete |
 | RT-04 | Phase 27 | Pending |
 | VIZ-01 | Phase 28 | Pending |
 | VIZ-02 | Phase 28 | Pending |
