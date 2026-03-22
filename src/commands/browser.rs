@@ -8,11 +8,15 @@ use axum::{
     Json, Router,
 };
 use axum_embed::ServeEmbed;
+use futures::{SinkExt, StreamExt};
 use rust_embed::Embed;
 use serde::Serialize;
 use std::io::ErrorKind;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
+use tokio::sync::broadcast;
+
+use crate::{db, tmux};
 
 #[derive(Embed, Clone)]
 #[folder = "web/dist/"]
@@ -21,8 +25,10 @@ struct FrontendAssets;
 #[derive(Clone)]
 struct AppState {
     db: Option<sqlx::SqlitePool>,
+    db_write: Option<sqlx::SqlitePool>,
     project_name: String,
     started_at: Instant,
+    tx: broadcast::Sender<String>,
 }
 
 /// Bind a TCP listener with port fallback logic:
@@ -74,20 +80,202 @@ async fn shutdown_signal() {
     }
 }
 
-async fn ws_handler(ws: WebSocketUpgrade) -> Response {
-    ws.on_upgrade(handle_socket)
+/// Build a full JSON snapshot of agents + messages for the initial WS frame on connect.
+async fn build_snapshot(state: &AppState) -> Option<String> {
+    let pool = state.db.as_ref()?;
+    let agents = db::agents::list_agents(pool).await.unwrap_or_default();
+    let messages = db::messages::list_messages(pool, None, None, 100)
+        .await
+        .unwrap_or_default();
+    let json = serde_json::json!({
+        "type": "snapshot",
+        "agents": &agents,
+        "messages": &messages,
+    });
+    serde_json::to_string(&json).ok()
 }
 
-async fn handle_socket(mut socket: WebSocket) {
-    while let Some(Ok(msg)) = socket.recv().await {
-        match msg {
-            Message::Close(_) => break,
-            _ => {
-                if socket.send(msg).await.is_err() {
-                    break;
+/// Returns true if the agent list has changed in any observable field.
+fn agents_changed(
+    prev: &[db::agents::Agent],
+    curr: &[db::agents::Agent],
+) -> bool {
+    if prev.len() != curr.len() {
+        return true;
+    }
+    for (p, c) in prev.iter().zip(curr.iter()) {
+        if p.name != c.name
+            || p.status != c.status
+            || p.status_updated_at != c.status_updated_at
+            || p.current_task != c.current_task
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Returns true if the message list has changed in any observable field.
+fn messages_changed(
+    prev: &[db::messages::Message],
+    curr: &[db::messages::Message],
+) -> bool {
+    if prev.len() != curr.len() {
+        return true;
+    }
+    for (p, c) in prev.iter().zip(curr.iter()) {
+        if p.id != c.id || p.status != c.status || p.updated_at != c.updated_at {
+            return true;
+        }
+    }
+    false
+}
+
+/// Reconcile agent statuses against live tmux sessions.
+/// Mirrors helpers::reconcile_agent_statuses but uses the server's own writable pool
+/// to avoid coupling server code to CLI helpers.
+async fn reconcile_for_server(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+    let agents = db::agents::list_agents(pool).await?;
+
+    // Collect agents that need tmux session checks (skip frozen and db-only)
+    let checkable: Vec<&db::agents::Agent> = agents
+        .iter()
+        .filter(|a| a.status != "frozen" && a.tool != "antigravity")
+        .collect();
+
+    // Check all tmux sessions in parallel
+    let futures: Vec<_> = checkable
+        .iter()
+        .map(|a| tmux::session_exists(&a.name))
+        .collect();
+    let alive_results = futures::future::join_all(futures).await;
+
+    // Apply status updates sequentially (single-writer DB)
+    for (agent, session_alive) in checkable.iter().zip(alive_results) {
+        if !session_alive && agent.status != "dead" {
+            db::agents::update_agent_status(pool, &agent.name, "dead").await?;
+        } else if session_alive && agent.status == "dead" {
+            db::agents::update_agent_status(pool, &agent.name, "idle").await?;
+        }
+    }
+    Ok(())
+}
+
+/// Background task: poll agent DB state at 500ms intervals.
+/// Runs tmux reconciliation each tick (if writable pool available).
+/// Broadcasts an agent_update event only when agent state has changed.
+async fn poll_agents(
+    db_read: sqlx::SqlitePool,
+    db_write: Option<sqlx::SqlitePool>,
+    tx: broadcast::Sender<String>,
+) {
+    let mut cached: Vec<db::agents::Agent> = Vec::new();
+    let mut interval = tokio::time::interval(Duration::from_millis(500));
+    loop {
+        interval.tick().await;
+        // Run reconciliation if writable pool available
+        if let Some(ref pool) = db_write {
+            let _ = reconcile_for_server(pool).await;
+        }
+        // Read current agents
+        let current = match db::agents::list_agents(&db_read).await {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+        if agents_changed(&cached, &current) {
+            let json = serde_json::json!({
+                "type": "agent_update",
+                "agents": &current,
+            });
+            if let Ok(serialized) = serde_json::to_string(&json) {
+                let _ = tx.send(serialized);
+            }
+            cached = current;
+        }
+    }
+}
+
+/// Background task: poll message DB state at 200ms intervals.
+/// Broadcasts a message_update event only when message state has changed.
+async fn poll_messages(db_read: sqlx::SqlitePool, tx: broadcast::Sender<String>) {
+    let mut cached: Vec<db::messages::Message> = Vec::new();
+    let mut interval = tokio::time::interval(Duration::from_millis(200));
+    loop {
+        interval.tick().await;
+        let current = match db::messages::list_messages(&db_read, None, None, 100).await {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if messages_changed(&cached, &current) {
+            let json = serde_json::json!({
+                "type": "message_update",
+                "messages": &current,
+            });
+            if let Ok(serialized) = serde_json::to_string(&json) {
+                let _ = tx.send(serialized);
+            }
+            cached = current;
+        }
+    }
+}
+
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
+    ws.on_upgrade(move |socket| handle_socket(socket, state))
+}
+
+async fn handle_socket(socket: WebSocket, state: AppState) {
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+
+    // CRITICAL: Subscribe to broadcast BEFORE building snapshot
+    // to avoid missing events during snapshot build
+    let mut rx = state.tx.subscribe();
+
+    // Send initial full snapshot
+    if let Some(snapshot_json) = build_snapshot(&state).await {
+        if ws_sender
+            .send(Message::Text(snapshot_json.into()))
+            .await
+            .is_err()
+        {
+            return;
+        }
+    }
+
+    // Forward broadcast events to this WS client
+    let mut send_task = tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(msg) => {
+                    if ws_sender
+                        .send(Message::Text(msg.into()))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    // Skip missed messages -- next update has current state
+                    continue;
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
             }
         }
+    });
+
+    // Listen for client disconnect
+    let mut recv_task = tokio::spawn(async move {
+        while let Some(Ok(msg)) = ws_receiver.next().await {
+            if matches!(msg, Message::Close(_)) {
+                break;
+            }
+        }
+    });
+
+    // Wait for either task to finish, abort the other
+    tokio::select! {
+        _ = &mut send_task => recv_task.abort(),
+        _ = &mut recv_task => send_task.abort(),
     }
 }
 
@@ -119,31 +307,39 @@ pub async fn run(port: Option<u16>, no_open: bool) -> anyhow::Result<()> {
     use std::path::Path;
 
     // Load config — gracefully degrade if not in a squad project
-    let (project_name, db) = match crate::config::load_config(Path::new(
+    let (project_name, db, db_write) = match crate::config::load_config(Path::new(
         crate::config::DEFAULT_CONFIG_FILE,
     )) {
         Ok(config) => {
             let project = config.project.clone();
-            let db = match crate::config::resolve_db_path(&config) {
-                Ok(db_path) => match crate::db::connect_readonly(&db_path).await {
-                    Ok(pool) => {
-                        Some(pool)
-                    }
-                    Err(e) => {
-                        eprintln!("Warning: Could not connect to DB: {e} (continuing without DB)");
-                        None
-                    }
-                },
+            let db_path_result = crate::config::resolve_db_path(&config);
+            match db_path_result {
+                Ok(db_path) => {
+                    let read_pool = match crate::db::connect_readonly(&db_path).await {
+                        Ok(pool) => Some(pool),
+                        Err(e) => {
+                            eprintln!("Warning: Could not connect to DB (read): {e} (continuing without DB)");
+                            None
+                        }
+                    };
+                    let write_pool = match crate::db::connect(&db_path).await {
+                        Ok(pool) => Some(pool),
+                        Err(e) => {
+                            eprintln!("Warning: Could not connect to DB (write): {e} (reconciliation disabled)");
+                            None
+                        }
+                    };
+                    (project, read_pool, write_pool)
+                }
                 Err(e) => {
                     eprintln!("Warning: Could not resolve DB path: {e} (continuing without DB)");
-                    None
+                    (project, None, None)
                 }
-            };
-            (project, db)
+            }
         }
         Err(e) => {
             eprintln!("Warning: Could not load squad config: {e} (continuing without DB)");
-            ("unknown".to_string(), None)
+            ("unknown".to_string(), None, None)
         }
     };
 
@@ -159,11 +355,27 @@ pub async fn run(port: Option<u16>, no_open: bool) -> anyhow::Result<()> {
         }
     }
 
+    let (tx, _rx) = broadcast::channel::<String>(32);
+
     let state = AppState {
         db,
+        db_write,
         project_name,
         started_at: Instant::now(),
+        tx,
     };
+
+    // Spawn polling tasks before starting the axum server
+    if let Some(ref read_pool) = state.db {
+        let read_pool_clone = read_pool.clone();
+        let write_pool_clone = state.db_write.clone();
+        let tx_clone = state.tx.clone();
+        tokio::spawn(poll_agents(read_pool_clone, write_pool_clone, tx_clone));
+
+        let read_pool_clone2 = read_pool.clone();
+        let tx_clone2 = state.tx.clone();
+        tokio::spawn(poll_messages(read_pool_clone2, tx_clone2));
+    }
 
     // IMPORTANT: explicit routes (/api/status, /ws) MUST come before nest_service("/")
     // to ensure they take priority over the SPA fallback handler
