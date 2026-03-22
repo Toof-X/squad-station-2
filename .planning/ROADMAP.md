@@ -127,7 +127,7 @@ Plans:
   3. Running `squad-station browser --port 9000` starts the server on port 9000; omitting `--port` selects an available port automatically
   4. Pressing Ctrl+C shuts down the server cleanly with no orphaned processes or lingering port bindings
   5. The binary size increase from embedded SPA assets is within acceptable bounds (SPA can be built and embedded)
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 26-01-PLAN.md — Feature-gated axum server, browser command, CLI wiring, build.rs, connect_readonly
 - [ ] 26-02-PLAN.md — Tailwind CSS v4 setup, SPA enhancements (WS status, /api/status), visual verification
@@ -176,6 +176,6 @@ Plans:
 | 23. Dynamic Agent Cloning | v1.8 | 2/2 | Complete | 2026-03-19 |
 | 24. Agent Role Templates in Wizard | v1.8 | 3/3 | Complete | 2026-03-19 |
 | 25. Architecture Research | v1.9 | 2/2 | Complete | 2026-03-22 |
-| 26. Axum Server & CLI Command | v1.9 | 0/2 | Not started | - |
+| 26. Axum Server & CLI Command | 1/2 | In Progress|  | - |
 | 27. Event-Driven WebSocket Streaming | v1.9 | 0/? | Not started | - |
 | 28. React Flow Node Graph | v1.9 | 0/? | Not started | - |

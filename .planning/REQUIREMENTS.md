@@ -9,10 +9,10 @@ Requirements for v1.9: Browser Visualization. Each maps to roadmap phases.
 
 ### Web Server & CLI
 
-- [ ] **SRV-01**: `squad-station browser` starts an embedded axum HTTP server that serves the React SPA from rust-embed bundled static assets
-- [ ] **SRV-02**: `squad-station browser` auto-opens the default system browser to the server URL after startup
-- [ ] **SRV-03**: Server shuts down gracefully on Ctrl+C or SIGTERM with no orphaned processes
-- [ ] **SRV-04**: `--port` flag allows custom port selection (default: auto-select available port)
+- [x] **SRV-01**: `squad-station browser` starts an embedded axum HTTP server that serves the React SPA from rust-embed bundled static assets
+- [x] **SRV-02**: `squad-station browser` auto-opens the default system browser to the server URL after startup
+- [x] **SRV-03**: Server shuts down gracefully on Ctrl+C or SIGTERM with no orphaned processes
+- [x] **SRV-04**: `--port` flag allows custom port selection (default: auto-select available port)
 
 ### Real-Time Streaming
 
@@ -30,7 +30,7 @@ Requirements for v1.9: Browser Visualization. Each maps to roadmap phases.
 
 ### UI Polish
 
-- [ ] **UI-01**: SPA assets bundled via rust-embed and served directly from the binary (no external files)
+- [x] **UI-01**: SPA assets bundled via rust-embed and served directly from the binary (no external files)
 - [ ] **UI-02**: Dark and light theme support with toggle
 - [ ] **UI-03**: Connection status indicator in the UI showing WebSocket state (connected/reconnecting/disconnected)
 
@@ -101,10 +101,10 @@ Requirements for v1.9: Browser Visualization. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SRV-01 | Phase 26 | Pending |
-| SRV-02 | Phase 26 | Pending |
-| SRV-03 | Phase 26 | Pending |
-| SRV-04 | Phase 26 | Pending |
+| SRV-01 | Phase 26 | Complete |
+| SRV-02 | Phase 26 | Complete |
+| SRV-03 | Phase 26 | Complete |
+| SRV-04 | Phase 26 | Complete |
 | RT-01 | Phase 27 | Pending |
 | RT-02 | Phase 27 | Pending |
 | RT-03 | Phase 27 | Pending |
@@ -113,7 +113,7 @@ Requirements for v1.9: Browser Visualization. Each maps to roadmap phases.
 | VIZ-02 | Phase 28 | Pending |
 | VIZ-03 | Phase 28 | Pending |
 | VIZ-04 | Phase 28 | Pending |
-| UI-01 | Phase 26 | Pending |
+| UI-01 | Phase 26 | Complete |
 | UI-02 | Phase 28 | Pending |
 | UI-03 | Phase 28 | Pending |
 

@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Browser Visualization
 status: executing
-stopped_at: "Checkpoint: Task 3 of 25-02-PLAN.md — awaiting human visual verification of spike in browser"
-last_updated: "2026-03-22T08:55:20.508Z"
+stopped_at: Completed 26-01-PLAN.md
+last_updated: "2026-03-22T09:48:02.393Z"
 last_activity: "2026-03-22 — Plan 25-01 complete: spike workspace, React Flow frontend, axum server with rust-embed (SPIKE-1, SPIKE-2, SPIKE-4 validated)"
 progress:
   total_phases: 4
@@ -58,6 +58,9 @@ Recent decisions affecting v1.9 work:
 - [Phase 25-architecture-research]: axum-embed ServeEmbed for SPA serving — handles ETag, compression, HTML5 fallback (validated in spike)
 - [Phase 25-architecture-research]: Event detection: tokio interval polling (500ms agent, 200ms messages) + broadcast::channel — NOT SQLite hooks (SPIKE-3)
 - [Phase 25-architecture-research]: tokio::task::spawn_blocking for tmux capture-pane polling — must NOT call from async context
+- [Phase 26-axum-server-and-cli-command]: Route ordering in axum: /api/status and /ws registered before nest_service('/') SPA fallback
+- [Phase 26-axum-server-and-cli-command]: Port fallback asymmetry: omitting --port falls back from 3000 to random; explicit --port fails hard if taken
+- [Phase 26-axum-server-and-cli-command]: connect_readonly is NOT feature-gated — general db utility available to any future consumer
 
 ### Pending Todos
 
@@ -71,6 +74,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22T08:55:20.507Z
-Stopped at: Checkpoint: Task 3 of 25-02-PLAN.md — awaiting human visual verification of spike in browser
+Last session: 2026-03-22T09:48:02.391Z
+Stopped at: Completed 26-01-PLAN.md
 Resume file: None
