@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Browser Visualization
-status: ready_to_plan
-stopped_at: "Roadmap created for v1.9 (Phases 25-28) — Phase 25 ready to plan"
-last_updated: "2026-03-22T00:00:00.000Z"
-last_activity: "2026-03-22 — Roadmap written, v1.9 phases 25-28 defined"
+status: planning
+stopped_at: "Completed 25-01-PLAN.md: spike workspace, React Flow frontend, axum server with rust-embed"
+last_updated: "2026-03-22T08:50:02.955Z"
+last_activity: 2026-03-22 — Roadmap created for v1.9 Browser Visualization (Phases 25-28)
 progress:
   total_phases: 4
   completed_phases: 0
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-22)
 ## Current Position
 
 Phase: 25 of 28 (Architecture Research)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-03-22 — Roadmap created for v1.9 Browser Visualization (Phases 25-28)
+Plan: 1 of ? in current phase (plan 01 complete)
+Status: In progress
+Last activity: 2026-03-22 — Plan 25-01 complete: spike workspace, React Flow frontend, axum server with rust-embed (SPIKE-1, SPIKE-2, SPIKE-4 validated)
 
 Progress: [░░░░░░░░░░] 0% (within v1.9; phases 1-24 shipped)
 
@@ -52,6 +52,9 @@ Recent decisions affecting v1.9 work:
 - [v1.9 constraint]: React + React Flow SPA bundled via rust-embed in the Rust binary
 - [v1.9 constraint]: Web server is axum with WebSocket support
 - [Phase 25 gate]: Architecture research must complete and decisions recorded before any production code is written
+- [Phase 25-01]: Used axum-embed ServeEmbed for SPA serving — handles ETag, compression, fallback automatically
+- [Phase 25-01]: Read-only DB pool: read_only(true), max_connections(5), no journal_mode, no migrate! — separate from single-writer pool
+- [Phase 25-01]: debug-embed feature forces compile-time embedding in dev — validates release behavior without release build
 
 ### Pending Todos
 
@@ -59,12 +62,12 @@ None.
 
 ### Blockers/Concerns
 
-- rust-embed requires SPA to be pre-built before `cargo build` — build order must be established in Phase 25
-- axum + tokio runtime coexistence with existing sync DB patterns needs validation in Phase 25
+- ~~rust-embed requires SPA to be pre-built before `cargo build` — build order must be established in Phase 25~~ RESOLVED: build.rs auto-runs npm install + npm run build before embedding
+- ~~axum + tokio runtime coexistence with existing sync DB patterns needs validation in Phase 25~~ RESOLVED: read-only pool pattern validated in spike, existing runtime unaffected
 - Binary size impact of embedding full React SPA (JS bundles) is unknown — measure in Phase 26
 
 ## Session Continuity
 
-Last session: 2026-03-22
-Stopped at: Roadmap written (Phases 25-28), STATE.md updated. Phase 25 ready to plan.
+Last session: 2026-03-22T08:50:02.954Z
+Stopped at: Completed 25-01-PLAN.md: spike workspace, React Flow frontend, axum server with rust-embed
 Resume file: None
