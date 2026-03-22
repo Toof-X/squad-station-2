@@ -134,6 +134,18 @@ fn messages_changed(
 /// Reconcile agent statuses against live tmux sessions.
 /// Mirrors helpers::reconcile_agent_statuses but uses the server's own writable pool
 /// to avoid coupling server code to CLI helpers.
+/// Check if a tmux pane last line indicates the agent is at an idle prompt.
+/// Claude Code shows "❯" prompt, Gemini CLI shows "$" or ">" at idle.
+fn is_idle_prompt(last_line: &str) -> bool {
+    let trimmed = last_line.trim();
+    // Claude Code idle: line ends with "❯" or contains the prompt character
+    // Also check for status bar lines that appear when at prompt
+    trimmed == "❯"
+        || trimmed.ends_with("❯")
+        || trimmed.ends_with("bypass permissions on")
+        || trimmed.ends_with("(shift+tab to cycle)")
+}
+
 async fn reconcile_for_server(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
     let agents = db::agents::list_agents(pool).await?;
 
@@ -143,19 +155,59 @@ async fn reconcile_for_server(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
         .filter(|a| a.status != "frozen" && a.tool != "antigravity")
         .collect();
 
-    // Check all tmux sessions in parallel
-    let futures: Vec<_> = checkable
+    // Check all tmux sessions and capture last line in parallel
+    let session_futures: Vec<_> = checkable
         .iter()
         .map(|a| tmux::session_exists(&a.name))
         .collect();
-    let alive_results = futures::future::join_all(futures).await;
+    let pane_futures: Vec<_> = checkable
+        .iter()
+        .map(|a| {
+            let name = a.name.clone();
+            tokio::task::spawn_blocking(move || {
+                std::process::Command::new("tmux")
+                    .args(["capture-pane", "-t", &name, "-p"])
+                    .output()
+                    .ok()
+                    .and_then(|o| {
+                        if o.status.success() {
+                            String::from_utf8_lossy(&o.stdout)
+                                .lines()
+                                .rev()
+                                .find(|l| !l.trim().is_empty())
+                                .map(|l| l.trim().to_string())
+                        } else {
+                            None
+                        }
+                    })
+            })
+        })
+        .collect();
+
+    let alive_results = futures::future::join_all(session_futures).await;
+    let pane_results = futures::future::join_all(pane_futures).await;
 
     // Apply status updates sequentially (single-writer DB)
-    for (agent, session_alive) in checkable.iter().zip(alive_results) {
+    for (i, agent) in checkable.iter().enumerate() {
+        let session_alive = alive_results[i];
+        let last_line = pane_results[i].as_ref().ok().and_then(|o| o.clone());
+
         if !session_alive && agent.status != "dead" {
             db::agents::update_agent_status(pool, &agent.name, "dead").await?;
         } else if session_alive && agent.status == "dead" {
             db::agents::update_agent_status(pool, &agent.name, "idle").await?;
+        } else if session_alive && agent.status != "dead" {
+            // Detect busy/idle from pane content
+            let pane_idle = last_line
+                .as_deref()
+                .map(is_idle_prompt)
+                .unwrap_or(true);
+
+            if !pane_idle && agent.status != "busy" {
+                db::agents::update_agent_status(pool, &agent.name, "busy").await?;
+            } else if pane_idle && agent.status == "busy" {
+                db::agents::update_agent_status(pool, &agent.name, "idle").await?;
+            }
         }
     }
     Ok(())

@@ -359,6 +359,24 @@ pub async fn create_view_session(session_name: &str, agent_sessions: &[String]) 
     Ok(())
 }
 
+/// Capture the last non-empty line from a tmux pane.
+/// Used by the browser server to detect if an agent is at a prompt (idle) or working (busy).
+pub async fn capture_pane_last_line(session_name: &str) -> Option<String> {
+    let output = Command::new("tmux")
+        .args(["capture-pane", "-t", session_name, "-p"])
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.trim().to_string())
+}
+
 /// Resolve tmux session name from a pane ID (e.g. "%3" → "my-agent").
 /// Returns None if tmux is not running or pane ID is invalid.
 pub async fn session_name_from_pane(pane_id: &str) -> Option<String> {
