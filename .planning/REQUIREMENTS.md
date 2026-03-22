@@ -101,27 +101,27 @@ Requirements for v1.9: Browser Visualization. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SRV-01 | — | Pending |
-| SRV-02 | — | Pending |
-| SRV-03 | — | Pending |
-| SRV-04 | — | Pending |
-| RT-01 | — | Pending |
-| RT-02 | — | Pending |
-| RT-03 | — | Pending |
-| RT-04 | — | Pending |
-| VIZ-01 | — | Pending |
-| VIZ-02 | — | Pending |
-| VIZ-03 | — | Pending |
-| VIZ-04 | — | Pending |
-| UI-01 | — | Pending |
-| UI-02 | — | Pending |
-| UI-03 | — | Pending |
+| SRV-01 | Phase 26 | Pending |
+| SRV-02 | Phase 26 | Pending |
+| SRV-03 | Phase 26 | Pending |
+| SRV-04 | Phase 26 | Pending |
+| RT-01 | Phase 27 | Pending |
+| RT-02 | Phase 27 | Pending |
+| RT-03 | Phase 27 | Pending |
+| RT-04 | Phase 27 | Pending |
+| VIZ-01 | Phase 28 | Pending |
+| VIZ-02 | Phase 28 | Pending |
+| VIZ-03 | Phase 28 | Pending |
+| VIZ-04 | Phase 28 | Pending |
+| UI-01 | Phase 26 | Pending |
+| UI-02 | Phase 28 | Pending |
+| UI-03 | Phase 28 | Pending |
 
 **Coverage:**
 - v1.9 requirements: 15 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 15
+- Mapped to phases: 15 (Phase 26: 5, Phase 27: 4, Phase 28: 6)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-22*
-*Last updated: 2026-03-22 after initial definition*
+*Last updated: 2026-03-22 — traceability mapped after roadmap creation (Phases 25-28)*

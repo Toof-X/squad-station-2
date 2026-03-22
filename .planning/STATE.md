@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Browser Visualization
-status: defining_requirements
-stopped_at: "Milestone v1.9 started — defining requirements"
+status: ready_to_plan
+stopped_at: "Roadmap created for v1.9 (Phases 25-28) — Phase 25 ready to plan"
 last_updated: "2026-03-22T00:00:00.000Z"
-last_activity: "2026-03-22 — Milestone v1.9 Browser Visualization started"
+last_activity: "2026-03-22 — Roadmap written, v1.9 phases 25-28 defined"
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-22)
 
 **Core value:** Reliable message routing between Orchestrator and agents — stateless CLI, no daemon
-**Current focus:** v1.9 Browser Visualization — live node-graph topology with animated message flow
+**Current focus:** Phase 25 — Architecture Research (v1.9 Browser Visualization)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-22 — Milestone v1.9 started
+Phase: 25 of 28 (Architecture Research)
+Plan: 0 of ? in current phase
+Status: Ready to plan
+Last activity: 2026-03-22 — Roadmap created for v1.9 Browser Visualization (Phases 25-28)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [░░░░░░░░░░] 0% (within v1.9; phases 1-24 shipped)
 
 ## Code Status
 
@@ -46,16 +46,25 @@ Progress: [░░░░░░░░░░] 0%
 
 All decisions logged in PROJECT.md Key Decisions table.
 
+Recent decisions affecting v1.9 work:
+- [v1.9 constraint]: Additive only — new modules, new command, new files; no modifications to existing shipped core logic
+- [v1.9 constraint]: Event-driven streaming (tmux pane watching + DB state changes), not polling
+- [v1.9 constraint]: React + React Flow SPA bundled via rust-embed in the Rust binary
+- [v1.9 constraint]: Web server is axum with WebSocket support
+- [Phase 25 gate]: Architecture research must complete and decisions recorded before any production code is written
+
 ### Pending Todos
 
 None.
 
 ### Blockers/Concerns
 
-None.
+- rust-embed requires SPA to be pre-built before `cargo build` — build order must be established in Phase 25
+- axum + tokio runtime coexistence with existing sync DB patterns needs validation in Phase 25
+- Binary size impact of embedding full React SPA (JS bundles) is unknown — measure in Phase 26
 
 ## Session Continuity
 
 Last session: 2026-03-22
-Stopped at: Milestone v1.9 started — defining requirements
+Stopped at: Roadmap written (Phases 25-28), STATE.md updated. Phase 25 ready to plan.
 Resume file: None
