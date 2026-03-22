@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@xyflow/react';
 import type { Edge, EdgeProps } from '@xyflow/react';
 
@@ -43,6 +44,8 @@ export function AnimatedEdge({
   targetPosition,
   data,
 }: EdgeProps<MessageEdge>) {
+  const [hovered, setHovered] = useState(false);
+
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
@@ -53,7 +56,7 @@ export function AnimatedEdge({
   });
 
   const isAnimated = data?.animated === true;
-  const hasLabel = Boolean(data?.task);
+  const hasLabel = Boolean(data?.task) && hovered;
   const taskText = data?.task ? (data.task.length > 30 ? data.task.slice(0, 30) + '…' : data.task) : '';
   const priorityClass = getPriorityClass(data?.priority);
   const relativeTime = formatRelativeTime(data?.timestamp);
@@ -61,6 +64,17 @@ export function AnimatedEdge({
   return (
     <>
       <BaseEdge id={id} path={edgePath} />
+
+      {/* Invisible wider hit area for hover detection */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={20}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{ pointerEvents: 'stroke' }}
+      />
 
       {/* Crawling dots animation — only when animated */}
       {isAnimated && (
@@ -77,7 +91,7 @@ export function AnimatedEdge({
         </>
       )}
 
-      {/* Edge label — only when in-flight task exists */}
+      {/* Edge label — only on hover when in-flight task exists */}
       {hasLabel && (
         <EdgeLabelRenderer>
           <div
