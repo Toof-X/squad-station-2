@@ -186,6 +186,7 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                         let yaml = generate_squad_yml(&result);
                         std::fs::write(&config_path, &yaml)?;
                         create_sdd_playbook(&config_path, result.sdd);
+                        install_sdd_if_needed(result.sdd, &result.orchestrator.provider).ok();
                         println!("Replaced squad.yml for project '{}'", result.project);
                         // Fall through to load_config below
                     }
@@ -257,9 +258,10 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         let squad_dir = project_root.join(".squad");
         std::fs::create_dir_all(&squad_dir)?;
 
-        // Create SDD playbook
+        // Create SDD playbook + install SDD locally if needed
         if let Some(sdd) = deferred_sdd {
             create_sdd_playbook(&config_path, sdd);
+            install_sdd_if_needed(sdd, &config.orchestrator.provider).ok();
         }
 
         // Create log directory
@@ -542,6 +544,11 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                 .join("log");
             let _ = std::fs::create_dir_all(&log_dir);
 
+            // Install SDD locally if not already installed
+            if let Some(sdd_configs) = &config.sdd {
+                install_sdd_from_config(sdd_configs, &config.orchestrator.provider);
+            }
+
             println!("\n{}", green("══════════════════════════════════"));
             println!("  {}", bold("Squad Setup Complete"));
             println!("{}\n", green("══════════════════════════════════"));
@@ -771,6 +778,79 @@ fn create_sdd_playbook(
     }
     if let Err(e) = std::fs::write(&playbook_path, sdd.playbook_content()) {
         eprintln!("Warning: could not write {}: {}", playbook_path.display(), e);
+    }
+}
+
+/// Run the SDD local installer if the SDD is not already installed.
+/// Checks detect_dirs to skip if already present. Runs the non-interactive install command.
+/// Returns Ok(true) if installed, Ok(false) if skipped, Err on failure.
+fn install_sdd_if_needed(
+    sdd: crate::commands::wizard::SddWorkflow,
+    provider: &str,
+) -> anyhow::Result<bool> {
+    // Check if already installed
+    let cwd = std::env::current_dir().unwrap_or_default();
+    for dir in sdd.detect_dirs() {
+        if cwd.join(dir).exists() {
+            return Ok(false); // already installed
+        }
+    }
+
+    let args = match sdd.install_command(provider) {
+        Some(args) => args,
+        None => {
+            // No automated installer (e.g. Superpower)
+            eprintln!(
+                "  SDD '{}': no automated installer — follow the playbook's install instructions manually",
+                sdd.as_str()
+            );
+            return Ok(false);
+        }
+    };
+
+    println!("  SDD '{}': installing locally...", sdd.as_str());
+
+    let status = std::process::Command::new(args[0])
+        .args(&args[1..])
+        .stdin(std::process::Stdio::null())
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            println!("  SDD '{}': installed successfully", sdd.as_str());
+            Ok(true)
+        }
+        Ok(s) => {
+            eprintln!(
+                "  SDD '{}': installer exited with {}",
+                sdd.as_str(),
+                s.code().unwrap_or(-1)
+            );
+            Ok(false)
+        }
+        Err(e) => {
+            eprintln!(
+                "  SDD '{}': failed to run installer ({}). Install manually: {}",
+                sdd.as_str(),
+                e,
+                args.join(" ")
+            );
+            Ok(false)
+        }
+    }
+}
+
+/// Install SDD from squad.yml config (non-wizard path).
+/// Resolves SddConfig.name to SddWorkflow and runs the installer.
+fn install_sdd_from_config(sdd_configs: &[crate::config::SddConfig], provider: &str) {
+    for sdd_cfg in sdd_configs {
+        if let Some(sdd) = crate::commands::wizard::SddWorkflow::from_name(&sdd_cfg.name) {
+            match install_sdd_if_needed(sdd, provider) {
+                Ok(true) => {}  // message already printed
+                Ok(false) => {} // skipped or manual
+                Err(e) => eprintln!("  SDD '{}': error ({})", sdd_cfg.name, e),
+            }
+        }
     }
 }
 

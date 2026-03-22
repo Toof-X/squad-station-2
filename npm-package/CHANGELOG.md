@@ -2,6 +2,22 @@
 
 All notable changes to Squad Station are documented in this file.
 
+## v0.6.0 - 2026-03-22
+
+### ✨ Features
+
+- **Auto-install SDD on init** — When initializing a project with an SDD workflow (BMad, GSD), Squad Station now automatically runs the SDD's local installer if it hasn't been installed yet. This ensures agents have the skills/commands they need before sessions launch.
+  - BMad: `npx bmad-method install --directory . --modules bmm --tools <ide> --yes`
+  - GSD: `npx get-shit-done-cc@latest --<provider> --local`
+  - Superpower: prints manual install instructions (no automated installer)
+  - Skips if already installed (checks for `_bmad/`, `.claude/commands/gsd/`, etc.)
+  - Works on TUI new-project, TUI overwrite, and non-TUI init paths
+
+### 🧹 Cleanup
+
+- Removed deprecated `hooks/` directory (5 shell scripts) — all hook logic is now generated inline in settings.json during init
+- Fixed all 17 clippy warnings: `matches!()` macro, `push('\n')`, needless borrows, print literals, `useless_format`
+
 ## v0.5.9 - 2026-03-21
 
 ### ⚡ Performance

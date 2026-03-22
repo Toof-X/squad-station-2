@@ -1,6 +1,6 @@
-/// Centralized provider-specific constants and behavior flags.
-/// Flat functions — no trait, no dynamic dispatch.
-/// v0.7.0 consideration: refactor to a Provider trait if a 3rd provider is added.
+//! Centralized provider-specific constants and behavior flags.
+//! Flat functions — no trait, no dynamic dispatch.
+//! v0.7.0 consideration: refactor to a Provider trait if a 3rd provider is added.
 
 /// Patterns that indicate the provider's TUI is idle and waiting for input.
 pub fn idle_patterns(provider: &str) -> Option<&'static [&'static str]> {
@@ -15,10 +15,7 @@ pub fn idle_patterns(provider: &str) -> Option<&'static [&'static str]> {
 /// Claude Code: yes (Stop fires) — root cause of FIFO race.
 /// Gemini CLI: no (AfterAgent does not fire on /clear).
 pub fn clear_triggers_completion_hook(provider: &str) -> bool {
-    match provider {
-        "claude-code" => true,
-        _ => false,
-    }
+    matches!(provider, "claude-code")
 }
 
 /// Provider settings file path relative to project root.
@@ -33,10 +30,7 @@ pub fn settings_path(provider: &str) -> Option<&'static str> {
 /// Whether the provider uses an alternate screen buffer (full-screen TUI).
 /// Affects tmux capture-pane strategy: need -a flag for alternate buffer.
 pub fn uses_alternate_buffer(provider: &str) -> bool {
-    match provider {
-        "gemini-cli" => true,
-        _ => false,
-    }
+    matches!(provider, "gemini-cli")
 }
 
 /// Hook event name for task completion signal.
@@ -51,10 +45,7 @@ pub fn completion_hook_event(provider: &str) -> Option<&'static str> {
 /// Whether hook stdout must be valid JSON.
 /// Gemini CLI golden rule: stdout must be JSON only.
 pub fn hook_requires_json_stdout(provider: &str) -> bool {
-    match provider {
-        "gemini-cli" => true,
-        _ => false,
-    }
+    matches!(provider, "gemini-cli")
 }
 
 /// Commands that execute instantly without producing a provider response turn.

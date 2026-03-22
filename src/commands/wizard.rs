@@ -86,6 +86,59 @@ impl SddWorkflow {
         }
     }
 
+    /// Returns the non-interactive install command for this SDD workflow.
+    /// The command installs the SDD locally into the current project directory.
+    /// Returns None if the SDD has no automated installer (e.g. Superpower uses /plugin).
+    pub fn install_command(self, provider: &str) -> Option<Vec<&'static str>> {
+        match self {
+            SddWorkflow::Bmad => {
+                let tools = match provider {
+                    "gemini-cli" => "gemini",
+                    "claude-code" => "claude-code",
+                    _ => "claude-code",
+                };
+                // npx bmad-method install --directory . --modules bmm --tools <ide> --yes
+                Some(match tools {
+                    "gemini" => vec!["npx", "bmad-method", "install", "--directory", ".", "--modules", "bmm", "--tools", "gemini", "--yes"],
+                    _ => vec!["npx", "bmad-method", "install", "--directory", ".", "--modules", "bmm", "--tools", "claude-code", "--yes"],
+                })
+            }
+            SddWorkflow::GetShitDone => {
+                let flag = match provider {
+                    "gemini-cli" => "--gemini",
+                    "claude-code" => "--claude",
+                    _ => "--claude",
+                };
+                // npx get-shit-done-cc@latest <flag> --local
+                Some(match flag {
+                    "--gemini" => vec!["npx", "get-shit-done-cc@latest", "--gemini", "--local"],
+                    _ => vec!["npx", "get-shit-done-cc@latest", "--claude", "--local"],
+                })
+            }
+            // Superpower uses /plugin install — not automatable via CLI
+            SddWorkflow::Superpower => None,
+        }
+    }
+
+    /// Directories that indicate this SDD is already installed locally.
+    pub fn detect_dirs(self) -> &'static [&'static str] {
+        match self {
+            SddWorkflow::Bmad => &["_bmad"],
+            SddWorkflow::GetShitDone => &[".claude/commands/gsd", ".gemini/commands/gsd"],
+            SddWorkflow::Superpower => &[],
+        }
+    }
+
+    /// Try to resolve an SddWorkflow from its name string (as stored in squad.yml).
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "bmad" => Some(SddWorkflow::Bmad),
+            "gsd" => Some(SddWorkflow::GetShitDone),
+            "superpower" => Some(SddWorkflow::Superpower),
+            _ => None,
+        }
+    }
+
     pub const ALL: [&'static str; 3] = ["bmad", "get-shit-done", "superpower"];
 }
 
@@ -1853,6 +1906,43 @@ mod tests {
         assert_eq!(m.index, 2);
         m.reset();
         assert_eq!(m.index, 0);
+    }
+
+    #[test]
+    fn test_sdd_from_name() {
+        assert_eq!(SddWorkflow::from_name("bmad"), Some(SddWorkflow::Bmad));
+        assert_eq!(SddWorkflow::from_name("gsd"), Some(SddWorkflow::GetShitDone));
+        assert_eq!(SddWorkflow::from_name("superpower"), Some(SddWorkflow::Superpower));
+        assert_eq!(SddWorkflow::from_name("unknown"), None);
+    }
+
+    #[test]
+    fn test_sdd_install_command_bmad() {
+        let cmd = SddWorkflow::Bmad.install_command("claude-code").unwrap();
+        assert_eq!(cmd[0], "npx");
+        assert!(cmd.contains(&"bmad-method"));
+        assert!(cmd.contains(&"--yes"));
+        assert!(cmd.contains(&"claude-code"));
+    }
+
+    #[test]
+    fn test_sdd_install_command_gsd() {
+        let cmd = SddWorkflow::GetShitDone.install_command("claude-code").unwrap();
+        assert_eq!(cmd[0], "npx");
+        assert!(cmd.contains(&"--claude"));
+        assert!(cmd.contains(&"--local"));
+    }
+
+    #[test]
+    fn test_sdd_install_command_superpower_none() {
+        assert!(SddWorkflow::Superpower.install_command("claude-code").is_none());
+    }
+
+    #[test]
+    fn test_sdd_detect_dirs() {
+        assert!(SddWorkflow::Bmad.detect_dirs().contains(&"_bmad"));
+        assert!(!SddWorkflow::GetShitDone.detect_dirs().is_empty());
+        assert!(SddWorkflow::Superpower.detect_dirs().is_empty());
     }
 
 }

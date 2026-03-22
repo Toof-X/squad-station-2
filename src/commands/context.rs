@@ -149,7 +149,7 @@ pub fn build_orchestrator_md(
         for sdd in sdd_configs {
             out.push_str(&format!("- [ ] Read `{}`\n", sdd.playbook));
         }
-        out.push_str("\n");
+        out.push('\n');
         out.push_str("Only proceed after reading. The playbook defines your workflow.\n\n");
     }
     out.push_str(&format!("- [ ] Project root: `{}`\n", project_root));
@@ -202,7 +202,7 @@ pub fn build_orchestrator_md(
                 m.agent_name, m.pending_count, m.busy_for, alignment_str
             ));
         }
-        out.push_str("\n");
+        out.push('\n');
 
         // Routing hints
         out.push_str("- Prefer agents with 0 pending tasks\n");
@@ -276,7 +276,7 @@ pub fn build_orchestrator_md(
                 out.push_str(&format!("| {} | {} |\n", kw, agent.name));
             }
         }
-        out.push_str("\n");
+        out.push('\n');
     }
 
     // ── SDD Orchestration ────────────────────────────────────────────────

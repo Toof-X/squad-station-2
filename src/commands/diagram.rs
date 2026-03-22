@@ -167,14 +167,14 @@ fn render_connector(orch_center: usize, worker_mids: &[usize]) -> Vec<String> {
 
     // Line 2: horizontal bar connecting orch_center to all worker_mids
     let mut line2: Vec<char> = vec![' '; canvas];
-    for x in left_most..=right_most {
-        let is_left = x == left_most;
-        let is_right = x == right_most;
-        let up = x == orch_center;
-        let down = worker_mids.contains(&x);
+    for (i, ch) in line2.iter_mut().enumerate().take(right_most + 1).skip(left_most) {
+        let is_left = i == left_most;
+        let is_right = i == right_most;
+        let up = i == orch_center;
+        let down = worker_mids.contains(&i);
         let left = !is_left;
         let right = !is_right;
-        line2[x] = box_char(up, down, left, right);
+        *ch = box_char(up, down, left, right);
     }
 
     // Line 3: │ at each worker midpoint

@@ -16,7 +16,7 @@ main.rs → welcome TUI → user chọn "Launch Init"
 ## Phase 3: Init flow — tuần tự (`init.rs`)
 
 Toàn bộ setup hoàn tất TRƯỚC khi launch tmux sessions.
-Khi Claude Code start → mọi thứ đã sẵn sàng (hooks, context, DB).
+Khi Claude Code start → mọi thứ đã sẵn sàng (hooks, context, DB, SDD).
 
 ```
 ┌─ Wizard ──────────────────────────────────────────────────────────┐
@@ -34,9 +34,15 @@ Khi Claude Code start → mọi thứ đã sẵn sàng (hooks, context, DB).
 └───────────────────────────────────────────────────────────────────┘
          │
          ▼
-┌─ Step 2: Create .squad/ + DB ────────────────────────────────────┐
+┌─ Step 2: Create .squad/ + DB + Install SDD ────────────────────────┐
 │  create .squad/            → Tạo thư mục .squad                  │
-│  create .squad/sdd/        → SDD playbook                        │
+│  create .squad/sdd/        → SDD playbook (embedded content)      │
+│  install_sdd_if_needed()   → Auto-install SDD locally:           │
+│    • BMad:  npx bmad-method install --directory . --modules bmm  │
+│             --tools claude-code --yes                              │
+│    • GSD:   npx get-shit-done-cc@latest --claude --local          │
+│    • Superpower: skip (manual /plugin install)                    │
+│    → Kiểm tra detect_dirs trước (skip nếu đã cài)               │
 │  create .squad/log/        → Cho signal + watchdog logs           │
 │  db::connect(.squad/station.db) → SQLite + migrations            │
 └───────────────────────────────────────────────────────────────────┘
@@ -94,6 +100,7 @@ Khi Claude Code start → mọi thứ đã sẵn sàng (hooks, context, DB).
 │  • .claude/settings.local.json (hooks active)                    │
 │  • .claude/commands/squad-orchestrator.md (slash command)         │
 │  • .git/                   (project root detection)              │
+│  • _bmad/ hoặc .claude/commands/gsd/ (SDD đã cài)              │
 │  ══════════════════════════════════════════════════                │
 │                                                                   │
 │  Launch orchestrator:                                            │
@@ -133,18 +140,40 @@ Khi Claude Code start → mọi thứ đã sẵn sàng (hooks, context, DB).
 2.  .git/                                 ← git init -q
 3.  squad.yml                             ← write config
 4.  .squad/                               ← create directory
-5.  .squad/sdd/<name>-playbook.md         ← SDD playbook
-6.  .squad/log/                           ← signal + watchdog logs
-7.  .squad/station.db                     ← SQLite DB (agents registered)
-8.  .claude/settings.local.json           ← hooks (trusted, auto-execute)
-9.  .claude/commands/squad-orchestrator.md ← full context (from DB)
-10. .squad/watch.pid                      ← watchdog daemon
+5.  .squad/sdd/<name>-playbook.md         ← SDD playbook (embedded)
+6.  _bmad/ hoặc .claude/commands/gsd/    ← SDD local install (auto)
+7.  .squad/log/                           ← signal + watchdog logs
+8.  .squad/station.db                     ← SQLite DB (agents registered)
+9.  .claude/settings.local.json           ← hooks (trusted, auto-execute)
+10. .claude/commands/squad-orchestrator.md ← full context (from DB)
+11. .squad/watch.pid                      ← watchdog daemon
     ══════════════════════════════════════
     MỌI THỨ SẴN SÀNG → LAUNCH SESSIONS
     ══════════════════════════════════════
-11. tmux sessions                         ← orchestrator + workers
-12. tmux monitor session                  ← multi-pane view
+12. tmux sessions                         ← orchestrator + workers
+13. tmux monitor session                  ← multi-pane view
 ```
+
+## SDD Auto-Install
+
+Khi init, Squad Station tự động cài SDD được chọn nếu chưa có:
+
+| SDD | Detect dirs | Install command | Notes |
+|-----|-------------|-----------------|-------|
+| BMad | `_bmad/` | `npx bmad-method install --directory . --modules bmm --tools <ide> --yes` | Non-interactive |
+| GSD | `.claude/commands/gsd/` | `npx get-shit-done-cc@latest --<provider> --local` | Local install |
+| Superpower | — | Manual `/plugin install` | Không tự động được |
+
+Flow:
+```
+create_sdd_playbook()          → Ghi playbook.md vào .squad/sdd/
+install_sdd_if_needed()        → Kiểm tra detect_dirs
+  → Đã cài? → skip
+  → Chưa cài? → chạy install command (non-interactive)
+  → Không có installer? → in hướng dẫn manual
+```
+
+Cũng chạy khi re-init (overwrite) và non-TUI init (đọc từ squad.yml).
 
 ## Hook behavior khi Claude Code start
 

@@ -92,25 +92,23 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
             name_w = name_w
         );
         println!(
-            "  {:<name_w$}  {:>7}  {:>8}  {}",
+            "  {:<name_w$}  {:>7}  {:>8}  ─────────",
             "─".repeat(name_w),
             "───────",
             "────────",
-            "─────────",
             name_w = name_w
         );
     } else {
         println!(
-            "  {:<name_w$}  {:>7}  {:>8}  {}",
-            "Agent", "Pending", "Busy For", "Alignment",
+            "  {:<name_w$}  {:>7}  {:>8}  Alignment",
+            "Agent", "Pending", "Busy For",
             name_w = name_w
         );
         println!(
-            "  {:<name_w$}  {:>7}  {:>8}  {}",
+            "  {:<name_w$}  {:>7}  {:>8}  ---------",
             "-".repeat(name_w),
             "-------",
             "--------",
-            "---------",
             name_w = name_w
         );
     }
@@ -129,7 +127,7 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
             let pending_colored = if m.pending_count > 0 {
                 format!("{}", pending_str.yellow())
             } else {
-                format!("{}", pending_str)
+                pending_str.to_string()
             };
             let busy_colored = if m.busy_for != "idle" {
                 format!("{}", m.busy_for.cyan())

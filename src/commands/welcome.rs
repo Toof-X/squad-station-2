@@ -95,13 +95,13 @@ pub fn guide_content() -> String {
     out.push_str("\n\n");
     out.push_str("  1. Set up your squad\n");
     out.push_str("     Run squad-station init to register your agents.\n");
-    out.push_str("\n");
+    out.push('\n');
     out.push_str("  2. Send tasks to agents\n");
     out.push_str("     Use squad-station send to assign work to any agent by name.\n");
-    out.push_str("\n");
+    out.push('\n');
     out.push_str("  3. Agents signal completion automatically\n");
     out.push_str("     Hook scripts notify squad-station when a task finishes.\n");
-    out.push_str("\n");
+    out.push('\n');
     out.push_str("Run squad-station --help for all commands");
     out
 }

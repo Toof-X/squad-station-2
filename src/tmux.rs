@@ -334,7 +334,7 @@ pub async fn create_view_session(session_name: &str, agent_sessions: &[String]) 
         let first_worker_cmd =
             format!("sh -c 'TMUX= tmux attach-session -t {}'", agent_sessions[1]);
         Command::new("tmux")
-            .args(&["split-window", "-t", session_name, "-h", &first_worker_cmd])
+            .args(["split-window", "-t", session_name, "-h", &first_worker_cmd])
             .status()
             .await?;
 
@@ -343,7 +343,7 @@ pub async fn create_view_session(session_name: &str, agent_sessions: &[String]) 
             let cmd = format!("sh -c 'TMUX= tmux attach-session -t {}'", agent);
             // Target the last pane (right column) for vertical split
             Command::new("tmux")
-                .args(&["split-window", "-t", session_name, "-v", &cmd])
+                .args(["split-window", "-t", session_name, "-v", &cmd])
                 .status()
                 .await?;
         }
