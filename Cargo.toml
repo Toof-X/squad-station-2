@@ -7,8 +7,17 @@ name = "squad-station"
 version = "0.7.0"
 edition = "2021"
 description = "Message routing and orchestration for AI agent squads"
+build = "build.rs"
+
+[features]
+browser = ["dep:axum", "dep:rust-embed", "dep:axum-embed", "dep:tower-http", "dep:open"]
 
 [dependencies]
+axum = { version = "0.7", features = ["ws"], optional = true }
+rust-embed = { version = "8", features = ["axum-ex", "debug-embed"], optional = true }
+axum-embed = { version = "0.1", optional = true }
+tower-http = { version = "0.5", features = ["trace", "timeout"], optional = true }
+open = { version = "5", optional = true }
 clap = { version = "4.5", features = ["derive"] }
 tokio = { version = "1.37", features = ["full"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "macros", "chrono", "uuid", "migrate"] }
