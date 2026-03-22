@@ -1,3 +1,7 @@
+[workspace]
+members = ["spike"]
+resolver = "2"
+
 [package]
 name = "squad-station"
 version = "0.7.0"

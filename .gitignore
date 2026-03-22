@@ -29,3 +29,7 @@ bin/squad-station
 
 # Squad Station local DB
 .squad/
+
+# Browser UI build artifacts
+web/dist/
+web/node_modules/
