@@ -112,7 +112,10 @@ Fleet Status metrics in orchestrator context, dynamic agent cloning command, 11 
   3. Event-detection strategy is decided: tmux pane polling interval, DB change-detection mechanism (timestamp comparison or SQLite hooks), and debounce approach are documented
   4. React + React Flow build pipeline is proven: Vite build produces a dist/ folder that rust-embed can include at compile time
   5. Architecture decisions are recorded in PROJECT.md Key Decisions table and a research spike document exists
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 25-01-PLAN.md — Scaffold workspace, frontend, and spike server (rust-embed + axum + WS echo + build.rs)
+- [ ] 25-02-PLAN.md — Verify spike end-to-end and record architecture decisions in PROJECT.md
 
 ### Phase 26: Axum Server & CLI Command
 **Goal**: Users can run `squad-station browser` and see the SPA open in their browser, served entirely from the binary
@@ -169,7 +172,7 @@ Fleet Status metrics in orchestrator context, dynamic agent cloning command, 11 
 | 22. Orchestrator Intelligence Data | v1.8 | 2/2 | Complete | 2026-03-19 |
 | 23. Dynamic Agent Cloning | v1.8 | 2/2 | Complete | 2026-03-19 |
 | 24. Agent Role Templates in Wizard | v1.8 | 3/3 | Complete | 2026-03-19 |
-| 25. Architecture Research | v1.9 | 0/? | Not started | - |
+| 25. Architecture Research | v1.9 | 0/2 | In progress | - |
 | 26. Axum Server & CLI Command | v1.9 | 0/? | Not started | - |
 | 27. Event-Driven WebSocket Streaming | v1.9 | 0/? | Not started | - |
 | 28. React Flow Node Graph | v1.9 | 0/? | Not started | - |
