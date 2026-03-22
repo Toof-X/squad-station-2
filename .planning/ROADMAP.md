@@ -91,7 +91,7 @@ Fleet Status metrics in orchestrator context, dynamic agent cloning command, 11 
 
 </details>
 
-### 🚧 v1.9 Browser Visualization (In Progress)
+### v1.9 Browser Visualization (In Progress)
 
 **Milestone Goal:** Add `squad-station browser` command that serves a React + React Flow SPA from the binary via axum, delivering live node-graph visualization of agent topology with event-driven WebSocket streaming.
 
@@ -127,7 +127,10 @@ Plans:
   3. Running `squad-station browser --port 9000` starts the server on port 9000; omitting `--port` selects an available port automatically
   4. Pressing Ctrl+C shuts down the server cleanly with no orphaned processes or lingering port bindings
   5. The binary size increase from embedded SPA assets is within acceptable bounds (SPA can be built and embedded)
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 26-01-PLAN.md — Feature-gated axum server, browser command, CLI wiring, build.rs, connect_readonly
+- [ ] 26-02-PLAN.md — Tailwind CSS v4 setup, SPA enhancements (WS status, /api/status), visual verification
 
 ### Phase 27: Event-Driven WebSocket Streaming
 **Goal**: Browser clients receive real-time state-change events pushed from the server without polling
@@ -172,7 +175,7 @@ Plans:
 | 22. Orchestrator Intelligence Data | v1.8 | 2/2 | Complete | 2026-03-19 |
 | 23. Dynamic Agent Cloning | v1.8 | 2/2 | Complete | 2026-03-19 |
 | 24. Agent Role Templates in Wizard | v1.8 | 3/3 | Complete | 2026-03-19 |
-| 25. Architecture Research | 2/2 | Complete   | 2026-03-22 | - |
-| 26. Axum Server & CLI Command | v1.9 | 0/? | Not started | - |
+| 25. Architecture Research | v1.9 | 2/2 | Complete | 2026-03-22 |
+| 26. Axum Server & CLI Command | v1.9 | 0/2 | Not started | - |
 | 27. Event-Driven WebSocket Streaming | v1.9 | 0/? | Not started | - |
 | 28. React Flow Node Graph | v1.9 | 0/? | Not started | - |
