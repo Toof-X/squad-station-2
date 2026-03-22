@@ -571,14 +571,18 @@ async fn run_inject(
                 "squad-station: inject skipped (session={}, expected={})",
                 session_name, orch_name
             );
-            return Ok(()); // Not the orchestrator — silent exit
+            // Gemini CLI requires valid JSON on stdout even when skipping
+            print!("{}", format_inject_output(&config.orchestrator.provider, ""));
+            return Ok(());
         }
     } else {
         eprintln!(
             "squad-station: inject skipped (no tmux session detected, expected={})",
             orch_name
         );
-        return Ok(()); // Not in tmux — silent exit
+        // Gemini CLI requires valid JSON on stdout even when skipping
+        print!("{}", format_inject_output(&config.orchestrator.provider, ""));
+        return Ok(());
     }
 
     // Generate content — use resolve_db_path_only to avoid creating .squad/ prematurely.
