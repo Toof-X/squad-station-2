@@ -76,9 +76,9 @@ export function AnimatedEdge({
         style={{ pointerEvents: 'stroke' }}
       />
 
-      {/* Crawling dots animation — only when animated */}
+      {/* Crawling dots animation — only when animated, no pointer events */}
       {isAnimated && (
-        <>
+        <g style={{ pointerEvents: 'none' }}>
           <circle r="3" fill="#3b82f6">
             <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} begin="0s" />
           </circle>
@@ -88,7 +88,7 @@ export function AnimatedEdge({
           <circle r="3" fill="#3b82f6">
             <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} begin="1.33s" />
           </circle>
-        </>
+        </g>
       )}
 
       {/* Edge label — only on hover when in-flight task exists */}
