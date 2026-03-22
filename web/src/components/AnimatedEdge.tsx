@@ -4,12 +4,31 @@ import type { Edge, EdgeProps } from '@xyflow/react';
 
 type AnimatedEdgeData = {
   animated: boolean;
+  direction?: 'forward' | 'reverse';
   task?: string;
   priority?: string;
   timestamp?: string;
 };
 
 type MessageEdge = Edge<AnimatedEdgeData, 'animated'>;
+
+// Reverse an SVG path by swapping source/target coordinates.
+// For smooth step paths (M x y ... L x y), we reverse the command sequence
+// so animateMotion travels from target to source.
+function reverseSvgPath(path: string): string {
+  // Extract all coordinate pairs from the path
+  const coords: [number, number][] = [];
+  const regex = /(-?\d+\.?\d*)\s*[, ]\s*(-?\d+\.?\d*)/g;
+  let match;
+  while ((match = regex.exec(path)) !== null) {
+    coords.push([parseFloat(match[1]), parseFloat(match[2])]);
+  }
+  if (coords.length < 2) return path;
+  // Build reversed path: M to last point, L through all others in reverse
+  const reversed = coords.reverse();
+  return `M ${reversed[0][0]},${reversed[0][1]} ` +
+    reversed.slice(1).map(([x, y]) => `L ${x},${y}`).join(' ');
+}
 
 const priorityColors: Record<string, string> = {
   urgent: 'bg-red-500 text-white',
@@ -73,10 +92,15 @@ export function AnimatedEdge({
   });
 
   const isAnimated = data?.animated === true;
+  const isReverse = data?.direction === 'reverse';
+  const dotColor = isReverse ? '#22c55e' : '#3b82f6'; // green for completion, blue for task
   const hasTask = Boolean(data?.task);
   const taskText = data?.task ? (data.task.length > 30 ? data.task.slice(0, 30) + '…' : data.task) : '';
   const priorityClass = getPriorityClass(data?.priority);
   const relativeTime = formatRelativeTime(data?.timestamp);
+
+  // For reverse direction, reverse the edge path so dots travel target → source
+  const animPath = isReverse ? reverseSvgPath(edgePath) : edgePath;
 
   return (
     <>
@@ -96,14 +120,14 @@ export function AnimatedEdge({
       {/* Crawling dots animation — only when animated, no pointer events */}
       {isAnimated && (
         <g style={{ pointerEvents: 'none' }}>
-          <circle r="3" fill="#3b82f6">
-            <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} begin="0s" />
+          <circle r="3" fill={dotColor}>
+            <animateMotion dur="2s" repeatCount="indefinite" path={animPath} begin="0s" />
           </circle>
-          <circle r="3" fill="#3b82f6">
-            <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} begin="0.66s" />
+          <circle r="3" fill={dotColor}>
+            <animateMotion dur="2s" repeatCount="indefinite" path={animPath} begin="0.66s" />
           </circle>
-          <circle r="3" fill="#3b82f6">
-            <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} begin="1.33s" />
+          <circle r="3" fill={dotColor}>
+            <animateMotion dur="2s" repeatCount="indefinite" path={animPath} begin="1.33s" />
           </circle>
         </g>
       )}

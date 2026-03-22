@@ -125,15 +125,16 @@ export function useGraphLayout(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutKey, structuralEdges]);
 
-  // Update edge animation data from in-flight messages (separate memo — no re-layout)
+  // Update edge animation data from in-flight and recently completed messages
   const edges = useMemo((): Edge[] => {
     const orchName = orchestrator?.name;
+    const now = Date.now();
+    // Recently completed threshold: show reverse animation for 5 seconds after completion
+    const RECENT_MS = 5000;
+
     return layoutedEdges.map((edge) => {
-      // Find a processing message between source and target (in either direction)
-      // Note: send command stores from_agent as "orchestrator" (literal string),
-      // not the actual agent name — so we also match that against the orchestrator node
-      const activeMsg = messages.find((m) => {
-        if (m.status !== 'processing') return false;
+      // Helper: check if a message matches this edge (orchestrator → worker direction)
+      const matchesEdge = (m: WsMessage) => {
         const from = m.from_agent;
         const to = m.to_agent;
         const matchesFrom =
@@ -148,22 +149,50 @@ export function useGraphLayout(
           (to === edge.source ||
             (to === 'orchestrator' && edge.source === orchName));
         return (matchesFrom && matchesTo) || matchesReverse;
-      });
+      };
+
+      // 1. Check for processing message (orchestrator → agent, forward direction)
+      const activeMsg = messages.find(
+        (m) => m.status === 'processing' && matchesEdge(m),
+      );
       if (activeMsg) {
         return {
           ...edge,
           animated: true,
           data: {
             animated: true,
+            direction: 'forward' as const,
             task: activeMsg.task,
             priority: activeMsg.priority,
             timestamp: activeMsg.updated_at,
           },
         };
       }
+
+      // 2. Check for recently completed message (agent → orchestrator, reverse direction)
+      const recentCompleted = messages.find((m) => {
+        if (m.status !== 'completed' || !m.completed_at) return false;
+        const completedAt = new Date(m.completed_at).getTime();
+        if (isNaN(completedAt)) return false;
+        return now - completedAt < RECENT_MS && matchesEdge(m);
+      });
+      if (recentCompleted) {
+        return {
+          ...edge,
+          animated: true,
+          data: {
+            animated: true,
+            direction: 'reverse' as const,
+            task: `✓ ${recentCompleted.task}`,
+            priority: recentCompleted.priority,
+            timestamp: recentCompleted.completed_at ?? recentCompleted.updated_at,
+          },
+        };
+      }
+
       return { ...edge, animated: false };
     });
-  }, [layoutedEdges, messages]);
+  }, [layoutedEdges, messages, orchestrator]);
 
   return { nodes: layoutedNodes, edges };
 }
