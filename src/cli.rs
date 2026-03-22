@@ -161,6 +161,15 @@ pub enum Commands {
         #[arg(long)]
         all: bool,
     },
+    /// Launch browser visualization (requires --features browser)
+    Browser {
+        /// Port to bind to (default: 3000, fallback to random if taken)
+        #[arg(long)]
+        port: Option<u16>,
+        /// Skip auto-opening browser
+        #[arg(long)]
+        no_open: bool,
+    },
 }
 
 /// Task priority level

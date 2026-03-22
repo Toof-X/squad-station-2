@@ -25,3 +25,6 @@ pub mod view;
 pub mod watch;
 pub mod welcome;
 pub mod wizard;
+
+#[cfg(feature = "browser")]
+pub mod browser;

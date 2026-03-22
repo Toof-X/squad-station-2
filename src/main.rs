@@ -86,6 +86,13 @@ async fn run(cli: cli::Cli) -> Result<()> {
                     stop,
                 } => commands::watch::run(interval, stall_threshold, daemon, stop).await,
                 Clean { config, yes, all } => commands::clean::run(config, yes, all, cli.json).await,
+                #[cfg(feature = "browser")]
+                Browser { port, no_open } => commands::browser::run(port, no_open).await,
+                #[cfg(not(feature = "browser"))]
+                Browser { .. } => {
+                    eprintln!("Browser feature not enabled. Rebuild with: cargo build --features browser");
+                    std::process::exit(1);
+                }
             }
         }
     }
