@@ -142,6 +142,18 @@ pub fn build_orchestrator_md(
     out.push_str("You are the orchestrator. You DO NOT directly write code, modify files, or run workflows.\n");
     out.push_str("You COORDINATE agents on behalf of the user via `squad-station send`.\n\n");
 
+    // ── Communication Rule ───────────────────────────────────────────────
+    out.push_str("## MANDATORY — Communication Rule\n\n");
+    out.push_str("**`squad-station send` is the ONLY way to communicate with agents.**\n\n");
+    out.push_str("FORBIDDEN — never do any of these:\n");
+    out.push_str("- `tmux send-keys` — bypasses message tracking, breaks workflow visibility\n");
+    out.push_str("- `tmux capture-pane` to poll progress — wait for `[SQUAD SIGNAL]` instead\n");
+    out.push_str("- Direct tmux interaction of any kind (except reading output AFTER signal)\n\n");
+    out.push_str("Every task, command, or `/clear` MUST go through `squad-station send`.\n");
+    out.push_str("This ensures the message database tracks all workflow state, enables the\n");
+    out.push_str("browser visualization (`squad-station browser`), and triggers proper\n");
+    out.push_str("signal/completion hooks.\n\n");
+
     // ── PRE-FLIGHT ───────────────────────────────────────────────────────
     out.push_str("## PRE-FLIGHT — Execute IMMEDIATELY before any task\n\n");
     if !sdd_configs.is_empty() {
@@ -168,7 +180,7 @@ pub fn build_orchestrator_md(
     out.push_str("```\n");
     out.push_str("[SQUAD SIGNAL] Agent '<name>' completed task <id>. Read output: tmux capture-pane -t <name> -p | Next: squad-station status\n");
     out.push_str("```\n\n");
-    out.push_str("Only proactively check (`capture-pane`) if you suspect the agent is stuck for an unusually long time.\n\n");
+    out.push_str("Only read output (`tmux capture-pane -t <name> -p`) AFTER receiving the signal — never to poll.\n\n");
 
     // ── Fleet Status ──────────────────────────────────────────────────────
     // Only render if metrics were provided (caller fetched from DB)
