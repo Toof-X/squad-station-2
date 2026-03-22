@@ -1,1 +1,7 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* React Flow dark mode background override */
+.dark .react-flow {
+  --xy-background-color: #111827;
+}

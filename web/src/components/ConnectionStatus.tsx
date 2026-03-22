@@ -16,7 +16,7 @@ export function ConnectionStatus({ status }: { status: ConnectionState }) {
         : 'Connecting...';
 
   return (
-    <div className="flex items-center gap-2 text-sm text-gray-300">
+    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
       <span className={`inline-block w-2 h-2 rounded-full ${dotColor}`} />
       <span>{label}</span>
     </div>

@@ -34,7 +34,7 @@ export function StatusBar({ agentCount }: { agentCount?: number }) {
 
   if (!status) {
     return (
-      <div className="flex items-center px-4 py-2 bg-gray-800 text-gray-400 text-sm">
+      <div className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-sm">
         Loading...
       </div>
     );
@@ -44,15 +44,15 @@ export function StatusBar({ agentCount }: { agentCount?: number }) {
   const displayAgentCount = agentCount ?? status.agents ?? 0;
 
   return (
-    <div className="flex items-center justify-between px-4 py-2 bg-gray-800 text-white text-sm">
+    <div className="flex items-center justify-between px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-sm">
       <div className="flex items-center gap-6">
-        <span className="font-semibold text-gray-100">{status.project}</span>
-        <span className="text-gray-400">
+        <span className="font-semibold text-gray-900 dark:text-gray-100">{status.project}</span>
+        <span className="text-gray-500 dark:text-gray-400">
           {displayAgentCount} agent{displayAgentCount !== 1 ? 's' : ''}
         </span>
-        <span className="text-gray-400">up {formatUptime(status.uptime_secs)}</span>
+        <span className="text-gray-500 dark:text-gray-400">up {formatUptime(status.uptime_secs)}</span>
       </div>
-      <span className="text-gray-500 text-xs">v{status.version}</span>
+      <span className="text-gray-400 dark:text-gray-500 text-xs">v{status.version}</span>
     </div>
   );
 }

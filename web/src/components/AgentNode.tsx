@@ -29,7 +29,7 @@ export const AgentNode = memo(function AgentNode({ data }: NodeProps<AgentNodeTy
   const icon = data.isOrchestrator ? '★' : '⚙';
 
   return (
-    <div className="px-3 py-2 rounded-lg border border-gray-600 bg-gray-800 shadow-md min-w-[140px] text-center relative group">
+    <div className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-md min-w-[140px] text-center relative group">
       {/* Target handle (hidden for orchestrator — no incoming edges) */}
       <Handle
         type="target"
@@ -44,13 +44,13 @@ export const AgentNode = memo(function AgentNode({ data }: NodeProps<AgentNodeTy
       <div className="text-lg mb-0.5">{icon}</div>
 
       {/* Name */}
-      <div className="text-sm font-semibold text-gray-100 leading-tight">{data.name}</div>
+      <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-tight">{data.name}</div>
 
       {/* Role */}
-      <div className="text-xs text-gray-400 leading-tight mt-0.5">{data.role}</div>
+      <div className="text-xs text-gray-500 dark:text-gray-400 leading-tight mt-0.5">{data.role}</div>
 
       {/* Tooltip on hover */}
-      <div className="hidden group-hover:block absolute top-full mt-2 left-1/2 -translate-x-1/2 z-50 bg-gray-900 border border-gray-600 rounded-md p-3 text-xs text-gray-300 shadow-xl min-w-[200px] text-left">
+      <div className="hidden group-hover:block absolute top-full mt-2 left-1/2 -translate-x-1/2 z-50 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-md p-3 text-xs text-gray-700 dark:text-gray-300 shadow-xl min-w-[200px] text-left">
         <div className="mb-1">
           <span className="text-gray-500">Model: </span>
           {data.model ?? 'unknown'}
