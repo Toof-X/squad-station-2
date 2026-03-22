@@ -97,14 +97,25 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ### Active
 
-(None — planning next milestone)
+## Current Milestone: v1.9 Browser Visualization
+
+**Goal:** Add a `squad-station browser` command that launches an embedded web server (axum) serving a React + React Flow SPA, displaying a live node-graph topology of orchestrator and agent nodes with animated message flow via WebSocket push from event-driven tmux/DB state changes.
+
+**Target features:**
+- Embedded axum web server bundled in the Rust binary
+- React + React Flow SPA with auto-arranged node graph (hierarchical from squad.yml topology)
+- Real-time agent status visualization (idle/busy/dead) on nodes
+- Continuous animated arrows on edges while messages are in-flight
+- Event-driven WebSocket streaming (tmux pane watching / state change detection)
+- `squad-station browser` command that starts server and opens default browser
+- Complements existing TUI — richer visualization, not a replacement
 
 ### Out of Scope
 
 - Task management / workflow logic — đó là việc của Orchestrator AI
 - Orchestration decisions / reasoning — đó là việc của AI model
 - File sync / code sharing giữa agents — agents work on same codebase via git
-- Web UI / browser dashboard — TUI sufficient, complexity not justified
+- Full web dashboard with CRUD / management — browser view is read-only visualization only
 - Git conflict resolution giữa agents — orchestrator should sequence work to avoid
 - Agent-to-agent direct messaging — all communication routes through orchestrator
 - Offline mode — stateless CLI always needs tmux + DB
@@ -211,4 +222,4 @@ Test suite: 313 tests (all green).
 | `format_inject_output()` provider dispatch | Claude Code gets raw markdown, Gemini CLI gets JSON `hookSpecificOutput.additionalContext` | ✓ Good — correct hook response format per provider |
 
 ---
-*Last updated: 2026-03-20 after upstream merge v0.5.5–v0.5.8*
+*Last updated: 2026-03-22 after starting milestone v1.9 Browser Visualization*
