@@ -127,14 +127,28 @@ export function useGraphLayout(
 
   // Update edge animation data from in-flight messages (separate memo — no re-layout)
   const edges = useMemo((): Edge[] => {
+    const orchName = orchestrator?.name;
     return layoutedEdges.map((edge) => {
       // Find a processing message between source and target (in either direction)
-      const activeMsg = messages.find(
-        (m) =>
-          m.status === 'processing' &&
-          ((m.from_agent === edge.source && m.to_agent === edge.target) ||
-            (m.from_agent === edge.target && m.to_agent === edge.source)),
-      );
+      // Note: send command stores from_agent as "orchestrator" (literal string),
+      // not the actual agent name — so we also match that against the orchestrator node
+      const activeMsg = messages.find((m) => {
+        if (m.status !== 'processing') return false;
+        const from = m.from_agent;
+        const to = m.to_agent;
+        const matchesFrom =
+          from === edge.source ||
+          (from === 'orchestrator' && edge.source === orchName);
+        const matchesTo =
+          to === edge.target ||
+          (to === 'orchestrator' && edge.target === orchName);
+        const matchesReverse =
+          (from === edge.target ||
+            (from === 'orchestrator' && edge.target === orchName)) &&
+          (to === edge.source ||
+            (to === 'orchestrator' && edge.source === orchName));
+        return (matchesFrom && matchesTo) || matchesReverse;
+      });
       if (activeMsg) {
         return {
           ...edge,
