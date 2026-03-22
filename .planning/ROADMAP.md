@@ -176,6 +176,6 @@ Plans:
 | 23. Dynamic Agent Cloning | v1.8 | 2/2 | Complete | 2026-03-19 |
 | 24. Agent Role Templates in Wizard | v1.8 | 3/3 | Complete | 2026-03-19 |
 | 25. Architecture Research | v1.9 | 2/2 | Complete | 2026-03-22 |
-| 26. Axum Server & CLI Command | 2/2 | Complete   | 2026-03-22 | - |
+| 26. Axum Server & CLI Command | 2/2 | Complete    | 2026-03-22 | - |
 | 27. Event-Driven WebSocket Streaming | v1.9 | 0/? | Not started | - |
 | 28. React Flow Node Graph | v1.9 | 0/? | Not started | - |
