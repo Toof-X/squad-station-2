@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import dagre from '@dagrejs/dagre';
+import { Position } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
 import type { Agent, WsMessage } from './useSquadWebSocket';
 import type { AgentNodeData } from '../components/AgentNode';
@@ -31,8 +32,8 @@ function getLayoutedElements(
     return {
       ...node,
       position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 },
-      targetPosition: 'top' as const,
-      sourcePosition: 'bottom' as const,
+      targetPosition: Position.Top,
+      sourcePosition: Position.Bottom,
     };
   });
 

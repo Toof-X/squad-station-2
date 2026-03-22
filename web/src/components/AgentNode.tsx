@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import type { Node, NodeProps } from '@xyflow/react';
 
-export interface AgentNodeData {
+export interface AgentNodeData extends Record<string, unknown> {
   name: string;
   role: string;
   status: string;
