@@ -220,6 +220,17 @@ Test suite: 313 tests (all green).
 | SessionStart hook auto-install in `init` | `install_session_start_hook()` writes to provider settings.json with backup | ✓ Good — zero manual hook setup |
 | Context Management `/clear` section in orchestrator.md | Hard rules for when orchestrator MUST send `/clear` before next task | ✓ Good — prevents context pollution |
 | `format_inject_output()` provider dispatch | Claude Code gets raw markdown, Gemini CLI gets JSON `hookSpecificOutput.additionalContext` | ✓ Good — correct hook response format per provider |
+| axum-embed for SPA serving (not raw rust-embed) | Handles ETag caching, compression, directory redirects, HTML5 fallback automatically — avoids ~200 lines of manual MIME+304 logic | ✓ Validated in spike — `ServeEmbed::<Assets>::new()` serves Vite-built SPA correctly |
+| axum built-in WebSocket (not tokio-tungstenite) | axum 0.7 ships `axum::extract::ws` natively — no extra dependency needed for server-side WS | ✓ Validated in spike — `WebSocketUpgrade` extractor + `on_upgrade` works |
+| Separate read-only SQLite pool for server | Server needs concurrent DB reads while CLI holds single-writer pool; `read_only(true)` + `max_connections(5)` prevents WAL contention | ✓ Validated in spike — `connect_readonly()` pattern works alongside existing `db::connect()` |
+| build.rs runs npm install + npm run build | Single `cargo build` command builds both Rust and frontend; `cargo::rerun-if-changed` avoids redundant rebuilds | ✓ Validated in spike — `web/dist/` produced automatically on `cargo build -p spike` |
+| web/ at repo root (not inside spike/) | Frontend is shared across spike and production code; `build.rs` uses `../web` relative path | ✓ Validated in spike — rust-embed `#[folder = "../web/dist/"]` resolves correctly |
+| @xyflow/react v12 (not deprecated reactflow) | Official v12 package, TypeScript-first, SSR-capable; old `reactflow` package deprecated | ✓ Validated in spike — React Flow renders nodes and edges correctly |
+| Vite React-TS template for frontend | Industry standard build tool (2025); `tsc && vite build` produces optimized dist/ | ✓ Validated in spike — builds in <10s, produces correct asset bundle |
+| Event detection via polling + broadcast (not SQLite hooks) | SQLite update hooks don't cross connection boundaries in WAL mode; tokio interval (500ms agent status, 200ms messages) + broadcast::channel is simpler and reliable; polling interval IS the natural debounce; tmux pane polling uses tokio::task::spawn_blocking wrapping std::process::Command | Designed — implementation deferred to Phase 27 |
+| tokio::sync::broadcast for multi-client event fan-out | Handles lagged-receiver errors, message dropping policies; no manual client registry needed | Designed — implementation deferred to Phase 27 |
+| debug-embed feature for rust-embed | Forces compile-time embedding even in debug builds; without it, debug mode reads from disk relative to CWD (fragile) | ✓ Validated in spike — assets embedded in debug build |
+| Graceful shutdown via tokio::signal (Ctrl+C + SIGTERM) | Matches existing `ui` command behavior; `with_graceful_shutdown()` built into axum::serve | ✓ Validated in spike — clean shutdown on Ctrl+C |
 
 ---
-*Last updated: 2026-03-22 after starting milestone v1.9 Browser Visualization*
+*Last updated: 2026-03-22 after Phase 25-02: spike verification and architecture decisions recorded*
