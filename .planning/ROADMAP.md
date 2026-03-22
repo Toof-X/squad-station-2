@@ -157,7 +157,10 @@ Plans:
   3. Edges between orchestrator and agent nodes show continuous animation while a message is in-flight (processing status); animation stops when the message completes
   4. Edge labels or tooltips display the message task text, priority level, and timestamp for in-flight messages
   5. A connection status indicator is visible in the UI showing the current WebSocket state (connected / reconnecting / disconnected), and a dark/light theme toggle is accessible and persists preference
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 28-01-PLAN.md — Core graph: custom agent nodes, dagre hierarchical layout, dynamic WS data binding
+- [ ] 28-02-PLAN.md — Animated edges with crawling dots, edge labels, dark/light theme toggle, visual verification
 
 ## Progress
 
@@ -179,6 +182,6 @@ Plans:
 | 23. Dynamic Agent Cloning | v1.8 | 2/2 | Complete | 2026-03-19 |
 | 24. Agent Role Templates in Wizard | v1.8 | 3/3 | Complete | 2026-03-19 |
 | 25. Architecture Research | v1.9 | 2/2 | Complete | 2026-03-22 |
-| 26. Axum Server & CLI Command | 2/2 | Complete    | 2026-03-22 | - |
-| 27. Event-Driven WebSocket Streaming | 2/2 | Complete    | 2026-03-22 | - |
-| 28. React Flow Node Graph | v1.9 | 0/? | Not started | - |
+| 26. Axum Server & CLI Command | v1.9 | 2/2 | Complete | 2026-03-22 |
+| 27. Event-Driven WebSocket Streaming | v1.9 | 2/2 | Complete | 2026-03-22 |
+| 28. React Flow Node Graph | v1.9 | 0/2 | Not started | - |
