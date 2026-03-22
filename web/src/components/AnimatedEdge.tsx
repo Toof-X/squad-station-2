@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@xyflow/react';
 import type { Edge, EdgeProps } from '@xyflow/react';
 
@@ -44,18 +44,23 @@ export function AnimatedEdge({
   targetPosition,
   data,
 }: EdgeProps<MessageEdge>) {
-  const [hovered, setHovered] = useState(false);
-  const hideTimer = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [visible, setVisible] = useState(false);
+  const hideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounced hover: small delay before hiding prevents flicker when
-  // cursor moves between the path hit area and the label overlay
-  function showLabel() {
-    if (hideTimer[0]) clearTimeout(hideTimer[0]);
-    hideTimer[1](null);
-    setHovered(true);
+  function show() {
+    if (hideRef.current) {
+      clearTimeout(hideRef.current);
+      hideRef.current = null;
+    }
+    setVisible(true);
   }
-  function scheduleHide() {
-    hideTimer[1](setTimeout(() => setHovered(false), 100));
+
+  function hide() {
+    if (hideRef.current) clearTimeout(hideRef.current);
+    hideRef.current = setTimeout(() => {
+      setVisible(false);
+      hideRef.current = null;
+    }, 150);
   }
 
   const [edgePath, labelX, labelY] = getSmoothStepPath({
@@ -68,7 +73,7 @@ export function AnimatedEdge({
   });
 
   const isAnimated = data?.animated === true;
-  const hasLabel = Boolean(data?.task) && hovered;
+  const hasTask = Boolean(data?.task);
   const taskText = data?.task ? (data.task.length > 30 ? data.task.slice(0, 30) + '…' : data.task) : '';
   const priorityClass = getPriorityClass(data?.priority);
   const relativeTime = formatRelativeTime(data?.timestamp);
@@ -83,8 +88,8 @@ export function AnimatedEdge({
         fill="none"
         stroke="transparent"
         strokeWidth={20}
-        onMouseEnter={showLabel}
-        onMouseLeave={scheduleHide}
+        onMouseEnter={show}
+        onMouseLeave={hide}
         style={{ pointerEvents: 'stroke' }}
       />
 
@@ -103,16 +108,18 @@ export function AnimatedEdge({
         </g>
       )}
 
-      {/* Edge label — only on hover when in-flight task exists */}
-      {hasLabel && (
+      {/* Edge label — always mounted when task exists, visibility toggled via CSS */}
+      {hasTask && (
         <EdgeLabelRenderer>
           <div
-            onMouseEnter={showLabel}
-            onMouseLeave={scheduleHide}
+            onMouseEnter={show}
+            onMouseLeave={hide}
             style={{
               position: 'absolute',
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              pointerEvents: 'all',
+              pointerEvents: visible ? 'all' : 'none',
+              opacity: visible ? 1 : 0,
+              transition: 'opacity 0.15s ease',
             }}
             className="nodrag nopan bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-xs shadow-md"
           >
