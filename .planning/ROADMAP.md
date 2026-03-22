@@ -98,7 +98,7 @@ Fleet Status metrics in orchestrator context, dynamic agent cloning command, 11 
 - [x] **Phase 25: Architecture Research** - Spike all integration points before writing production code (completed 2026-03-22)
 - [x] **Phase 26: Axum Server & CLI Command** - Embedded web server with SPA assets, `browser` command with port selection and browser launch (completed 2026-03-22)
 - [x] **Phase 27: Event-Driven WebSocket Streaming** - tmux pane watcher + DB state change detector pushing real-time events to browser clients (completed 2026-03-22)
-- [ ] **Phase 28: React Flow Node Graph** - React + React Flow SPA with hierarchical auto-layout, live status nodes, animated in-flight edges, and UI polish
+- [x] **Phase 28: React Flow Node Graph** - React + React Flow SPA with hierarchical auto-layout, live status nodes, animated in-flight edges, and UI polish (completed 2026-03-22)
 
 ## Phase Details
 
@@ -157,7 +157,7 @@ Plans:
   3. Edges between orchestrator and agent nodes show continuous animation while a message is in-flight (processing status); animation stops when the message completes
   4. Edge labels or tooltips display the message task text, priority level, and timestamp for in-flight messages
   5. A connection status indicator is visible in the UI showing the current WebSocket state (connected / reconnecting / disconnected), and a dark/light theme toggle is accessible and persists preference
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 28-01-PLAN.md — Core graph: custom agent nodes, dagre hierarchical layout, dynamic WS data binding
 - [ ] 28-02-PLAN.md — Animated edges with crawling dots, edge labels, dark/light theme toggle, visual verification
@@ -184,4 +184,4 @@ Plans:
 | 25. Architecture Research | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 26. Axum Server & CLI Command | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 27. Event-Driven WebSocket Streaming | v1.9 | 2/2 | Complete | 2026-03-22 |
-| 28. React Flow Node Graph | 1/2 | In Progress|  | - |
+| 28. React Flow Node Graph | 2/2 | Complete   | 2026-03-22 | - |

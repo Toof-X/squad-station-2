@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Browser Visualization
 status: executing
-stopped_at: Completed 28-01-PLAN.md
-last_updated: "2026-03-22T12:50:14.945Z"
+stopped_at: "Checkpoint: 28-02 Task 3 awaiting human-verify"
+last_updated: "2026-03-22T12:54:24.661Z"
 last_activity: "2026-03-22 — Plan 27-02 complete: React useSquadWebSocket hook, refactored ConnectionStatus/StatusBar, end-to-end WS streaming human-verified"
 progress:
   total_phases: 4
@@ -70,6 +70,10 @@ Recent decisions affecting v1.9 work:
 - [Phase 28-react-flow-node-graph]: nodeTypes defined at module level outside React component — critical for React Flow performance (prevents node re-mounting)
 - [Phase 28-react-flow-node-graph]: Layout key uses agent names only (not full objects) — status-only WS updates don't trigger dagre re-layout
 - [Phase 28-react-flow-node-graph]: Edge animation flags derived from messages with status===processing — edges carry task/priority/timestamp data for Plan 02 custom edge
+- [Phase 28]: 3 staggered SVG animateMotion circles (0s/0.66s/1.33s at 2s) for GPU-accelerated crawling dots — no JS animation loop
+- [Phase 28]: All edges use type 'animated' — AnimatedEdge handles both static/animated states via data.animated flag
+- [Phase 28]: useTheme reads localStorage in useState initializer (not useEffect) to prevent flash-of-wrong-theme
+- [Phase 28]: Tailwind v4 dark mode via @custom-variant dark in index.css + colorMode prop on ReactFlow
 
 ### Pending Todos
 
@@ -83,6 +87,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22T12:50:07.376Z
-Stopped at: Completed 28-01-PLAN.md
+Last session: 2026-03-22T12:54:17.889Z
+Stopped at: Checkpoint: 28-02 Task 3 awaiting human-verify
 Resume file: None
