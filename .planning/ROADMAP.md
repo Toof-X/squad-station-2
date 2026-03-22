@@ -96,7 +96,7 @@ Fleet Status metrics in orchestrator context, dynamic agent cloning command, 11 
 **Milestone Goal:** Add `squad-station browser` command that serves a React + React Flow SPA from the binary via axum, delivering live node-graph visualization of agent topology with event-driven WebSocket streaming.
 
 - [x] **Phase 25: Architecture Research** - Spike all integration points before writing production code (completed 2026-03-22)
-- [ ] **Phase 26: Axum Server & CLI Command** - Embedded web server with SPA assets, `browser` command with port selection and browser launch
+- [x] **Phase 26: Axum Server & CLI Command** - Embedded web server with SPA assets, `browser` command with port selection and browser launch (completed 2026-03-22)
 - [ ] **Phase 27: Event-Driven WebSocket Streaming** - tmux pane watcher + DB state change detector pushing real-time events to browser clients
 - [ ] **Phase 28: React Flow Node Graph** - React + React Flow SPA with hierarchical auto-layout, live status nodes, animated in-flight edges, and UI polish
 
@@ -127,7 +127,7 @@ Plans:
   3. Running `squad-station browser --port 9000` starts the server on port 9000; omitting `--port` selects an available port automatically
   4. Pressing Ctrl+C shuts down the server cleanly with no orphaned processes or lingering port bindings
   5. The binary size increase from embedded SPA assets is within acceptable bounds (SPA can be built and embedded)
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 26-01-PLAN.md — Feature-gated axum server, browser command, CLI wiring, build.rs, connect_readonly
 - [ ] 26-02-PLAN.md — Tailwind CSS v4 setup, SPA enhancements (WS status, /api/status), visual verification
@@ -176,6 +176,6 @@ Plans:
 | 23. Dynamic Agent Cloning | v1.8 | 2/2 | Complete | 2026-03-19 |
 | 24. Agent Role Templates in Wizard | v1.8 | 3/3 | Complete | 2026-03-19 |
 | 25. Architecture Research | v1.9 | 2/2 | Complete | 2026-03-22 |
-| 26. Axum Server & CLI Command | 1/2 | In Progress|  | - |
+| 26. Axum Server & CLI Command | 2/2 | Complete   | 2026-03-22 | - |
 | 27. Event-Driven WebSocket Streaming | v1.9 | 0/? | Not started | - |
 | 28. React Flow Node Graph | v1.9 | 0/? | Not started | - |
