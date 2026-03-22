@@ -95,7 +95,7 @@ Fleet Status metrics in orchestrator context, dynamic agent cloning command, 11 
 
 **Milestone Goal:** Add `squad-station browser` command that serves a React + React Flow SPA from the binary via axum, delivering live node-graph visualization of agent topology with event-driven WebSocket streaming.
 
-- [ ] **Phase 25: Architecture Research** - Spike all integration points before writing production code
+- [x] **Phase 25: Architecture Research** - Spike all integration points before writing production code (completed 2026-03-22)
 - [ ] **Phase 26: Axum Server & CLI Command** - Embedded web server with SPA assets, `browser` command with port selection and browser launch
 - [ ] **Phase 27: Event-Driven WebSocket Streaming** - tmux pane watcher + DB state change detector pushing real-time events to browser clients
 - [ ] **Phase 28: React Flow Node Graph** - React + React Flow SPA with hierarchical auto-layout, live status nodes, animated in-flight edges, and UI polish
@@ -112,7 +112,7 @@ Fleet Status metrics in orchestrator context, dynamic agent cloning command, 11 
   3. Event-detection strategy is decided: tmux pane polling interval, DB change-detection mechanism (timestamp comparison or SQLite hooks), and debounce approach are documented
   4. React + React Flow build pipeline is proven: Vite build produces a dist/ folder that rust-embed can include at compile time
   5. Architecture decisions are recorded in PROJECT.md Key Decisions table and a research spike document exists
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 25-01-PLAN.md — Scaffold workspace, frontend, and spike server (rust-embed + axum + WS echo + build.rs)
 - [ ] 25-02-PLAN.md — Verify spike end-to-end and record architecture decisions in PROJECT.md
@@ -172,7 +172,7 @@ Plans:
 | 22. Orchestrator Intelligence Data | v1.8 | 2/2 | Complete | 2026-03-19 |
 | 23. Dynamic Agent Cloning | v1.8 | 2/2 | Complete | 2026-03-19 |
 | 24. Agent Role Templates in Wizard | v1.8 | 3/3 | Complete | 2026-03-19 |
-| 25. Architecture Research | 1/2 | In Progress|  | - |
+| 25. Architecture Research | 2/2 | Complete   | 2026-03-22 | - |
 | 26. Axum Server & CLI Command | v1.9 | 0/? | Not started | - |
 | 27. Event-Driven WebSocket Streaming | v1.9 | 0/? | Not started | - |
 | 28. React Flow Node Graph | v1.9 | 0/? | Not started | - |

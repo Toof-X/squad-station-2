@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Browser Visualization
-status: planning
-stopped_at: "Completed 25-01-PLAN.md: spike workspace, React Flow frontend, axum server with rust-embed"
-last_updated: "2026-03-22T08:50:02.955Z"
-last_activity: 2026-03-22 — Roadmap created for v1.9 Browser Visualization (Phases 25-28)
+status: executing
+stopped_at: "Checkpoint: Task 3 of 25-02-PLAN.md — awaiting human visual verification of spike in browser"
+last_updated: "2026-03-22T08:55:20.508Z"
+last_activity: "2026-03-22 — Plan 25-01 complete: spike workspace, React Flow frontend, axum server with rust-embed (SPIKE-1, SPIKE-2, SPIKE-4 validated)"
 progress:
   total_phases: 4
   completed_phases: 0
@@ -55,6 +55,9 @@ Recent decisions affecting v1.9 work:
 - [Phase 25-01]: Used axum-embed ServeEmbed for SPA serving — handles ETag, compression, fallback automatically
 - [Phase 25-01]: Read-only DB pool: read_only(true), max_connections(5), no journal_mode, no migrate! — separate from single-writer pool
 - [Phase 25-01]: debug-embed feature forces compile-time embedding in dev — validates release behavior without release build
+- [Phase 25-architecture-research]: axum-embed ServeEmbed for SPA serving — handles ETag, compression, HTML5 fallback (validated in spike)
+- [Phase 25-architecture-research]: Event detection: tokio interval polling (500ms agent, 200ms messages) + broadcast::channel — NOT SQLite hooks (SPIKE-3)
+- [Phase 25-architecture-research]: tokio::task::spawn_blocking for tmux capture-pane polling — must NOT call from async context
 
 ### Pending Todos
 
@@ -68,6 +71,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22T08:50:02.954Z
-Stopped at: Completed 25-01-PLAN.md: spike workspace, React Flow frontend, axum server with rust-embed
+Last session: 2026-03-22T08:55:20.507Z
+Stopped at: Checkpoint: Task 3 of 25-02-PLAN.md — awaiting human visual verification of spike in browser
 Resume file: None
