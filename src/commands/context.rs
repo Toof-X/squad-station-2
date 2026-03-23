@@ -310,8 +310,9 @@ pub fn build_orchestrator_md(
         out.push_str("Your job is to send the playbook's commands to the correct agent. Do not run them yourself.\n\n");
         out.push_str("**How it works:**\n");
         out.push_str("1. Read the playbook (PRE-FLIGHT) → identify the workflow steps and their slash commands\n");
-        out.push_str("2. For each step: decide which agent handles it (see Session Routing)\n");
-        out.push_str("3. Send the slash command as the task body:\n");
+        out.push_str("2. **Analyze dependencies** — identify which steps are independent (can run in parallel) vs sequential (output feeds next step)\n");
+        out.push_str("3. For each step: decide which agent handles it (see Session Routing)\n");
+        out.push_str("4. Send the slash command as the task body:\n");
         out.push_str("   ```\n");
         if let Some(first_worker) = workers.first() {
             out.push_str(&format!(
@@ -320,14 +321,54 @@ pub fn build_orchestrator_md(
             ));
         }
         out.push_str("   ```\n");
-        out.push_str("4. STOP. Wait for `[SQUAD SIGNAL]`.\n");
-        out.push_str("5. Read output → evaluate → send next step to the appropriate agent.\n\n");
+        out.push_str("5. STOP. Wait for `[SQUAD SIGNAL]`.\n");
+        out.push_str("6. Read output → evaluate → send next step to the appropriate agent.\n\n");
         out.push_str("**CRITICAL:**\n");
         out.push_str("- Do NOT send raw task descriptions like \"build the login page\".\n");
         out.push_str("- Do NOT run slash commands, workflows, or Agent subagents yourself.\n");
         out.push_str(
             "- Send the playbook's exact commands. The agent knows how to execute them.\n\n",
         );
+    }
+
+    // ── Parallel Task Management ─────────────────────────────────────────
+    if workers.len() > 1 {
+        out.push_str("## Parallel Task Management\n\n");
+        out.push_str("You have multiple workers. **Maximize throughput by dispatching independent tasks in parallel.**\n\n");
+        out.push_str("### When to parallelize\n\n");
+        out.push_str("- Tasks that touch **different files, modules, or domains** → parallel\n");
+        out.push_str("- Tasks where one output **feeds into** another → sequential (wait for signal first)\n");
+        out.push_str("- When in doubt, check: \"Can agent B start without agent A's output?\" If YES → parallel\n\n");
+        out.push_str("### How to run parallel work streams\n\n");
+        out.push_str("1. **Dispatch** — Send independent tasks to different idle workers back-to-back:\n");
+        out.push_str("   ```bash\n");
+        // Show example with first 2 workers
+        let example_workers: Vec<&&Agent> = workers.iter().take(2).collect();
+        for (i, w) in example_workers.iter().enumerate() {
+            out.push_str(&format!(
+                "   squad-station send {} --body \"<independent task {}>\"\n",
+                w.name, i + 1
+            ));
+        }
+        out.push_str("   ```\n");
+        out.push_str("2. **Track** — Maintain a mental map of which agents are working on what.\n");
+        out.push_str("   Use `squad-station agents` or `squad-station fleet` to check status.\n");
+        out.push_str("3. **Collect signals** — Signals arrive in completion order (not dispatch order).\n");
+        out.push_str("   As each `[SQUAD SIGNAL]` arrives, run the QA Gate for that agent.\n");
+        out.push_str("   **Do NOT wait for all agents to finish before processing any signal.**\n");
+        out.push_str("4. **Consolidate** — After ALL parallel tasks complete:\n");
+        out.push_str("   - Read output from each agent: `tmux capture-pane -t <agent> -p -S -`\n");
+        out.push_str("   - Verify no conflicts (e.g., overlapping file edits, merge conflicts)\n");
+        out.push_str("   - If conflicts exist → send a follow-up fix task to one agent with full context from both outputs\n");
+        out.push_str("   - Summarize combined results before proceeding to the next workflow step\n\n");
+        out.push_str("### Parallel dispatch rules\n\n");
+        out.push_str("- **Never send 2 tasks to the same busy agent** — check `squad-station fleet` first\n");
+        out.push_str("- **Each idle worker = one parallel slot** — dispatch up to N tasks where N = idle workers\n");
+        out.push_str("- **Signal handling during parallel work:** when one agent signals, you may:\n");
+        out.push_str("  - Send it a NEW independent task immediately (keep it busy)\n");
+        out.push_str("  - OR wait for all parallel tasks to complete before the next wave\n");
+        out.push_str("- **Sequential gates:** some workflow steps require ALL parallel tasks to complete before proceeding.\n");
+        out.push_str("  Track completion count and only advance when all signals are received.\n\n");
     }
 
     // ── Sending Tasks ────────────────────────────────────────────────────
@@ -353,6 +394,8 @@ pub fn build_orchestrator_md(
     out.push_str("- **NEVER** interrupt a running agent to move on.\n");
     out.push_str("- **WAIT** for the `[SQUAD SIGNAL]` before evaluating results.\n");
     out.push_str("- **Exception:** `/clear` is fire-and-forget — no signal will come. Proceed immediately after sending it.\n");
+    out.push_str("- **Parallel work:** when multiple agents are busy, process each signal as it arrives.\n");
+    out.push_str("  You can dispatch new tasks to a just-finished agent while others are still running.\n");
     out.push_str("- Only after the signal → read output → decide next step per playbook.\n\n");
 
     // ── QA Gate ──────────────────────────────────────────────────────────
