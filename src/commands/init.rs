@@ -36,7 +36,9 @@ fn prompt_reinit() -> anyhow::Result<ReinitChoice> {
                     crossterm::event::KeyCode::Char('q') => break ReinitChoice::Abort,
                     crossterm::event::KeyCode::Esc => break ReinitChoice::Abort,
                     crossterm::event::KeyCode::Char('c')
-                        if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) =>
+                        if key
+                            .modifiers
+                            .contains(crossterm::event::KeyModifiers::CONTROL) =>
                     {
                         break ReinitChoice::Abort;
                     }
@@ -102,7 +104,11 @@ fn append_workers_to_yaml(
     for agent in new_workers {
         let single = SquadYmlAgent {
             provider: &agent.provider,
-            name: if agent.name.is_empty() { None } else { Some(&agent.name) },
+            name: if agent.name.is_empty() {
+                None
+            } else {
+                Some(&agent.name)
+            },
             role: "worker",
             model: agent.model.as_deref(),
             description: agent.description.as_deref(),
@@ -138,7 +144,13 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                     // Change to install directory (already includes project name as last component)
                     let install_dir = std::path::PathBuf::from(&result.install_dir);
                     std::fs::create_dir_all(&install_dir)?;
-                    project_dir = Some(install_dir.canonicalize().unwrap_or(install_dir.clone()).to_string_lossy().to_string());
+                    project_dir = Some(
+                        install_dir
+                            .canonicalize()
+                            .unwrap_or(install_dir.clone())
+                            .to_string_lossy()
+                            .to_string(),
+                    );
                     std::env::set_current_dir(&install_dir)?;
                     // Initialize git repo so Claude Code recognizes the project root
                     // and can find .claude/commands/ slash commands
@@ -155,7 +167,10 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                     deferred_sdd = Some(result.sdd);
                     let yaml = generate_squad_yml(&result);
                     std::fs::write(&config_path, &yaml)?;
-                    println!("Generated squad.yml for project '{}' in {}", result.project, result.install_dir);
+                    println!(
+                        "Generated squad.yml for project '{}' in {}",
+                        result.project, result.install_dir
+                    );
                     // Fall through to load_config below
                 }
                 None => {
@@ -206,19 +221,29 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                                 let n = cfg.orchestrator.name.as_deref().unwrap_or("orchestrator");
                                 format!("{} ({})", n, cfg.orchestrator.provider)
                             };
-                            let workers = cfg.agents.iter().map(|a| {
-                                let n = a.name.as_deref().unwrap_or("worker");
-                                format!("{} ({})", n, a.provider)
-                            }).collect();
+                            let workers = cfg
+                                .agents
+                                .iter()
+                                .map(|a| {
+                                    let n = a.name.as_deref().unwrap_or("worker");
+                                    format!("{} ({})", n, a.provider)
+                                })
+                                .collect();
                             (Some(orch), workers)
                         }
                         Err(_) => (None, vec![]),
                     };
-                match crate::commands::wizard::run_worker_only(existing_orchestrator, existing_workers).await? {
+                match crate::commands::wizard::run_worker_only(
+                    existing_orchestrator,
+                    existing_workers,
+                )
+                .await?
+                {
                     Some(new_workers) => {
                         // Carry routing hints for new workers by agent name
                         let worker_hints: std::collections::HashMap<String, Option<String>> =
-                            new_workers.iter()
+                            new_workers
+                                .iter()
                                 .map(|w| (w.name.clone(), w.routing_hints.clone()))
                                 .collect();
                         wizard_routing_hints = Some(worker_hints);
@@ -287,7 +312,8 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         .as_deref()
         .unwrap_or("orchestrator");
     let orch_name = config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
-    let orch_hints = wizard_routing_hints.as_ref()
+    let orch_hints = wizard_routing_hints
+        .as_ref()
         .and_then(|m| m.get(orch_role).cloned())
         .flatten();
     db::agents::insert_agent(
@@ -306,7 +332,8 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
         let agent_name =
             config::sanitize_session_name(&format!("{}-{}", config.project, role_suffix));
-        let hints = wizard_routing_hints.as_ref()
+        let hints = wizard_routing_hints
+            .as_ref()
             .and_then(|m| m.get(role_suffix).cloned())
             .flatten();
         if let Err(e) = db::agents::insert_agent(
@@ -418,9 +445,15 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                 if std::io::stdin().read_line(&mut answer).is_ok()
                     && !answer.trim().eq_ignore_ascii_case("n")
                 {
-                    match install_session_start_hook(&config.orchestrator.provider, project_root, &orch_name) {
+                    match install_session_start_hook(
+                        &config.orchestrator.provider,
+                        project_root,
+                        &orch_name,
+                    ) {
                         Ok(true) => println!("  SessionStart hook: installed"),
-                        Ok(false) => println!("  SessionStart hook: skipped (unsupported provider)"),
+                        Ok(false) => {
+                            println!("  SessionStart hook: skipped (unsupported provider)")
+                        }
                         Err(e) => println!("  SessionStart hook: failed ({})", e),
                     }
                 } else {
@@ -509,7 +542,9 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         }
         tmux::kill_session(&monitor_name).await?;
         monitor_created = if !monitor_sessions.is_empty() {
-            tmux::create_view_session(&monitor_name, &monitor_sessions).await.is_ok()
+            tmux::create_view_session(&monitor_name, &monitor_sessions)
+                .await
+                .is_ok()
         } else {
             false
         };
@@ -578,8 +613,16 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                 println!("Please manually configure the following hooks to enable task completion signals:\n");
                 let hook_providers: &[(&str, &str, &str)] = &[
                     (".claude/settings.local.json", "Stop", "*"),
-                    (".claude/settings.local.json", "Notification", "permission_prompt"),
-                    (".claude/settings.local.json", "PostToolUse", "AskUserQuestion"),
+                    (
+                        ".claude/settings.local.json",
+                        "Notification",
+                        "permission_prompt",
+                    ),
+                    (
+                        ".claude/settings.local.json",
+                        "PostToolUse",
+                        "AskUserQuestion",
+                    ),
                     (".gemini/settings.json", "AfterAgent", "*"),
                     (".gemini/settings.json", "Notification", "*"),
                 ];
@@ -610,9 +653,15 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
                 if std::io::stdin().read_line(&mut answer).is_ok()
                     && !answer.trim().eq_ignore_ascii_case("n")
                 {
-                    match install_session_start_hook(&config.orchestrator.provider, project_root, &orch_name) {
+                    match install_session_start_hook(
+                        &config.orchestrator.provider,
+                        project_root,
+                        &orch_name,
+                    ) {
                         Ok(true) => println!("  SessionStart hook: installed"),
-                        Ok(false) => println!("  SessionStart hook: skipped (unsupported provider)"),
+                        Ok(false) => {
+                            println!("  SessionStart hook: skipped (unsupported provider)")
+                        }
                         Err(e) => println!("  SessionStart hook: failed ({})", e),
                     }
                 } else {
@@ -719,12 +768,15 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         for agent in &config.agents {
             let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
             monitor_sessions.push(config::sanitize_session_name(&format!(
-                "{}-{}", config.project, role_suffix
+                "{}-{}",
+                config.project, role_suffix
             )));
         }
         tmux::kill_session(&monitor_name).await?;
         monitor_created = if !monitor_sessions.is_empty() {
-            tmux::create_view_session(&monitor_name, &monitor_sessions).await.is_ok()
+            tmux::create_view_session(&monitor_name, &monitor_sessions)
+                .await
+                .is_ok()
         } else {
             false
         };
@@ -754,17 +806,15 @@ async fn kill_config_sessions(cfg: &config::SquadConfig) {
 
     for agent in &cfg.agents {
         let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
-        let session_name = config::sanitize_session_name(&format!("{}-{}", cfg.project, role_suffix));
+        let session_name =
+            config::sanitize_session_name(&format!("{}-{}", cfg.project, role_suffix));
         let _ = tmux::kill_session(&session_name).await;
     }
 }
 
 /// Write the SDD playbook file to `.squad/sdd/<name>-playbook.md`.
 /// Creates the directory if it doesn't exist. Skips silently if the file already exists.
-fn create_sdd_playbook(
-    config_path: &std::path::Path,
-    sdd: crate::commands::wizard::SddWorkflow,
-) {
+fn create_sdd_playbook(config_path: &std::path::Path, sdd: crate::commands::wizard::SddWorkflow) {
     let project_dir = config_path.parent().unwrap_or(std::path::Path::new("."));
     let sdd_dir = project_dir.join(".squad").join("sdd");
     if let Err(e) = std::fs::create_dir_all(&sdd_dir) {
@@ -777,7 +827,11 @@ fn create_sdd_playbook(
         return; // already present — don't overwrite user edits
     }
     if let Err(e) = std::fs::write(&playbook_path, sdd.playbook_content()) {
-        eprintln!("Warning: could not write {}: {}", playbook_path.display(), e);
+        eprintln!(
+            "Warning: could not write {}: {}",
+            playbook_path.display(),
+            e
+        );
     }
 }
 
@@ -867,18 +921,30 @@ fn generate_squad_yml(result: &crate::commands::wizard::WizardResult) -> String 
         }],
         orchestrator: SquadYmlAgent {
             provider: &result.orchestrator.provider,
-            name: if result.orchestrator.name.is_empty() { None } else { Some(&result.orchestrator.name) },
+            name: if result.orchestrator.name.is_empty() {
+                None
+            } else {
+                Some(&result.orchestrator.name)
+            },
             role: "orchestrator",
             model: result.orchestrator.model.as_deref(),
             description: result.orchestrator.description.as_deref(),
         },
-        agents: result.agents.iter().map(|a| SquadYmlAgent {
-            provider: &a.provider,
-            name: if a.name.is_empty() { None } else { Some(&a.name) },
-            role: "worker",
-            model: a.model.as_deref(),
-            description: a.description.as_deref(),
-        }).collect(),
+        agents: result
+            .agents
+            .iter()
+            .map(|a| SquadYmlAgent {
+                provider: &a.provider,
+                name: if a.name.is_empty() {
+                    None
+                } else {
+                    Some(&a.name)
+                },
+                role: "worker",
+                model: a.model.as_deref(),
+                description: a.description.as_deref(),
+            })
+            .collect(),
     };
 
     serde_saphyr::to_string(&doc)
@@ -1215,8 +1281,14 @@ mod tests {
             make_worker("claude-code", "worker3"),
         ];
         let result = append_workers_to_yaml(existing, &new_workers);
-        assert!(result.contains("provider: gemini-cli"), "Must contain new gemini-cli worker");
-        assert!(result.contains("provider: claude-code"), "Must contain existing + new claude-code");
+        assert!(
+            result.contains("provider: gemini-cli"),
+            "Must contain new gemini-cli worker"
+        );
+        assert!(
+            result.contains("provider: claude-code"),
+            "Must contain existing + new claude-code"
+        );
         // Count occurrences of "provider:" — should be 3 (1 existing + 2 new)
         let count = result.matches("provider:").count();
         assert_eq!(count, 3, "Expected 3 provider entries, got {}", count);
@@ -1257,7 +1329,10 @@ mod tests {
         let existing = "agents:\n";
         let workers = vec![make_worker("claude-code", "my-agent")];
         let result = append_workers_to_yaml(existing, &workers);
-        assert!(result.contains("name: my-agent"), "Named worker must have name field");
+        assert!(
+            result.contains("name: my-agent"),
+            "Named worker must have name field"
+        );
     }
 
     #[test]
@@ -1265,7 +1340,10 @@ mod tests {
         let existing = "agents:\n";
         let workers = vec![make_worker("claude-code", "")];
         let result = append_workers_to_yaml(existing, &workers);
-        assert!(!result.contains("name:"), "Unnamed worker must not have name field");
+        assert!(
+            !result.contains("name:"),
+            "Unnamed worker must not have name field"
+        );
     }
 
     #[test]
@@ -1273,7 +1351,10 @@ mod tests {
         let existing = "agents:\n";
         let workers = vec![make_worker_with_model("claude-code", "", "sonnet")];
         let result = append_workers_to_yaml(existing, &workers);
-        assert!(result.contains("model: sonnet"), "Model must appear in output");
+        assert!(
+            result.contains("model: sonnet"),
+            "Model must appear in output"
+        );
     }
 
     fn make_wizard_result() -> WizardResult {
@@ -1304,9 +1385,15 @@ mod tests {
     fn test_generate_squad_yml_contains_required_sections() {
         let result = make_wizard_result();
         let yaml = generate_squad_yml(&result);
-        assert!(yaml.starts_with("project: my-project\n"), "YAML must start with project: line");
+        assert!(
+            yaml.starts_with("project: my-project\n"),
+            "YAML must start with project: line"
+        );
         assert!(yaml.contains("sdd:"), "YAML must contain sdd section");
-        assert!(yaml.contains("orchestrator:"), "YAML must contain orchestrator section");
+        assert!(
+            yaml.contains("orchestrator:"),
+            "YAML must contain orchestrator section"
+        );
         assert!(yaml.contains("agents:"), "YAML must contain agents section");
     }
 
@@ -1315,7 +1402,8 @@ mod tests {
         let result = make_wizard_result();
         let yaml = generate_squad_yml(&result);
         assert!(
-            yaml.contains("playbook: .squad/sdd/gsd-playbook.md") || yaml.contains("playbook: \".squad/sdd/gsd-playbook.md\""),
+            yaml.contains("playbook: .squad/sdd/gsd-playbook.md")
+                || yaml.contains("playbook: \".squad/sdd/gsd-playbook.md\""),
             "SDD playbook path must be correct, got:\n{}",
             yaml
         );
@@ -1325,8 +1413,14 @@ mod tests {
     fn test_generate_squad_yml_orchestrator_fields() {
         let result = make_wizard_result();
         let yaml = generate_squad_yml(&result);
-        assert!(yaml.contains("role: orchestrator"), "orchestrator must have role: orchestrator");
-        assert!(yaml.contains("provider: claude-code"), "orchestrator provider must be set");
+        assert!(
+            yaml.contains("role: orchestrator"),
+            "orchestrator must have role: orchestrator"
+        );
+        assert!(
+            yaml.contains("provider: claude-code"),
+            "orchestrator provider must be set"
+        );
         assert!(
             yaml.contains("model: sonnet"),
             "orchestrator model must be set"
@@ -1343,7 +1437,10 @@ mod tests {
         // The orchestrator line itself won't have a name: field
         let lines: Vec<&str> = yaml.lines().collect();
         // Check no "name: " line appears in orchestrator section (between "orchestrator:" and "agents:")
-        let orch_start = lines.iter().position(|l| l.trim() == "orchestrator:").unwrap();
+        let orch_start = lines
+            .iter()
+            .position(|l| l.trim() == "orchestrator:")
+            .unwrap();
         let agents_start = lines.iter().position(|l| l.trim() == "agents:").unwrap();
         let orch_lines: Vec<&str> = lines[orch_start..agents_start].to_vec();
         assert!(
@@ -1362,8 +1459,11 @@ mod tests {
         let agent_lines: Vec<&str> = lines[agents_start..].to_vec();
         // The worker agent had no model; model: line should not appear in agents section
         // But the orchestrator still has a model, so we check count
-        let model_lines_in_agents: Vec<&str> =
-            agent_lines.iter().filter(|l| l.contains("model:")).copied().collect();
+        let model_lines_in_agents: Vec<&str> = agent_lines
+            .iter()
+            .filter(|l| l.contains("model:"))
+            .copied()
+            .collect();
         assert!(
             model_lines_in_agents.is_empty(),
             "None model must be omitted from worker section"
@@ -1402,22 +1502,13 @@ mod tests {
         let notif = &settings["hooks"]["Notification"];
         assert!(notif.is_array(), "Notification hook must exist");
         assert_eq!(notif.as_array().unwrap().len(), 2);
-        assert_eq!(
-            notif[0]["matcher"].as_str().unwrap(),
-            "permission_prompt"
-        );
-        assert_eq!(
-            notif[1]["matcher"].as_str().unwrap(),
-            "elicitation_dialog"
-        );
+        assert_eq!(notif[0]["matcher"].as_str().unwrap(), "permission_prompt");
+        assert_eq!(notif[1]["matcher"].as_str().unwrap(), "elicitation_dialog");
 
         // Verify PostToolUse hook exists with AskUserQuestion matcher
         let ptu = &settings["hooks"]["PostToolUse"];
         assert!(ptu.is_array(), "PostToolUse hook must exist");
-        assert_eq!(
-            ptu[0]["matcher"].as_str().unwrap(),
-            "AskUserQuestion"
-        );
+        assert_eq!(ptu[0]["matcher"].as_str().unwrap(), "AskUserQuestion");
 
         // Verify the command calls notify with the standard pattern
         let cmd = ptu[0]["hooks"][0]["command"].as_str().unwrap();
@@ -1447,7 +1538,11 @@ mod tests {
                 "PreToolUse": [{"matcher": "Bash", "hooks": []}]
             }
         });
-        std::fs::write(&settings_file, serde_json::to_string_pretty(&existing).unwrap()).unwrap();
+        std::fs::write(
+            &settings_file,
+            serde_json::to_string_pretty(&existing).unwrap(),
+        )
+        .unwrap();
 
         let settings_str = settings_file.to_str().unwrap();
         install_claude_hooks(settings_str).unwrap();
@@ -1514,8 +1609,14 @@ mod tests {
         let ss = &settings["hooks"]["SessionStart"];
         assert!(ss.is_array(), "SessionStart hook must exist");
         let ss_cmd = ss[0]["hooks"][0]["command"].as_str().unwrap();
-        assert!(ss_cmd.contains("cat .claude/commands/squad-orchestrator.md"), "Must use fast cat");
-        assert!(ss_cmd.contains("test-orch"), "Must check orchestrator session name");
+        assert!(
+            ss_cmd.contains("cat .claude/commands/squad-orchestrator.md"),
+            "Must use fast cat"
+        );
+        assert!(
+            ss_cmd.contains("test-orch"),
+            "Must check orchestrator session name"
+        );
     }
 
     #[test]

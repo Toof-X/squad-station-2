@@ -38,7 +38,9 @@ fn main() {
     match build_status {
         Ok(status) if status.success() => {}
         _ => {
-            println!("cargo::error=npm run build failed in web/. Check web/src for TypeScript errors.");
+            println!(
+                "cargo::error=npm run build failed in web/. Check web/src for TypeScript errors."
+            );
             std::process::exit(1);
         }
     }

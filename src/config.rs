@@ -79,8 +79,8 @@ pub struct AgentConfig {
 pub fn sanitize_session_name(name: &str) -> String {
     name.chars()
         .map(|c| match c {
-            '.' | ':' | '"' | '\'' | '`' | '$' | ';' | '(' | ')' | '|' | '&' | '<' | '>'
-            | '\\' | ' ' | '\n' | '\0' | '/' => '-',
+            '.' | ':' | '"' | '\'' | '`' | '$' | ';' | '(' | ')' | '|' | '&' | '<' | '>' | '\\'
+            | ' ' | '\n' | '\0' | '/' => '-',
             _ => c,
         })
         .collect()
@@ -243,8 +243,7 @@ mod tests {
                 .is_ok()
         );
         assert!(
-            validate_agent_config("a", &make_agent("claude-code", Some("claude-opus-4-6")))
-                .is_ok()
+            validate_agent_config("a", &make_agent("claude-code", Some("claude-opus-4-6"))).is_ok()
         );
         assert!(
             validate_agent_config("a", &make_agent("claude-code", Some("claude-haiku-4-5")))
@@ -258,18 +257,20 @@ mod tests {
             validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-2.5-pro"))).is_ok()
         );
         assert!(
-            validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-2.5-flash")))
-                .is_ok()
+            validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-2.5-flash"))).is_ok()
         );
-        assert!(
-            validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-2.5-flash-lite")))
-                .is_ok()
-        );
+        assert!(validate_agent_config(
+            "a",
+            &make_agent("gemini-cli", Some("gemini-2.5-flash-lite"))
+        )
+        .is_ok());
     }
 
     #[test]
     fn invalid_model_warns_but_succeeds() {
-        assert!(validate_agent_config("a", &make_agent("claude-code", Some("claude-code-2"))).is_ok());
+        assert!(
+            validate_agent_config("a", &make_agent("claude-code", Some("claude-code-2"))).is_ok()
+        );
         assert!(validate_agent_config("a", &make_agent("gemini-cli", Some("gemini-pro"))).is_ok());
     }
 

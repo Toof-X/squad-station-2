@@ -129,9 +129,17 @@ async fn test_generate_clone_name_from_existing_clone() {
 #[tokio::test]
 async fn test_clone_rejects_orchestrator() {
     let pool = helpers::setup_test_db().await;
-    db::agents::insert_agent(&pool, "my-orch", "claude-code", "orchestrator", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "my-orch",
+        "claude-code",
+        "orchestrator",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     let source = db::agents::get_agent(&pool, "my-orch")
         .await
         .unwrap()
@@ -143,9 +151,17 @@ async fn test_clone_rejects_orchestrator() {
 #[tokio::test]
 async fn test_delete_agent_by_name() {
     let pool = helpers::setup_test_db().await;
-    db::agents::insert_agent(&pool, "to-delete", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "to-delete",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     assert!(
         db::agents::get_agent(&pool, "to-delete")
             .await

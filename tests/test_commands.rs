@@ -452,10 +452,7 @@ fn test_compute_alignment_warning_no_overlap() {
                 "task_preview should contain 'fix CSS', got: {}",
                 task_preview
             );
-            assert!(
-                !role.is_empty(),
-                "role should be non-empty"
-            );
+            assert!(!role.is_empty(), "role should be non-empty");
         }
         other => panic!("Expected Warning, got {:?}", other),
     }
@@ -504,7 +501,11 @@ fn test_format_busy_duration_5m() {
     use squad_station::commands::context::format_busy_duration;
     let ts = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
     let result = format_busy_duration("busy", &ts);
-    assert_eq!(result, "5m", "5 minutes ago should return '5m', got: {}", result);
+    assert_eq!(
+        result, "5m",
+        "5 minutes ago should return '5m', got: {}",
+        result
+    );
 }
 
 #[test]
@@ -512,7 +513,11 @@ fn test_format_busy_duration_1h30m() {
     use squad_station::commands::context::format_busy_duration;
     let ts = (chrono::Utc::now() - chrono::Duration::minutes(90)).to_rfc3339();
     let result = format_busy_duration("busy", &ts);
-    assert_eq!(result, "1h 30m", "90 minutes ago should return '1h 30m', got: {}", result);
+    assert_eq!(
+        result, "1h 30m",
+        "90 minutes ago should return '1h 30m', got: {}",
+        result
+    );
 }
 
 #[test]
@@ -520,7 +525,11 @@ fn test_format_busy_duration_2d4h() {
     use squad_station::commands::context::format_busy_duration;
     let ts = (chrono::Utc::now() - chrono::Duration::hours(52)).to_rfc3339();
     let result = format_busy_duration("busy", &ts);
-    assert_eq!(result, "2d 4h", "52 hours ago should return '2d 4h', got: {}", result);
+    assert_eq!(
+        result, "2d 4h",
+        "52 hours ago should return '2d 4h', got: {}",
+        result
+    );
 }
 
 #[test]
@@ -528,7 +537,11 @@ fn test_format_busy_duration_idle_status() {
     use squad_station::commands::context::format_busy_duration;
     let ts = chrono::Utc::now().to_rfc3339();
     let result = format_busy_duration("idle", &ts);
-    assert_eq!(result, "idle", "non-busy status should return 'idle', got: {}", result);
+    assert_eq!(
+        result, "idle",
+        "non-busy status should return 'idle', got: {}",
+        result
+    );
 }
 
 #[test]
@@ -536,7 +549,11 @@ fn test_format_busy_duration_less_than_1m() {
     use squad_station::commands::context::format_busy_duration;
     let ts = (chrono::Utc::now() - chrono::Duration::seconds(30)).to_rfc3339();
     let result = format_busy_duration("busy", &ts);
-    assert_eq!(result, "<1m", "30 seconds ago should return '<1m', got: {}", result);
+    assert_eq!(
+        result, "<1m",
+        "30 seconds ago should return '<1m', got: {}",
+        result
+    );
 }
 
 #[test]
@@ -727,9 +744,17 @@ async fn test_build_orchestrator_md_fleet_status_empty_metrics() {
     use squad_station::commands::context::build_orchestrator_md;
 
     let db = helpers::setup_test_db().await;
-    db::agents::insert_agent(&db, "proj-worker", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &db,
+        "proj-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     let agents = db::agents::list_agents(&db).await.unwrap();
     let content = build_orchestrator_md(&agents, "/project/root", &[], &[]);
@@ -789,9 +814,17 @@ async fn test_build_orchestrator_md_fleet_status_requery_commands() {
     use squad_station::commands::context::{build_orchestrator_md, AgentMetrics, AlignmentResult};
 
     let db = helpers::setup_test_db().await;
-    db::agents::insert_agent(&db, "proj-worker", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &db,
+        "proj-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     let agents = db::agents::list_agents(&db).await.unwrap();
     let metrics = vec![AgentMetrics {
@@ -826,9 +859,17 @@ async fn test_build_orchestrator_md_fleet_status_section_order() {
     use squad_station::commands::context::{build_orchestrator_md, AgentMetrics, AlignmentResult};
 
     let db = helpers::setup_test_db().await;
-    db::agents::insert_agent(&db, "proj-worker", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &db,
+        "proj-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     let agents = db::agents::list_agents(&db).await.unwrap();
     let metrics = vec![AgentMetrics {
@@ -840,8 +881,12 @@ async fn test_build_orchestrator_md_fleet_status_section_order() {
 
     let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
 
-    let preflight_pos = content.find("## PRE-FLIGHT").expect("PRE-FLIGHT section must exist");
-    let fleet_pos = content.find("## Fleet Status").expect("Fleet Status section must exist");
+    let preflight_pos = content
+        .find("## PRE-FLIGHT")
+        .expect("PRE-FLIGHT section must exist");
+    let fleet_pos = content
+        .find("## Fleet Status")
+        .expect("Fleet Status section must exist");
     let routing_pos = content
         .find("## Session Routing")
         .expect("Session Routing section must exist");
@@ -863,41 +908,83 @@ async fn test_build_orchestrator_md_fleet_status_section_order() {
 #[tokio::test]
 async fn test_context_metrics_pipeline_end_to_end() {
     use squad_station::commands::context::{
-        build_orchestrator_md, compute_alignment, format_busy_duration,
-        AgentMetrics, AlignmentResult,
+        build_orchestrator_md, compute_alignment, format_busy_duration, AgentMetrics,
+        AlignmentResult,
     };
 
     let db = helpers::setup_test_db().await;
 
     db::agents::insert_agent(
-        &db, "proj-orchestrator", "claude-code", "orchestrator", None, None,
+        &db,
+        "proj-orchestrator",
+        "claude-code",
+        "orchestrator",
         None,
-    ).await.unwrap();
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     db::agents::insert_agent(
-        &db, "proj-worker-a", "claude-code", "worker",
-        Some("sonnet"), Some("Frontend engineer for React and CSS"),
+        &db,
+        "proj-worker-a",
+        "claude-code",
+        "worker",
+        Some("sonnet"),
+        Some("Frontend engineer for React and CSS"),
         None,
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
     db::agents::insert_agent(
-        &db, "proj-worker-b", "claude-code", "worker",
-        Some("opus"), Some("Backend API developer"),
+        &db,
+        "proj-worker-b",
+        "claude-code",
+        "worker",
+        Some("opus"),
+        Some("Backend API developer"),
         None,
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
 
-    db::agents::update_agent_status(&db, "proj-worker-a", "busy").await.unwrap();
+    db::agents::update_agent_status(&db, "proj-worker-a", "busy")
+        .await
+        .unwrap();
 
     db::messages::insert_message(
-        &db, "proj-orchestrator", "proj-worker-a", "task_request",
-        "Fix the CSS grid layout for the dashboard", "normal", None,
-    ).await.unwrap();
+        &db,
+        "proj-orchestrator",
+        "proj-worker-a",
+        "task_request",
+        "Fix the CSS grid layout for the dashboard",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
     db::messages::insert_message(
-        &db, "proj-orchestrator", "proj-worker-a", "task_request",
-        "Add responsive breakpoints", "normal", None,
-    ).await.unwrap();
+        &db,
+        "proj-orchestrator",
+        "proj-worker-a",
+        "task_request",
+        "Add responsive breakpoints",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
     db::messages::insert_message(
-        &db, "proj-orchestrator", "proj-worker-b", "task_request",
-        "Optimize database query performance", "normal", None,
-    ).await.unwrap();
+        &db,
+        "proj-orchestrator",
+        "proj-worker-b",
+        "task_request",
+        "Optimize database query performance",
+        "normal",
+        None,
+    )
+    .await
+    .unwrap();
 
     let agents = db::agents::list_agents(&db).await.unwrap();
     let mut metrics = Vec::new();
@@ -905,7 +992,9 @@ async fn test_context_metrics_pipeline_end_to_end() {
         if agent.role == "orchestrator" || agent.status == "dead" {
             continue;
         }
-        let pending = db::messages::count_processing(&db, &agent.name).await.unwrap();
+        let pending = db::messages::count_processing(&db, &agent.name)
+            .await
+            .unwrap();
         let busy_for = format_busy_duration(&agent.status, &agent.status_updated_at);
         let alignment = match db::messages::peek_message(&db, &agent.name).await.unwrap() {
             Some(msg) => compute_alignment(&msg.task, agent.description.as_deref()),
@@ -921,27 +1010,65 @@ async fn test_context_metrics_pipeline_end_to_end() {
 
     let content = build_orchestrator_md(&agents, "/test/project", &[], &metrics);
 
-    assert!(content.contains("| proj-worker-a | 2 |"), "Worker A should show 2 pending, got:\n{}", content);
-    assert!(content.contains("| proj-worker-b | 1 |"), "Worker B should show 1 pending, got:\n{}", content);
+    assert!(
+        content.contains("| proj-worker-a | 2 |"),
+        "Worker A should show 2 pending, got:\n{}",
+        content
+    );
+    assert!(
+        content.contains("| proj-worker-b | 1 |"),
+        "Worker B should show 1 pending, got:\n{}",
+        content
+    );
     assert!(content.contains("idle"), "Worker B should show idle");
-    assert!(content.contains('\u{2705}'), "Worker A should have checkmark alignment (CSS overlap)");
-    assert!(content.contains("squad-station agents"), "Missing re-query: agents");
-    assert!(content.contains("squad-station list --status processing"), "Missing re-query: list");
-    assert!(content.contains("squad-station status"), "Missing re-query: status");
-    assert!(content.contains("squad-station context"), "Missing re-query: context");
+    assert!(
+        content.contains('\u{2705}'),
+        "Worker A should have checkmark alignment (CSS overlap)"
+    );
+    assert!(
+        content.contains("squad-station agents"),
+        "Missing re-query: agents"
+    );
+    assert!(
+        content.contains("squad-station list --status processing"),
+        "Missing re-query: list"
+    );
+    assert!(
+        content.contains("squad-station status"),
+        "Missing re-query: status"
+    );
+    assert!(
+        content.contains("squad-station context"),
+        "Missing re-query: context"
+    );
 
     let fleet_section = content.split("## Fleet Status").nth(1).unwrap_or("");
     let session_section_start = fleet_section.find("## Context Management").unwrap_or(
-        fleet_section.find("## Session Routing").unwrap_or(fleet_section.len())
+        fleet_section
+            .find("## Session Routing")
+            .unwrap_or(fleet_section.len()),
     );
     let fleet_only = &fleet_section[..session_section_start];
-    assert!(!fleet_only.contains("proj-orchestrator"), "Orchestrator should not be in Fleet Status");
+    assert!(
+        !fleet_only.contains("proj-orchestrator"),
+        "Orchestrator should not be in Fleet Status"
+    );
 
-    let fleet_pos = content.find("## Fleet Status").expect("Fleet Status section missing");
+    let fleet_pos = content
+        .find("## Fleet Status")
+        .expect("Fleet Status section missing");
     let preflight_pos = content.find("PRE-FLIGHT").expect("PRE-FLIGHT missing");
-    let routing_pos = content.find("## Session Routing").expect("Session Routing missing");
-    assert!(fleet_pos > preflight_pos, "Fleet Status should come after PRE-FLIGHT");
-    assert!(fleet_pos < routing_pos, "Fleet Status should come before Session Routing");
+    let routing_pos = content
+        .find("## Session Routing")
+        .expect("Session Routing missing");
+    assert!(
+        fleet_pos > preflight_pos,
+        "Fleet Status should come after PRE-FLIGHT"
+    );
+    assert!(
+        fleet_pos < routing_pos,
+        "Fleet Status should come before Session Routing"
+    );
 }
 
 // ============================================================
@@ -954,7 +1081,10 @@ async fn test_format_inject_output_claude_code_returns_raw_content() {
 
     let content = "You are the orchestrator.\n## Agent Roster\n";
     let output = format_inject_output("claude-code", content);
-    assert_eq!(output, content, "Claude Code inject must return raw content");
+    assert_eq!(
+        output, content,
+        "Claude Code inject must return raw content"
+    );
 }
 
 #[tokio::test]
@@ -963,8 +1093,8 @@ async fn test_format_inject_output_gemini_cli_returns_json() {
 
     let content = "You are the orchestrator.";
     let output = format_inject_output("gemini-cli", content);
-    let parsed: serde_json::Value = serde_json::from_str(&output)
-        .expect("Gemini CLI inject output must be valid JSON");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&output).expect("Gemini CLI inject output must be valid JSON");
     assert_eq!(
         parsed["hookSpecificOutput"]["additionalContext"]
             .as_str()

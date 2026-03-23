@@ -138,10 +138,9 @@ pub async fn complete_by_id(pool: &SqlitePool, message_id: &str) -> anyhow::Resu
 
 /// Count all processing messages across all agents.
 pub async fn count_processing_all(pool: &SqlitePool) -> anyhow::Result<i64> {
-    let row: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM messages WHERE status = 'processing'")
-            .fetch_one(pool)
-            .await?;
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM messages WHERE status = 'processing'")
+        .fetch_one(pool)
+        .await?;
     Ok(row.0)
 }
 
@@ -172,10 +171,9 @@ pub async fn total_count(pool: &SqlitePool) -> anyhow::Result<i64> {
 /// Get the most recent updated_at timestamp across all messages.
 /// Used by watchdog for global stall detection.
 pub async fn last_activity_timestamp(pool: &SqlitePool) -> anyhow::Result<Option<String>> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT MAX(updated_at) FROM messages")
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<(String,)> = sqlx::query_as("SELECT MAX(updated_at) FROM messages")
+        .fetch_optional(pool)
+        .await?;
     Ok(row.map(|(ts,)| ts))
 }
 

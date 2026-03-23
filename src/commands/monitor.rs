@@ -82,16 +82,14 @@ fn capture_pane(session_name: &str, lines: u16) -> String {
             "capture-pane",
             "-t",
             session_name,
-            "-p",       // print to stdout
+            "-p", // print to stdout
             "-S",
             &format!("-{}", lines), // last N lines
         ])
         .output();
 
     match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout).to_string()
-        }
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
         _ => String::new(),
     }
 }
@@ -218,14 +216,12 @@ fn render(frame: &mut Frame, app: &mut MonitorApp) {
         let visible_start = lines.len().saturating_sub(pane_height);
         let visible: String = lines[visible_start..].join("\n");
 
-        let output = Paragraph::new(visible)
-            .wrap(Wrap { trim: false })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::DarkGray))
-                    .title(" Output "),
-            );
+        let output = Paragraph::new(visible).wrap(Wrap { trim: false }).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray))
+                .title(" Output "),
+        );
         frame.render_widget(output, right_chunks[1]);
     } else {
         let empty = Paragraph::new("  No agent selected").block(

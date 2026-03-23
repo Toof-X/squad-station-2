@@ -56,9 +56,17 @@ async fn test_list_agents() {
     agents::insert_agent(&pool, "alpha", "gemini", "worker", None, None, None)
         .await
         .unwrap();
-    agents::insert_agent(&pool, "bravo", "claude-code", "orchestrator", None, None, None)
-        .await
-        .unwrap();
+    agents::insert_agent(
+        &pool,
+        "bravo",
+        "claude-code",
+        "orchestrator",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     let list = agents::list_agents(&pool).await.unwrap();
     assert_eq!(list.len(), 3, "all 3 agents should be listed");
@@ -242,9 +250,17 @@ async fn test_insert_message_with_priority() {
 async fn test_insert_message_stores_direction() {
     // MSGS-01: from_agent and to_agent are stored correctly
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-dir", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    agents::insert_agent(
+        &pool,
+        "agent-dir",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     messages::insert_message(
         &pool,
@@ -312,9 +328,17 @@ async fn test_update_status_completes_message() {
 async fn test_update_status_sets_completed_at() {
     // MSGS-04: update_status must set completed_at timestamp
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-cat", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    agents::insert_agent(
+        &pool,
+        "agent-cat",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     messages::insert_message(
         &pool,
@@ -783,9 +807,17 @@ async fn test_update_agent_status_updates_timestamp() {
 #[tokio::test]
 async fn test_complete_by_id() {
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-cbi", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    agents::insert_agent(
+        &pool,
+        "agent-cbi",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     let msg_id = messages::insert_message(
         &pool,
         "orchestrator",
@@ -812,9 +844,17 @@ async fn test_complete_by_id() {
 #[tokio::test]
 async fn test_complete_by_id_already_completed() {
     let pool = helpers::setup_test_db().await;
-    agents::insert_agent(&pool, "agent-dup", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    agents::insert_agent(
+        &pool,
+        "agent-dup",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     let msg_id = messages::insert_message(
         &pool,
         "orchestrator",

@@ -88,14 +88,8 @@ mod tests {
 
     #[test]
     fn test_settings_path() {
-        assert_eq!(
-            settings_path("claude-code"),
-            Some(".claude/settings.json")
-        );
-        assert_eq!(
-            settings_path("gemini-cli"),
-            Some(".gemini/settings.json")
-        );
+        assert_eq!(settings_path("claude-code"), Some(".claude/settings.json"));
+        assert_eq!(settings_path("gemini-cli"), Some(".gemini/settings.json"));
         assert!(settings_path("unknown").is_none());
     }
 

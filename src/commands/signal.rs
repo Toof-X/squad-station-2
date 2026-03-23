@@ -94,7 +94,12 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
         Ok(p) => p,
         Err(e) => {
             eprintln!("squad-station: warning: DB connection failed: {e}");
-            log_signal(&project_root, "GUARD", &agent, "reason=db_connection_failed");
+            log_signal(
+                &project_root,
+                "GUARD",
+                &agent,
+                "reason=db_connection_failed",
+            );
             emit_empty_json_if_hook();
             return Ok(());
         }
@@ -109,12 +114,7 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
             if std::io::stdout().is_terminal() {
                 println!("Agent not found: {} (ignored)", agent);
             }
-            log_signal(
-                &project_root,
-                "GUARD",
-                &agent,
-                "reason=agent_not_found",
-            );
+            log_signal(&project_root, "GUARD", &agent, "reason=agent_not_found");
             emit_empty_json_if_hook();
             return Ok(());
         }
@@ -141,57 +141,54 @@ pub async fn run(agent: Option<String>, json: bool) -> anyhow::Result<()> {
 
     // --- Signal flow: use current_task FK for targeted completion ---
 
-    let (rows, task_id): (u64, Option<String>) =
-        if let Some(ref ct_id) = agent_record.current_task {
-            // Primary path: complete the specific task pointed to by current_task
-            let r = db::messages::complete_by_id(&pool, ct_id).await?;
-            if r > 0 {
-                log_signal(
-                    &project_root,
-                    "OK",
-                    &agent,
-                    &format!("task={} method=current_task", ct_id),
-                );
-                (r, Some(ct_id.clone()))
-            } else {
-                // current_task exists but message is already completed (duplicate signal)
-                log_signal(
-                    &project_root,
-                    "OK",
-                    &agent,
-                    &format!(
-                        "task={} rows=0 reason=already_completed_or_missing",
-                        ct_id
-                    ),
-                );
-                (0, None)
-            }
+    let (rows, task_id): (u64, Option<String>) = if let Some(ref ct_id) = agent_record.current_task
+    {
+        // Primary path: complete the specific task pointed to by current_task
+        let r = db::messages::complete_by_id(&pool, ct_id).await?;
+        if r > 0 {
+            log_signal(
+                &project_root,
+                "OK",
+                &agent,
+                &format!("task={} method=current_task", ct_id),
+            );
+            (r, Some(ct_id.clone()))
         } else {
-            // current_task is NULL — fallback to FIFO (edge case: task sent but current_task race)
-            let fifo_rows = db::messages::update_status(&pool, &agent).await?;
-            if fifo_rows > 0 {
-                // Retrieve the task that FIFO just completed
-                let tid = db::messages::last_completed_id(&pool, &agent).await?;
-                log_signal(
-                    &project_root,
-                    "WARN",
-                    &agent,
-                    &format!(
-                        "task={} method=fifo_fallback reason=current_task_null",
-                        tid.as_deref().unwrap_or("unknown")
-                    ),
-                );
-                (fifo_rows, tid)
-            } else {
-                log_signal(
-                    &project_root,
-                    "OK",
-                    &agent,
-                    "task=none reason=no_current_task_no_processing",
-                );
-                (0, None)
-            }
-        };
+            // current_task exists but message is already completed (duplicate signal)
+            log_signal(
+                &project_root,
+                "OK",
+                &agent,
+                &format!("task={} rows=0 reason=already_completed_or_missing", ct_id),
+            );
+            (0, None)
+        }
+    } else {
+        // current_task is NULL — fallback to FIFO (edge case: task sent but current_task race)
+        let fifo_rows = db::messages::update_status(&pool, &agent).await?;
+        if fifo_rows > 0 {
+            // Retrieve the task that FIFO just completed
+            let tid = db::messages::last_completed_id(&pool, &agent).await?;
+            log_signal(
+                &project_root,
+                "WARN",
+                &agent,
+                &format!(
+                    "task={} method=fifo_fallback reason=current_task_null",
+                    tid.as_deref().unwrap_or("unknown")
+                ),
+            );
+            (fifo_rows, tid)
+        } else {
+            log_signal(
+                &project_root,
+                "OK",
+                &agent,
+                "task=none reason=no_current_task_no_processing",
+            );
+            (0, None)
+        }
+    };
 
     // Find orchestrator and notify (only on actual state change).
     // GUARD 5: Skip notification when agent is frozen (user is in control).

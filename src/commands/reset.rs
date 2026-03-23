@@ -10,9 +10,7 @@ pub async fn run(config_path: PathBuf, no_relaunch: bool, json: bool) -> Result<
     let db_path = config::resolve_db_path(&config)?;
 
     // Stop watchdog daemon before killing sessions / deleting DB
-    let squad_dir = db_path
-        .parent()
-        .unwrap_or(std::path::Path::new("."));
+    let squad_dir = db_path.parent().unwrap_or(std::path::Path::new("."));
     clean::stop_watchdog(squad_dir);
 
     // Kill all sessions

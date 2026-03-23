@@ -189,10 +189,19 @@ fn clean_default_preserves_logs() {
     // DB deleted
     assert!(!db_path.exists(), "station.db must be deleted");
     // watch.pid deleted
-    assert!(!squad_dir.join("watch.pid").exists(), "watch.pid must be removed");
+    assert!(
+        !squad_dir.join("watch.pid").exists(),
+        "watch.pid must be removed"
+    );
     // Logs preserved
-    assert!(log_dir.exists(), ".squad/log/ must survive clean (no --all)");
-    assert!(log_dir.join("signal.log").exists(), "signal.log must survive");
+    assert!(
+        log_dir.exists(),
+        ".squad/log/ must survive clean (no --all)"
+    );
+    assert!(
+        log_dir.join("signal.log").exists(),
+        "signal.log must survive"
+    );
     assert!(log_dir.join("watch.log").exists(), "watch.log must survive");
 }
 
@@ -223,14 +232,23 @@ fn clean_stops_watchdog_before_db_deletion() {
 
     // Step 1: stop watchdog (removes PID file)
     let stopped = clean::stop_watchdog(&squad_dir);
-    assert!(stopped, "stop_watchdog must return true when PID file exists");
-    assert!(!pid_path.exists(), "watch.pid must be removed by stop_watchdog");
+    assert!(
+        stopped,
+        "stop_watchdog must return true when PID file exists"
+    );
+    assert!(
+        !pid_path.exists(),
+        "watch.pid must be removed by stop_watchdog"
+    );
 
     // Step 2: delete DB (safe now — no watchdog crash loop)
     let db_path = squad_dir.join("station.db");
     let deleted = clean::delete_db_file(&db_path).unwrap();
     assert!(deleted, "DB must be deleted after watchdog stopped");
-    assert!(!db_path.exists(), "station.db must not exist after deletion");
+    assert!(
+        !db_path.exists(),
+        "station.db must not exist after deletion"
+    );
 }
 
 #[test]
@@ -251,7 +269,10 @@ fn clean_ordering_watchdog_stops_first() {
     assert!(!db_path.exists(), "DB deleted after watchdog");
 
     // 3. Logs still present
-    assert!(squad_dir.join("log").join("signal.log").exists(), "logs preserved");
+    assert!(
+        squad_dir.join("log").join("signal.log").exists(),
+        "logs preserved"
+    );
 }
 
 #[test]

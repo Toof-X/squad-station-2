@@ -7,16 +7,16 @@ use serde_json;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AlignmentResult {
-    Ok,                                                     // overlap found — checkmark
-    Warning { task_preview: String, role: String },         // zero overlap — warning
-    None,                                                   // no task or no description
+    Ok,                                             // overlap found — checkmark
+    Warning { task_preview: String, role: String }, // zero overlap — warning
+    None,                                           // no task or no description
 }
 
 #[derive(Debug, Clone)]
 pub struct AgentMetrics {
     pub agent_name: String,
     pub pending_count: i64,
-    pub busy_for: String,       // "idle", "<1m", "5m", "1h 30m", "2d 4h"
+    pub busy_for: String, // "idle", "<1m", "5m", "1h 30m", "2d 4h"
     pub alignment: AlignmentResult,
 }
 
@@ -61,8 +61,8 @@ pub fn compute_alignment(task_body: &str, description: Option<&str>) -> Alignmen
     };
 
     const STOP_WORDS: &[&str] = &[
-        "the", "a", "an", "and", "to", "for", "in", "of", "is", "on",
-        "it", "with", "as", "at", "by", "from", "that", "this",
+        "the", "a", "an", "and", "to", "for", "in", "of", "is", "on", "it", "with", "as", "at",
+        "by", "from", "that", "this",
     ];
 
     let tokenize = |s: &str| -> std::collections::HashSet<String> {
@@ -188,9 +188,9 @@ pub fn build_orchestrator_md(
         .iter()
         .filter(|m| {
             // Exclude orchestrator and dead agents
-            agents.iter().any(|a| {
-                a.name == m.agent_name && a.role != "orchestrator" && a.status != "dead"
-            })
+            agents
+                .iter()
+                .any(|a| a.name == m.agent_name && a.role != "orchestrator" && a.status != "dead")
         })
         .collect();
 
@@ -202,10 +202,7 @@ pub fn build_orchestrator_md(
             let alignment_str = match &m.alignment {
                 AlignmentResult::Ok => "\u{2705}".to_string(),
                 AlignmentResult::Warning { task_preview, role } => {
-                    format!(
-                        "\u{26a0}\u{fe0f} '{}' \u{2192} {}",
-                        task_preview, role
-                    )
+                    format!("\u{26a0}\u{fe0f} '{}' \u{2192} {}", task_preview, role)
                 }
                 AlignmentResult::None => "\u{2014}".to_string(),
             };
@@ -238,10 +235,14 @@ pub fn build_orchestrator_md(
     out.push_str("You MUST send `/clear` to an agent BEFORE dispatching a new task if ANY of these conditions are true:\n\n");
     out.push_str("### Mandatory `/clear` Triggers\n\n");
     out.push_str("1. **Topic shift** — The new task is on a DIFFERENT topic/feature than the agent's last completed task.\n");
-    out.push_str("   Examples: bug fix → new feature, UI work → backend work, different file areas.\n\n");
+    out.push_str(
+        "   Examples: bug fix → new feature, UI work → backend work, different file areas.\n\n",
+    );
     out.push_str("2. **Task count threshold** — The agent has completed 3 or more consecutive tasks without a `/clear`.\n");
     out.push_str("   Count resets after each `/clear`.\n\n");
-    out.push_str("3. **Agent hint** — The agent's output mentions context issues, suggests clearing,\n");
+    out.push_str(
+        "3. **Agent hint** — The agent's output mentions context issues, suggests clearing,\n",
+    );
     out.push_str("   or shows signs of confusion (referencing old/irrelevant code).\n\n");
     out.push_str("### `/clear` Checklist (run BEFORE every `squad-station send`)\n\n");
     out.push_str("□ Is this a topic shift from the agent's last task? → /clear\n");
@@ -285,13 +286,17 @@ pub fn build_orchestrator_md(
         .filter(|a| a.role != "orchestrator")
         .filter_map(|a| {
             a.routing_hints.as_ref().and_then(|h| {
-                serde_json::from_str::<Vec<String>>(h).ok().map(|kws| (a, kws))
+                serde_json::from_str::<Vec<String>>(h)
+                    .ok()
+                    .map(|kws| (a, kws))
             })
         })
         .collect();
 
     if hinted_agents.is_empty() {
-        out.push_str("No routing hints configured — use templates during init for keyword-based routing\n\n");
+        out.push_str(
+            "No routing hints configured — use templates during init for keyword-based routing\n\n",
+        );
     } else {
         out.push_str("| Keyword | Route to |\n");
         out.push_str("|---------|----------|\n");
@@ -340,35 +345,48 @@ pub fn build_orchestrator_md(
         out.push_str("- Tasks where one output **feeds into** another → sequential (wait for signal first)\n");
         out.push_str("- When in doubt, check: \"Can agent B start without agent A's output?\" If YES → parallel\n\n");
         out.push_str("### How to run parallel work streams\n\n");
-        out.push_str("1. **Dispatch** — Send independent tasks to different idle workers back-to-back:\n");
+        out.push_str(
+            "1. **Dispatch** — Send independent tasks to different idle workers back-to-back:\n",
+        );
         out.push_str("   ```bash\n");
         // Show example with first 2 workers
         let example_workers: Vec<&&Agent> = workers.iter().take(2).collect();
         for (i, w) in example_workers.iter().enumerate() {
             out.push_str(&format!(
                 "   squad-station send {} --body \"<independent task {}>\"\n",
-                w.name, i + 1
+                w.name,
+                i + 1
             ));
         }
         out.push_str("   ```\n");
         out.push_str("2. **Track** — Maintain a mental map of which agents are working on what.\n");
         out.push_str("   Use `squad-station agents` or `squad-station fleet` to check status.\n");
-        out.push_str("3. **Collect signals** — Signals arrive in completion order (not dispatch order).\n");
+        out.push_str(
+            "3. **Collect signals** — Signals arrive in completion order (not dispatch order).\n",
+        );
         out.push_str("   As each `[SQUAD SIGNAL]` arrives, run the QA Gate for that agent.\n");
         out.push_str("   **Do NOT wait for all agents to finish before processing any signal.**\n");
         out.push_str("4. **Consolidate** — After ALL parallel tasks complete:\n");
         out.push_str("   - Read output from each agent: `tmux capture-pane -t <agent> -p -S -`\n");
         out.push_str("   - Verify no conflicts (e.g., overlapping file edits, merge conflicts)\n");
         out.push_str("   - If conflicts exist → send a follow-up fix task to one agent with full context from both outputs\n");
-        out.push_str("   - Summarize combined results before proceeding to the next workflow step\n\n");
+        out.push_str(
+            "   - Summarize combined results before proceeding to the next workflow step\n\n",
+        );
         out.push_str("### Parallel dispatch rules\n\n");
-        out.push_str("- **Never send 2 tasks to the same busy agent** — check `squad-station fleet` first\n");
+        out.push_str(
+            "- **Never send 2 tasks to the same busy agent** — check `squad-station fleet` first\n",
+        );
         out.push_str("- **Each idle worker = one parallel slot** — dispatch up to N tasks where N = idle workers\n");
-        out.push_str("- **Signal handling during parallel work:** when one agent signals, you may:\n");
+        out.push_str(
+            "- **Signal handling during parallel work:** when one agent signals, you may:\n",
+        );
         out.push_str("  - Send it a NEW independent task immediately (keep it busy)\n");
         out.push_str("  - OR wait for all parallel tasks to complete before the next wave\n");
         out.push_str("- **Sequential gates:** some workflow steps require ALL parallel tasks to complete before proceeding.\n");
-        out.push_str("  Track completion count and only advance when all signals are received.\n\n");
+        out.push_str(
+            "  Track completion count and only advance when all signals are received.\n\n",
+        );
     }
 
     // ── Sending Tasks ────────────────────────────────────────────────────
@@ -394,8 +412,12 @@ pub fn build_orchestrator_md(
     out.push_str("- **NEVER** interrupt a running agent to move on.\n");
     out.push_str("- **WAIT** for the `[SQUAD SIGNAL]` before evaluating results.\n");
     out.push_str("- **Exception:** `/clear` is fire-and-forget — no signal will come. Proceed immediately after sending it.\n");
-    out.push_str("- **Parallel work:** when multiple agents are busy, process each signal as it arrives.\n");
-    out.push_str("  You can dispatch new tasks to a just-finished agent while others are still running.\n");
+    out.push_str(
+        "- **Parallel work:** when multiple agents are busy, process each signal as it arrives.\n",
+    );
+    out.push_str(
+        "  You can dispatch new tasks to a just-finished agent while others are still running.\n",
+    );
     out.push_str("- Only after the signal → read output → decide next step per playbook.\n\n");
 
     // ── QA Gate ──────────────────────────────────────────────────────────
@@ -407,7 +429,9 @@ pub fn build_orchestrator_md(
     );
     out.push_str("3. If agent asked business/requirements questions → forward to user (HITL)\n");
     out.push_str("4. `squad-station list --agent <agent>` — confirm status is `completed`\n");
-    out.push_str("5. Run the `/clear` checklist (see Context Management) — if ANY condition matches,\n");
+    out.push_str(
+        "5. Run the `/clear` checklist (see Context Management) — if ANY condition matches,\n",
+    );
     out.push_str("   send `/clear` to the agent BEFORE dispatching the next task.\n");
     out.push_str(
         "6. Proceed to next playbook step, or report to user if workflow is complete.\n\n",
@@ -448,7 +472,11 @@ pub async fn detect_tmux_session() -> Option<String> {
             .and_then(|o| {
                 if o.status.success() {
                     let n = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                    if n.is_empty() { None } else { Some(n) }
+                    if n.is_empty() {
+                        None
+                    } else {
+                        Some(n)
+                    }
                 } else {
                     None
                 }
@@ -550,7 +578,11 @@ pub fn write_initial_context(
 ) -> anyhow::Result<()> {
     // Build Agent-like structs from config (no DB needed)
     let now = chrono::Utc::now().to_rfc3339();
-    let orch_role = config.orchestrator.name.as_deref().unwrap_or("orchestrator");
+    let orch_role = config
+        .orchestrator
+        .name
+        .as_deref()
+        .unwrap_or("orchestrator");
     let orch_session = config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
     let mut agents = vec![Agent {
         id: String::new(),
@@ -618,8 +650,7 @@ async fn run_inject(
         .name
         .as_deref()
         .unwrap_or("orchestrator");
-    let orch_name =
-        config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
+    let orch_name = config::sanitize_session_name(&format!("{}-{}", config.project, orch_role));
 
     if let Some(session_name) = detect_tmux_session().await {
         if session_name != orch_name {
@@ -628,7 +659,10 @@ async fn run_inject(
                 session_name, orch_name
             );
             // Gemini CLI requires valid JSON on stdout even when skipping
-            print!("{}", format_inject_output(&config.orchestrator.provider, ""));
+            print!(
+                "{}",
+                format_inject_output(&config.orchestrator.provider, "")
+            );
             return Ok(());
         }
     } else {
@@ -637,7 +671,10 @@ async fn run_inject(
             orch_name
         );
         // Gemini CLI requires valid JSON on stdout even when skipping
-        print!("{}", format_inject_output(&config.orchestrator.provider, ""));
+        print!(
+            "{}",
+            format_inject_output(&config.orchestrator.provider, "")
+        );
         return Ok(());
     }
 
@@ -652,25 +689,42 @@ async fn run_inject(
         // Build agent list from config so inject still provides useful context.
         let now = chrono::Utc::now().to_rfc3339();
         let mut agents = Vec::new();
-        let orch_r = config.orchestrator.name.as_deref().unwrap_or("orchestrator");
+        let orch_r = config
+            .orchestrator
+            .name
+            .as_deref()
+            .unwrap_or("orchestrator");
         let orch_s = config::sanitize_session_name(&format!("{}-{}", config.project, orch_r));
         agents.push(crate::db::agents::Agent {
-            id: String::new(), name: orch_s, tool: config.orchestrator.provider.clone(),
-            role: "orchestrator".to_string(), command: None, created_at: now.clone(),
-            status: "idle".to_string(), status_updated_at: now.clone(),
+            id: String::new(),
+            name: orch_s,
+            tool: config.orchestrator.provider.clone(),
+            role: "orchestrator".to_string(),
+            command: None,
+            created_at: now.clone(),
+            status: "idle".to_string(),
+            status_updated_at: now.clone(),
             model: config.orchestrator.model.clone(),
             description: config.orchestrator.description.clone(),
-            current_task: None, routing_hints: None,
+            current_task: None,
+            routing_hints: None,
         });
         for a in &config.agents {
             let suffix = a.name.as_deref().unwrap_or(&a.role);
             let s = config::sanitize_session_name(&format!("{}-{}", config.project, suffix));
             agents.push(crate::db::agents::Agent {
-                id: String::new(), name: s, tool: a.provider.clone(),
-                role: a.role.clone(), command: None, created_at: now.clone(),
-                status: "idle".to_string(), status_updated_at: now.clone(),
-                model: a.model.clone(), description: a.description.clone(),
-                current_task: None, routing_hints: None,
+                id: String::new(),
+                name: s,
+                tool: a.provider.clone(),
+                role: a.role.clone(),
+                command: None,
+                created_at: now.clone(),
+                status: "idle".to_string(),
+                status_updated_at: now.clone(),
+                model: a.model.clone(),
+                description: a.description.clone(),
+                current_task: None,
+                routing_hints: None,
             });
         }
         agents
@@ -683,13 +737,11 @@ async fn run_inject(
     // Output in provider-appropriate format.
     // Use the current session's provider (not orchestrator's) so each tool gets its format.
     let provider = match detect_tmux_session().await {
-        Some(session_name) => {
-            agents
-                .iter()
-                .find(|a| a.name == session_name)
-                .map(|a| a.tool.clone())
-                .unwrap_or_else(|| config.orchestrator.provider.clone())
-        }
+        Some(session_name) => agents
+            .iter()
+            .find(|a| a.name == session_name)
+            .map(|a| a.tool.clone())
+            .unwrap_or_else(|| config.orchestrator.provider.clone()),
         None => config.orchestrator.provider.clone(),
     };
     print!("{}", format_inject_output(&provider, &content));

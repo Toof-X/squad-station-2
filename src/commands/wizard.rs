@@ -99,8 +99,30 @@ impl SddWorkflow {
                 };
                 // npx bmad-method install --directory . --modules bmm --tools <ide> --yes
                 Some(match tools {
-                    "gemini" => vec!["npx", "bmad-method", "install", "--directory", ".", "--modules", "bmm", "--tools", "gemini", "--yes"],
-                    _ => vec!["npx", "bmad-method", "install", "--directory", ".", "--modules", "bmm", "--tools", "claude-code", "--yes"],
+                    "gemini" => vec![
+                        "npx",
+                        "bmad-method",
+                        "install",
+                        "--directory",
+                        ".",
+                        "--modules",
+                        "bmm",
+                        "--tools",
+                        "gemini",
+                        "--yes",
+                    ],
+                    _ => vec![
+                        "npx",
+                        "bmad-method",
+                        "install",
+                        "--directory",
+                        ".",
+                        "--modules",
+                        "bmm",
+                        "--tools",
+                        "claude-code",
+                        "--yes",
+                    ],
                 })
             }
             SddWorkflow::GetShitDone => {
@@ -263,12 +285,7 @@ impl ModelSelector {
 
     pub fn options_for(provider: Provider) -> &'static [&'static str] {
         match provider {
-            Provider::ClaudeCode => &[
-                "sonnet",
-                "opus",
-                "haiku",
-                "other",
-            ],
+            Provider::ClaudeCode => &["sonnet", "opus", "haiku", "other"],
             Provider::GeminiCli => &[
                 "gemini-3.1-pro-preview",
                 "gemini-3-flash-preview",
@@ -434,15 +451,15 @@ pub enum AgentField {
 
 pub struct AgentDraft {
     pub name: TextInputState,
-    pub base_name: String,                              // user-typed name before template suffix
-    pub template_index: usize,                          // index into template list (last = Custom)
-    pub is_orchestrator: bool,                          // selects which template list to use
+    pub base_name: String,     // user-typed name before template suffix
+    pub template_index: usize, // index into template list (last = Custom)
+    pub is_orchestrator: bool, // selects which template list to use
     pub provider: Provider,
     pub model: ModelSelector,
-    pub custom_model: TextInputState,                   // used when model is "other"
+    pub custom_model: TextInputState, // used when model is "other"
     pub description: TextInputState,
     pub focused_field: AgentField,
-    pub routing_hints: Option<Vec<&'static str>>,       // set by template selection
+    pub routing_hints: Option<Vec<&'static str>>, // set by template selection
 }
 
 impl AgentDraft {
@@ -563,7 +580,11 @@ impl WizardState {
 
     /// Total steps: Project + OrchestratorConfig + WorkerCount + workers + Summary
     fn total_steps(&self) -> usize {
-        let count = if self.worker_count > 0 { self.worker_count } else { 1 };
+        let count = if self.worker_count > 0 {
+            self.worker_count
+        } else {
+            1
+        };
         3 + count + 1
     }
 
@@ -581,7 +602,11 @@ impl WizardState {
 fn draft_to_agent_input(d: AgentDraft, role: &str) -> AgentInput {
     let model = if d.model.is_other(d.provider) {
         let v = d.custom_model.value.trim().to_string();
-        if v.is_empty() { None } else { Some(v) }
+        if v.is_empty() {
+            None
+        } else {
+            Some(v)
+        }
     } else {
         d.model.current(d.provider).map(|s| s.to_string())
     };
@@ -590,9 +615,10 @@ fn draft_to_agent_input(d: AgentDraft, role: &str) -> AgentInput {
     } else {
         Some(d.description.value.trim().to_string())
     };
-    let routing_hints = d.routing_hints.as_ref().map(|hints| {
-        serde_json::to_string(hints).unwrap_or_default()
-    });
+    let routing_hints = d
+        .routing_hints
+        .as_ref()
+        .map(|hints| serde_json::to_string(hints).unwrap_or_default());
     AgentInput {
         name: d.name.value.trim().to_string(),
         role: role.to_string(),
@@ -606,7 +632,6 @@ fn draft_to_agent_input(d: AgentDraft, role: &str) -> AgentInput {
 // ----------------------------------------------------------------------------
 // Validation functions
 // ----------------------------------------------------------------------------
-
 
 fn validate_count(input: &str) -> Result<usize, String> {
     input
@@ -684,9 +709,8 @@ fn sync_dir_from_project(state: &mut WizardState) {
     let project = state.project_input.value.trim().to_string();
     if let Some(parent) = std::path::Path::new(&dir).parent() {
         let new_path = parent.join(&project);
-        state.install_dir_input = TextInputState::with_value(
-            new_path.to_string_lossy().to_string(),
-        );
+        state.install_dir_input =
+            TextInputState::with_value(new_path.to_string_lossy().to_string());
     }
 }
 
@@ -798,8 +822,7 @@ fn handle_key(state: &mut WizardState, key: KeyCode) -> KeyAction {
                     WizardPage::WorkerConfig { index: index - 1 }
                 }
             };
-            handle_agent_key(key, &mut state.workers[index], on_done, on_back)
-                .apply(state);
+            handle_agent_key(key, &mut state.workers[index], on_done, on_back).apply(state);
         }
         WizardPage::Summary => match key {
             KeyCode::Enter => return KeyAction::Complete,
@@ -886,7 +909,10 @@ fn handle_agent_key(
                         Provider::GeminiCli => t.gemini_model,
                         Provider::Antigravity => "",
                     };
-                    draft.model.index = model_opts.iter().position(|&m| m == target_model).unwrap_or(0);
+                    draft.model.index = model_opts
+                        .iter()
+                        .position(|&m| m == target_model)
+                        .unwrap_or(0);
                     // Auto-fill description
                     draft.description.value = t.description.to_string();
                     draft.description.cursor = draft.description.value.chars().count();
@@ -1044,12 +1070,8 @@ fn render_page(frame: &mut Frame, state: &WizardState) {
 
     // Footer
     let agent_footer = |draft: &AgentDraft| match draft.focused_field {
-        AgentField::Template => {
-            "↑↓: select   Enter: apply   Tab: back   Ctrl+C: cancel"
-        }
-        AgentField::Provider => {
-            "↑↓: select   Enter: next   Tab: back   Ctrl+C: cancel"
-        }
+        AgentField::Template => "↑↓: select   Enter: apply   Tab: back   Ctrl+C: cancel",
+        AgentField::Provider => "↑↓: select   Enter: next   Tab: back   Ctrl+C: cancel",
         AgentField::Model => {
             if draft.model.is_other(draft.provider) {
                 "↑↓: change   type: custom model   Enter: next   Tab: back   Ctrl+C: cancel"
@@ -1108,8 +1130,8 @@ fn render_text_input(
     frame.render_widget(field_widget, field_chunks[0]);
 
     if let Some(err) = &input.error {
-        let error_widget = Paragraph::new(format!("  {}", err))
-            .style(Style::default().fg(Color::Red));
+        let error_widget =
+            Paragraph::new(format!("  {}", err)).style(Style::default().fg(Color::Red));
         frame.render_widget(error_widget, field_chunks[1]);
     }
 }
@@ -1123,7 +1145,11 @@ fn render_radio_list(
     selected: usize,
     focused: bool,
 ) {
-    let border_color = if focused { Color::Cyan } else { Color::DarkGray };
+    let border_color = if focused {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
     let items: Vec<ListItem> = options
         .iter()
         .enumerate()
@@ -1168,7 +1194,11 @@ fn render_project_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
         .split(area);
 
     let dir_focused = state.project_field == ProjectField::InstallDir;
-    let dir_color = if dir_focused { Color::Cyan } else { Color::DarkGray };
+    let dir_color = if dir_focused {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
     let dir_widget = Paragraph::new(state.install_dir_input.display(dir_focused)).block(
         Block::default()
             .borders(Borders::ALL)
@@ -1178,7 +1208,11 @@ fn render_project_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
     frame.render_widget(dir_widget, chunks[0]);
 
     let name_focused = state.project_field == ProjectField::Name;
-    let name_color = if name_focused { Color::Cyan } else { Color::DarkGray };
+    let name_color = if name_focused {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
     let name_widget = Paragraph::new(state.project_input.display(name_focused)).block(
         Block::default()
             .borders(Borders::ALL)
@@ -1201,8 +1235,16 @@ fn render_project_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
 /// Role is not shown — it is implicit from which page we're on.
 fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &AgentDraft) {
     let model_opts = ModelSelector::options_for(draft.provider);
-    let model_h = if model_opts.is_empty() { 3u16 } else { model_opts.len() as u16 + 2 };
-    let custom_model_h: u16 = if draft.model.is_other(draft.provider) { 3 } else { 0 };
+    let model_h = if model_opts.is_empty() {
+        3u16
+    } else {
+        model_opts.len() as u16 + 2
+    };
+    let custom_model_h: u16 = if draft.model.is_other(draft.provider) {
+        3
+    } else {
+        0
+    };
 
     // Compute template section height dynamically
     let templates_list = if draft.is_orchestrator {
@@ -1213,9 +1255,7 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
     let template_h = (templates_list.len() + 1 + 2) as u16; // options + Custom + 2 border lines
 
     // Section heights (fixed)
-    let heights: [u16; 8] = [
-        3, 1, template_h, 5, model_h, custom_model_h, 3, 1,
-    ];
+    let heights: [u16; 8] = [3, 1, template_h, 5, model_h, custom_model_h, 3, 1];
     let total_h: u16 = heights.iter().sum();
 
     // Compute scroll offset so the focused field is visible
@@ -1223,7 +1263,13 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
         AgentField::Name => 0,
         AgentField::Template => 2,
         AgentField::Provider => 3,
-        AgentField::Model => if draft.model.is_other(draft.provider) { 5 } else { 4 },
+        AgentField::Model => {
+            if draft.model.is_other(draft.provider) {
+                5
+            } else {
+                4
+            }
+        }
         AgentField::Description => 6,
     };
     let scroll_y = if total_h <= area.height {
@@ -1231,7 +1277,11 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
     } else {
         let focused_top: u16 = heights[..focused_idx].iter().sum();
         let focused_h = heights[focused_idx]
-            + if focused_idx + 1 < 8 && heights[focused_idx + 1] == 1 { 1 } else { 0 };
+            + if focused_idx + 1 < 8 && heights[focused_idx + 1] == 1 {
+                1
+            } else {
+                0
+            };
         let focused_bottom = focused_top + focused_h;
         if focused_bottom > area.height {
             focused_bottom.saturating_sub(area.height)
@@ -1269,17 +1319,31 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
             let new_y = r.y.saturating_sub(scroll_y);
             if new_y + r.height <= area.y || new_y >= area.y + area.height {
                 // Fully off-screen: zero-height rect (won't render)
-                ratatui::layout::Rect { x: r.x, y: area.y, width: r.width, height: 0 }
+                ratatui::layout::Rect {
+                    x: r.x,
+                    y: area.y,
+                    width: r.width,
+                    height: 0,
+                }
             } else {
                 let clipped_h = r.height.min((area.y + area.height).saturating_sub(new_y));
-                ratatui::layout::Rect { x: r.x, y: new_y, width: r.width, height: clipped_h }
+                ratatui::layout::Rect {
+                    x: r.x,
+                    y: new_y,
+                    width: r.width,
+                    height: clipped_h,
+                }
             }
         })
         .collect();
 
     // --- Name field ---
     let name_focused = draft.focused_field == AgentField::Name;
-    let name_color = if name_focused { Color::Cyan } else { Color::DarkGray };
+    let name_color = if name_focused {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
     let name_widget = Paragraph::new(draft.name.display(name_focused)).block(
         Block::default()
             .borders(Borders::ALL)
@@ -1294,10 +1358,7 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
     // --- Template selector: horizontal split (45% list / 55% preview) ---
     let template_pane = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(45),
-            Constraint::Percentage(55),
-        ])
+        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
         .split(agent_chunks[2]);
 
     // LEFT pane: radio list of template display names + "Custom"
@@ -1319,7 +1380,11 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
     } else {
         "Enter role and description manually."
     };
-    let preview_border_color = if template_focused { Color::Cyan } else { Color::DarkGray };
+    let preview_border_color = if template_focused {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
     let preview = Paragraph::new(preview_text)
         .wrap(ratatui::widgets::Wrap { trim: true })
         .block(
@@ -1367,7 +1432,11 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
     // --- Custom model text input (shown when "other" is selected) ---
     if draft.model.is_other(draft.provider) {
         let model_focused = draft.focused_field == AgentField::Model;
-        let color = if model_focused { Color::Cyan } else { Color::DarkGray };
+        let color = if model_focused {
+            Color::Cyan
+        } else {
+            Color::DarkGray
+        };
         let custom_widget = Paragraph::new(draft.custom_model.display(model_focused)).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -1379,7 +1448,11 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
 
     // --- Description field ---
     let desc_focused = draft.focused_field == AgentField::Description;
-    let desc_color = if desc_focused { Color::Cyan } else { Color::DarkGray };
+    let desc_color = if desc_focused {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
     let desc_widget = Paragraph::new(draft.description.display(desc_focused)).block(
         Block::default()
             .borders(Borders::ALL)
@@ -1395,9 +1468,16 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
 fn draft_summary_line(label: &str, d: &AgentDraft) -> String {
     let model_str = if d.model.is_other(d.provider) {
         let v = d.custom_model.value.trim();
-        if v.is_empty() { "other (not set)".to_string() } else { v.to_string() }
+        if v.is_empty() {
+            "other (not set)".to_string()
+        } else {
+            v.to_string()
+        }
     } else {
-        d.model.current(d.provider).map(|s| s.to_string()).unwrap_or_else(|| "-".to_string())
+        d.model
+            .current(d.provider)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "-".to_string())
     };
     let desc_str = if d.description.value.trim().is_empty() {
         "-".to_string()
@@ -1410,7 +1490,13 @@ fn draft_summary_line(label: &str, d: &AgentDraft) -> String {
     } else {
         format!("{} ({})", label, name_str)
     };
-    format!("{}: provider={}, model={}, desc={}", display, d.provider.as_str(), model_str, desc_str)
+    format!(
+        "{}: provider={}, model={}, desc={}",
+        display,
+        d.provider.as_str(),
+        model_str,
+        desc_str
+    )
 }
 
 /// Render the summary/review page.
@@ -1426,7 +1512,10 @@ fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
     // Build agent fleet diagram lines
     // Collect all worker labels: existing (unmarked) + new (tagged [new])
     let orch_label: String = if state.worker_only {
-        state.existing_orchestrator.clone().unwrap_or_else(|| "orchestrator".to_string())
+        state
+            .existing_orchestrator
+            .clone()
+            .unwrap_or_else(|| "orchestrator".to_string())
     } else {
         let name = state.orchestrator.name.value.trim();
         if name.is_empty() {
@@ -1436,7 +1525,8 @@ fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
         }
     };
 
-    let mut all_workers: Vec<(String, bool)> = state.existing_workers
+    let mut all_workers: Vec<(String, bool)> = state
+        .existing_workers
         .iter()
         .map(|s| (s.clone(), false))
         .collect();
@@ -1461,14 +1551,18 @@ fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
     let mut diagram_lines: Vec<Line> = Vec::new();
     let inner_label = format!("  {}  ", orch_label);
     let box_inner = inner_label.len().max(24);
-    let top    = format!("  ┌{}┐", "─".repeat(box_inner));
-    let mid    = format!("  │{:<width$}│", inner_label, width = box_inner);
+    let top = format!("  ┌{}┐", "─".repeat(box_inner));
+    let mid = format!("  │{:<width$}│", inner_label, width = box_inner);
     // stem exits from the middle of the bottom border
     let stem_col = 2 + box_inner / 2; // column of the ┬ / │
     let bottom = {
-        let left_dashes  = stem_col.saturating_sub(3);   // "  └" is 3 chars
+        let left_dashes = stem_col.saturating_sub(3); // "  └" is 3 chars
         let right_dashes = box_inner.saturating_sub(left_dashes + 1);
-        format!("  └{}┬{}┘", "─".repeat(left_dashes), "─".repeat(right_dashes))
+        format!(
+            "  └{}┬{}┘",
+            "─".repeat(left_dashes),
+            "─".repeat(right_dashes)
+        )
     };
     let indent = " ".repeat(stem_col);
 
@@ -1478,10 +1572,7 @@ fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
     diagram_lines.push(Line::from(Span::styled(bottom, cyan)));
 
     if all_workers.is_empty() {
-        diagram_lines.push(Line::from(Span::styled(
-            format!("{}│", indent),
-            cyan,
-        )));
+        diagram_lines.push(Line::from(Span::styled(format!("{}│", indent), cyan)));
         diagram_lines.push(Line::from(Span::styled(
             format!("{}└──▶ (no workers)", indent),
             cyan,
@@ -1490,7 +1581,11 @@ fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
         diagram_lines.push(Line::from(Span::styled(format!("{}│", indent), cyan)));
         for (i, (label, is_new)) in all_workers.iter().enumerate() {
             let is_last = i == all_workers.len() - 1;
-            let branch = if is_last { "└──▶ " } else { "├──▶ " };
+            let branch = if is_last {
+                "└──▶ "
+            } else {
+                "├──▶ "
+            };
             let tag = if *is_new { " [new]" } else { "" };
             let worker_style = if *is_new {
                 Style::default().fg(Color::Green)
@@ -1508,19 +1603,32 @@ fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
     let mut items: Vec<ListItem> = Vec::new();
 
     if !state.worker_only {
-        items.push(ListItem::new(format!("Dir     : {}", state.install_dir_input.value.trim())));
-        items.push(ListItem::new(format!("Project : {}", state.project_input.value.trim())));
+        items.push(ListItem::new(format!(
+            "Dir     : {}",
+            state.install_dir_input.value.trim()
+        )));
+        items.push(ListItem::new(format!(
+            "Project : {}",
+            state.project_input.value.trim()
+        )));
         items.push(ListItem::new(format!("SDD     : {}", state.sdd.as_str())));
         items.push(ListItem::new(""));
         items.push(ListItem::new(Span::styled(
             "Orchestrator",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )));
-        items.push(ListItem::new(format!("  {}", draft_summary_line("orchestrator", &state.orchestrator))));
+        items.push(ListItem::new(format!(
+            "  {}",
+            draft_summary_line("orchestrator", &state.orchestrator)
+        )));
         items.push(ListItem::new(""));
         items.push(ListItem::new(Span::styled(
             format!("Workers ({})", state.worker_count),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )));
         for (i, d) in state.workers.iter().take(state.worker_count).enumerate() {
             items.push(ListItem::new(format!(
@@ -1531,8 +1639,14 @@ fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
     } else {
         // Add-agents mode: show existing workers, then new ones
         items.push(ListItem::new(Span::styled(
-            format!("Workers — {} existing + {} new", state.existing_workers.len(), state.worker_count),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            format!(
+                "Workers — {} existing + {} new",
+                state.existing_workers.len(),
+                state.worker_count
+            ),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )));
         for label in &state.existing_workers {
             items.push(ListItem::new(format!("  {} (existing)", label)));
@@ -1540,7 +1654,10 @@ fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
         for (i, d) in state.workers.iter().take(state.worker_count).enumerate() {
             items.push(ListItem::new(format!(
                 "  {}  [new]",
-                draft_summary_line(&format!("Worker {}", state.existing_workers.len() + i + 1), d)
+                draft_summary_line(
+                    &format!("Worker {}", state.existing_workers.len() + i + 1),
+                    d
+                )
             )));
         }
     }
@@ -1550,17 +1667,19 @@ fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length((diagram_lines.len() + 2) as u16), // diagram
-            Constraint::Min(3),                                    // list
+            Constraint::Min(3),                                   // list
         ])
         .split(summary_chunks[0]);
 
-    let diagram_widget = Paragraph::new(diagram_lines)
-        .block(Block::default().borders(Borders::ALL).title(" Agent Fleet "));
+    let diagram_widget = Paragraph::new(diagram_lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Agent Fleet "),
+    );
     frame.render_widget(diagram_widget, inner_chunks[0]);
 
-    let list_widget = List::new(items).block(
-        Block::default().borders(Borders::ALL).title(" Review "),
-    );
+    let list_widget =
+        List::new(items).block(Block::default().borders(Borders::ALL).title(" Review "));
     frame.render_widget(list_widget, inner_chunks[1]);
 
     let confirm_hint = Paragraph::new("Press Enter to confirm, Esc to go back")
@@ -1864,15 +1983,24 @@ mod tests {
     #[test]
     fn test_model_selector_gemini() {
         let mut m = ModelSelector::new();
-        assert_eq!(m.current(Provider::GeminiCli), Some("gemini-3.1-pro-preview"));
+        assert_eq!(
+            m.current(Provider::GeminiCli),
+            Some("gemini-3.1-pro-preview")
+        );
         m.cycle_next(Provider::GeminiCli);
-        assert_eq!(m.current(Provider::GeminiCli), Some("gemini-3-flash-preview"));
+        assert_eq!(
+            m.current(Provider::GeminiCli),
+            Some("gemini-3-flash-preview")
+        );
         m.cycle_next(Provider::GeminiCli);
         assert_eq!(m.current(Provider::GeminiCli), Some("gemini-2.5-pro"));
         m.cycle_next(Provider::GeminiCli);
         assert_eq!(m.current(Provider::GeminiCli), Some("gemini-2.5-flash"));
         m.cycle_next(Provider::GeminiCli);
-        assert_eq!(m.current(Provider::GeminiCli), Some("gemini-2.5-flash-lite"));
+        assert_eq!(
+            m.current(Provider::GeminiCli),
+            Some("gemini-2.5-flash-lite")
+        );
         m.cycle_next(Provider::GeminiCli);
         assert_eq!(m.current(Provider::GeminiCli), Some("other"));
     }
@@ -1911,8 +2039,14 @@ mod tests {
     #[test]
     fn test_sdd_from_name() {
         assert_eq!(SddWorkflow::from_name("bmad"), Some(SddWorkflow::Bmad));
-        assert_eq!(SddWorkflow::from_name("gsd"), Some(SddWorkflow::GetShitDone));
-        assert_eq!(SddWorkflow::from_name("superpower"), Some(SddWorkflow::Superpower));
+        assert_eq!(
+            SddWorkflow::from_name("gsd"),
+            Some(SddWorkflow::GetShitDone)
+        );
+        assert_eq!(
+            SddWorkflow::from_name("superpower"),
+            Some(SddWorkflow::Superpower)
+        );
         assert_eq!(SddWorkflow::from_name("unknown"), None);
     }
 
@@ -1927,7 +2061,9 @@ mod tests {
 
     #[test]
     fn test_sdd_install_command_gsd() {
-        let cmd = SddWorkflow::GetShitDone.install_command("claude-code").unwrap();
+        let cmd = SddWorkflow::GetShitDone
+            .install_command("claude-code")
+            .unwrap();
         assert_eq!(cmd[0], "npx");
         assert!(cmd.contains(&"--claude"));
         assert!(cmd.contains(&"--local"));
@@ -1935,7 +2071,9 @@ mod tests {
 
     #[test]
     fn test_sdd_install_command_superpower_none() {
-        assert!(SddWorkflow::Superpower.install_command("claude-code").is_none());
+        assert!(SddWorkflow::Superpower
+            .install_command("claude-code")
+            .is_none());
     }
 
     #[test]
@@ -1944,5 +2082,4 @@ mod tests {
         assert!(!SddWorkflow::GetShitDone.detect_dirs().is_empty());
         assert!(SddWorkflow::Superpower.detect_dirs().is_empty());
     }
-
 }

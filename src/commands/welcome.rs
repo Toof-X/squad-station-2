@@ -1,7 +1,6 @@
 use owo_colors::OwoColorize;
 use owo_colors::Stream;
 
-use std::time::{Duration, Instant};
 use crossterm::{
     cursor::SetCursorStyle,
     event::{self, KeyCode, KeyEventKind},
@@ -16,6 +15,7 @@ use ratatui::{
     widgets::Paragraph,
     Frame, Terminal,
 };
+use std::time::{Duration, Instant};
 use tui_big_text::{BigText, PixelSize};
 
 const ASCII_ART: &str = r#" ____   ___  _   _    _    ____       ____ _____  _  _____ ___ ___  _   _
@@ -76,7 +76,10 @@ pub fn guide_routing_action(key: KeyCode) -> Option<WelcomeAction> {
 // ---------------------------------------------------------------------------
 
 pub fn hint_bar_text(_has_config: bool, remaining_secs: u64) -> String {
-    format!("\u{25cf} \u{25cb}  Tab: Guide  Q: Quit  {}s", remaining_secs)
+    format!(
+        "\u{25cf} \u{25cb}  Tab: Guide  Q: Quit  {}s",
+        remaining_secs
+    )
 }
 
 pub fn proceed_prompt_text() -> &'static str {
@@ -91,7 +94,9 @@ pub fn guide_hint_bar_text() -> String {
 /// Multi-line content for the guide page: concept summary + 3 numbered steps + footer.
 pub fn guide_content() -> String {
     let mut out = String::new();
-    out.push_str("One orchestrator AI coordinates N worker agents. Each agent runs in its own tmux session.");
+    out.push_str(
+        "One orchestrator AI coordinates N worker agents. Each agent runs in its own tmux session.",
+    );
     out.push_str("\n\n");
     out.push_str("  1. Set up your squad\n");
     out.push_str("     Run squad-station init to register your agents.\n");
@@ -132,7 +137,11 @@ fn commands_list() -> String {
 
 fn setup_terminal() -> anyhow::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
     enable_raw_mode()?;
-    execute!(std::io::stdout(), EnterAlternateScreen, SetCursorStyle::BlinkingBlock)?;
+    execute!(
+        std::io::stdout(),
+        EnterAlternateScreen,
+        SetCursorStyle::BlinkingBlock
+    )?;
     Terminal::new(CrosstermBackend::new(std::io::stdout())).map_err(Into::into)
 }
 
@@ -140,7 +149,11 @@ fn restore_terminal(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
 ) -> anyhow::Result<()> {
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, SetCursorStyle::DefaultUserShape)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        SetCursorStyle::DefaultUserShape
+    )?;
     terminal.show_cursor()?;
     Ok(())
 }
@@ -167,15 +180,15 @@ fn draw_welcome(frame: &mut Frame, remaining_secs: u64, has_config: bool, cursor
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(title_height), // title (scalable)
-            Constraint::Length(1),  // version
-            Constraint::Length(1),  // spacer
-            Constraint::Length(1),  // tagline
-            Constraint::Length(1),  // spacer
-            Constraint::Length(15), // commands table (fixed — 15 lines)
-            Constraint::Length(1),  // spacer between commands and prompt
-            Constraint::Length(1),  // proceed prompt
-            Constraint::Min(0),     // flexible spacer
-            Constraint::Length(1),  // hint bar (nav)
+            Constraint::Length(1),            // version
+            Constraint::Length(1),            // spacer
+            Constraint::Length(1),            // tagline
+            Constraint::Length(1),            // spacer
+            Constraint::Length(15),           // commands table (fixed — 15 lines)
+            Constraint::Length(1),            // spacer between commands and prompt
+            Constraint::Length(1),            // proceed prompt
+            Constraint::Min(0),               // flexible spacer
+            Constraint::Length(1),            // hint bar (nav)
         ])
         .split(frame.area());
 
@@ -196,29 +209,28 @@ fn draw_welcome(frame: &mut Frame, remaining_secs: u64, has_config: bool, cursor
     }
 
     // Chunk 1: version
-    let version = Paragraph::new(format!("v{}", env!("CARGO_PKG_VERSION")))
-        .alignment(Alignment::Center);
+    let version =
+        Paragraph::new(format!("v{}", env!("CARGO_PKG_VERSION"))).alignment(Alignment::Center);
     frame.render_widget(version, chunks[1]);
 
     // Chunk 2: spacer — no widget needed
 
     // Chunk 3: tagline
-    let tagline = Paragraph::new("Multi-agent orchestration for AI coding")
-        .alignment(Alignment::Center);
+    let tagline =
+        Paragraph::new("Multi-agent orchestration for AI coding").alignment(Alignment::Center);
     frame.render_widget(tagline, chunks[3]);
 
     // Chunk 4: spacer — no widget needed
 
     // Chunk 5: commands table
-    let cmds = Paragraph::new(commands_list())
-        .style(Style::default().add_modifier(Modifier::BOLD));
+    let cmds = Paragraph::new(commands_list()).style(Style::default().add_modifier(Modifier::BOLD));
     frame.render_widget(cmds, chunks[5]);
 
     // Chunk 6: spacer — no widget
 
     // Chunk 7: proceed prompt with software-blink cursor
-    let prompt = Paragraph::new(proceed_prompt_text())
-        .style(Style::default().add_modifier(Modifier::BOLD));
+    let prompt =
+        Paragraph::new(proceed_prompt_text()).style(Style::default().add_modifier(Modifier::BOLD));
     frame.render_widget(prompt, chunks[7]);
     if cursor_visible {
         frame.set_cursor_position((
@@ -247,8 +259,7 @@ fn draw_guide(frame: &mut Frame) {
         .split(frame.area());
 
     // Chunk 0: centered header
-    let header = Paragraph::new("Quick Guide")
-        .alignment(Alignment::Center);
+    let header = Paragraph::new("Quick Guide").alignment(Alignment::Center);
     frame.render_widget(header, chunks[0]);
 
     // Chunk 1: blank — no widget
@@ -258,8 +269,8 @@ fn draw_guide(frame: &mut Frame) {
     frame.render_widget(content, chunks[2]);
 
     // Chunk 3: hint bar
-    let hint = Paragraph::new(guide_hint_bar_text())
-        .style(Style::default().add_modifier(Modifier::DIM));
+    let hint =
+        Paragraph::new(guide_hint_bar_text()).style(Style::default().add_modifier(Modifier::DIM));
     frame.render_widget(hint, chunks[3]);
 }
 
@@ -297,7 +308,9 @@ pub async fn run_welcome_tui(has_config: bool) -> anyhow::Result<Option<WelcomeA
 
         // Poll for the shorter of: time-to-next-blink or 1s countdown tick
         let blink_remaining = blink_deadline.saturating_duration_since(Instant::now());
-        let poll_timeout = remaining.min(blink_remaining).min(Duration::from_millis(500));
+        let poll_timeout = remaining
+            .min(blink_remaining)
+            .min(Duration::from_millis(500));
 
         if event::poll(poll_timeout)? {
             if let event::Event::Key(key) = event::read()? {
@@ -465,8 +478,14 @@ mod tests {
     #[test]
     fn test_welcome_content_has_ascii_art() {
         let content = welcome_content();
-        assert!(content.contains("SQUAD"), "Expected 'SQUAD' in welcome content");
-        assert!(content.contains("STATION"), "Expected 'STATION' in welcome content");
+        assert!(
+            content.contains("SQUAD"),
+            "Expected 'SQUAD' in welcome content"
+        );
+        assert!(
+            content.contains("STATION"),
+            "Expected 'STATION' in welcome content"
+        );
     }
 
     #[test]
@@ -509,28 +528,40 @@ mod tests {
     #[test]
     fn test_hint_bar_text_no_config() {
         let text = hint_bar_text(false, 5);
-        assert!(text.contains("Tab: Guide"), "Expected 'Tab: Guide' in hint bar");
+        assert!(
+            text.contains("Tab: Guide"),
+            "Expected 'Tab: Guide' in hint bar"
+        );
         assert!(text.contains("5s"), "Expected '5s' in hint bar");
     }
 
     #[test]
     fn test_hint_bar_text_with_config() {
         let text = hint_bar_text(true, 3);
-        assert!(text.contains("Tab: Guide"), "Expected 'Tab: Guide' in hint bar");
+        assert!(
+            text.contains("Tab: Guide"),
+            "Expected 'Tab: Guide' in hint bar"
+        );
         assert!(text.contains("3s"), "Expected '3s' in hint bar");
     }
 
     #[test]
     fn test_hint_bar_text_one_second() {
         let text = hint_bar_text(false, 1);
-        assert!(text.contains("Tab: Guide"), "Expected 'Tab: Guide' in hint bar");
+        assert!(
+            text.contains("Tab: Guide"),
+            "Expected 'Tab: Guide' in hint bar"
+        );
         assert!(text.contains("1s"), "Expected '1s' in hint bar");
     }
 
     #[test]
     fn test_proceed_prompt_text() {
         let text = proceed_prompt_text();
-        assert!(text.contains("Ok to proceed?"), "Expected 'Ok to proceed?' in prompt");
+        assert!(
+            text.contains("Ok to proceed?"),
+            "Expected 'Ok to proceed?' in prompt"
+        );
         assert!(text.contains("y"), "Expected 'y' in prompt");
     }
 
@@ -619,7 +650,10 @@ mod tests {
         let text = guide_hint_bar_text();
         assert!(text.contains("Tab"), "Expected 'Tab' in guide hint bar");
         assert!(text.contains("Back"), "Expected 'Back' in guide hint bar");
-        assert!(text.contains("Q: Quit"), "Expected 'Q: Quit' in guide hint bar");
+        assert!(
+            text.contains("Q: Quit"),
+            "Expected 'Q: Quit' in guide hint bar"
+        );
     }
 
     // --- guide_content tests ---
@@ -627,12 +661,27 @@ mod tests {
     #[test]
     fn test_guide_content() {
         let content = guide_content();
-        assert!(content.contains("orchestrator"), "Expected 'orchestrator' in guide content");
+        assert!(
+            content.contains("orchestrator"),
+            "Expected 'orchestrator' in guide content"
+        );
         assert!(content.contains("tmux"), "Expected 'tmux' in guide content");
-        assert!(content.contains("Set up your squad"), "Expected 'Set up your squad' in guide content");
-        assert!(content.contains("Send tasks"), "Expected 'Send tasks' in guide content");
-        assert!(content.contains("signal completion"), "Expected 'signal completion' in guide content");
-        assert!(content.contains("squad-station --help"), "Expected 'squad-station --help' in guide content");
+        assert!(
+            content.contains("Set up your squad"),
+            "Expected 'Set up your squad' in guide content"
+        );
+        assert!(
+            content.contains("Send tasks"),
+            "Expected 'Send tasks' in guide content"
+        );
+        assert!(
+            content.contains("signal completion"),
+            "Expected 'signal completion' in guide content"
+        );
+        assert!(
+            content.contains("squad-station --help"),
+            "Expected 'squad-station --help' in guide content"
+        );
     }
 
     // --- hint_bar_text includes Tab: Guide ---
@@ -640,14 +689,20 @@ mod tests {
     #[test]
     fn test_hint_bar_text_includes_tab_guide() {
         let text = hint_bar_text(false, 5);
-        assert!(text.contains("Tab: Guide"), "Expected 'Tab: Guide' in hint bar text");
+        assert!(
+            text.contains("Tab: Guide"),
+            "Expected 'Tab: Guide' in hint bar text"
+        );
     }
 
     #[test]
     fn test_hint_bar_text_no_proceed_prompt() {
         // proceed prompt is rendered separately — not in hint_bar_text
         let text = hint_bar_text(false, 5);
-        assert!(!text.contains("Ok to proceed?"), "Proceed prompt should be in separate widget");
+        assert!(
+            !text.contains("Ok to proceed?"),
+            "Proceed prompt should be in separate widget"
+        );
     }
 
     #[test]

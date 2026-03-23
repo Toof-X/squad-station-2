@@ -176,14 +176,10 @@ fn draw_ui(frame: &mut Frame, app: &mut App) {
         .split(frame.area());
 
     // --- Title bar ---
-    let title = Paragraph::new(Line::from(vec![
-        Span::styled(
-            " SQUAD-STATION ",
-            Style::default()
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]))
+    let title = Paragraph::new(Line::from(vec![Span::styled(
+        " SQUAD-STATION ",
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+    )]))
     .block(Block::default().borders(Borders::ALL));
     frame.render_widget(title, outer[0]);
 

@@ -178,7 +178,10 @@ mod tests {
         // Names ending in -1 are NOT clones (convention: clones start at -2)
         assert_eq!(strip_clone_suffix("worker-1"), "worker-1");
         assert_eq!(strip_clone_suffix("worker"), "worker");
-        assert_eq!(strip_clone_suffix("my-project-cc-worker"), "my-project-cc-worker");
+        assert_eq!(
+            strip_clone_suffix("my-project-cc-worker"),
+            "my-project-cc-worker"
+        );
     }
 
     #[test]
@@ -199,7 +202,10 @@ mod tests {
     #[test]
     fn test_get_launch_command_claude_with_model() {
         let cmd = get_launch_command("claude-code", Some("claude-opus-4-5"));
-        assert_eq!(cmd, "claude --dangerously-skip-permissions --model claude-opus-4-5");
+        assert_eq!(
+            cmd,
+            "claude --dangerously-skip-permissions --model claude-opus-4-5"
+        );
     }
 
     #[test]

@@ -110,13 +110,12 @@ async fn try_wal_recovery(db_path: &Path, readonly: bool) -> anyhow::Result<Sqli
         } else {
             tokio::time::timeout(CONNECT_TIMEOUT, connect_inner(db_path)).await
         };
-        result
-            .map_err(|_| {
-                anyhow::anyhow!(
-                    "DB connection timed out after WAL recovery. \
+        result.map_err(|_| {
+            anyhow::anyhow!(
+                "DB connection timed out after WAL recovery. \
                      Check for zombie squad-station processes: ps aux | grep squad-station"
-                )
-            })?
+            )
+        })?
     } else {
         anyhow::bail!(
             "DB connection timed out ({}s). {}",

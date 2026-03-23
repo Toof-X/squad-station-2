@@ -898,9 +898,17 @@ async fn test_signal_orchestrator_self_signal_guard() {
     let pool = setup_file_db(&db_path).await;
 
     // Register as orchestrator
-    db::agents::insert_agent(&pool, "orch-test", "claude", "orchestrator", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "orch-test",
+        "claude",
+        "orchestrator",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     db::messages::insert_message(
         &pool,
         "orchestrator",
@@ -1045,9 +1053,17 @@ async fn test_context_lists_registered_agents() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "ctx-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     pool.close().await;
 
     write_squad_yml(tmp.path(), &db_path);
@@ -1084,9 +1100,17 @@ async fn test_context_generates_delegate_file() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "ctx-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     pool.close().await;
 
     write_squad_yml(tmp.path(), &db_path);
@@ -1129,9 +1153,17 @@ async fn test_context_delegate_content() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "ctx-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     pool.close().await;
 
     write_squad_yml(tmp.path(), &db_path);
@@ -1158,9 +1190,17 @@ async fn test_context_generates_monitor_file() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "ctx-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     pool.close().await;
 
     write_squad_yml(tmp.path(), &db_path);
@@ -1203,9 +1243,17 @@ async fn test_context_monitor_content() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "ctx-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     pool.close().await;
 
     write_squad_yml(tmp.path(), &db_path);
@@ -1237,9 +1285,17 @@ async fn test_context_generates_roster_file() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "ctx-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     // Update model and description via SQL since insert_agent may not take those
     sqlx::query(
         "UPDATE agents SET model = 'claude-sonnet', description = 'Test agent' WHERE name = 'ctx-worker'"
@@ -1294,9 +1350,17 @@ async fn test_context_roster_content() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "ctx-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     pool.close().await;
 
     write_squad_yml(tmp.path(), &db_path);
@@ -1323,9 +1387,17 @@ async fn test_context_idempotent() {
     let db_path = tmp.path().join("station.db");
     let pool = setup_file_db(&db_path).await;
 
-    db::agents::insert_agent(&pool, "ctx-worker", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "ctx-worker",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     pool.close().await;
 
     write_squad_yml(tmp.path(), &db_path);
@@ -1808,7 +1880,9 @@ async fn test_fire_and_forget_clear_auto_completed() {
     .unwrap();
 
     // Signal fires once (from the real task completing)
-    let rows = db::messages::update_status(&pool, "ff-agent").await.unwrap();
+    let rows = db::messages::update_status(&pool, "ff-agent")
+        .await
+        .unwrap();
     assert_eq!(rows, 1, "signal should complete exactly one message");
 
     // The review task should be completed, not the already-completed /clear
@@ -1821,7 +1895,9 @@ async fn test_fire_and_forget_clear_auto_completed() {
     assert_eq!(review_msg.status, "completed");
 
     // No processing messages should remain
-    let remaining = db::messages::count_processing(&pool, "ff-agent").await.unwrap();
+    let remaining = db::messages::count_processing(&pool, "ff-agent")
+        .await
+        .unwrap();
     assert_eq!(remaining, 0, "no tasks should remain stuck at processing");
 }
 
@@ -1889,12 +1965,20 @@ async fn test_fire_and_forget_clear_while_task_processing() {
     .unwrap();
 
     // Fix current_task: should revert to the real task (remaining > 0 path)
-    let remaining = db::messages::count_processing(&pool, "ff2-agent").await.unwrap();
+    let remaining = db::messages::count_processing(&pool, "ff2-agent")
+        .await
+        .unwrap();
     assert_eq!(remaining, 1, "real task should still be processing");
 
-    let next = db::messages::peek_message(&pool, "ff2-agent").await.unwrap();
+    let next = db::messages::peek_message(&pool, "ff2-agent")
+        .await
+        .unwrap();
     assert!(next.is_some());
-    assert_eq!(next.unwrap().id, real_id, "next task should be the real task");
+    assert_eq!(
+        next.unwrap().id,
+        real_id,
+        "next task should be the real task"
+    );
 
     // Simulate the current_task fixup (as send.rs now does)
     sqlx::query("UPDATE agents SET current_task = ? WHERE name = ?")
@@ -1905,7 +1989,10 @@ async fn test_fire_and_forget_clear_while_task_processing() {
         .unwrap();
 
     // Verify agent state
-    let agent = db::agents::get_agent(&pool, "ff2-agent").await.unwrap().unwrap();
+    let agent = db::agents::get_agent(&pool, "ff2-agent")
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(agent.current_task.as_deref(), Some(real_id.as_str()));
     assert_eq!(agent.status, "busy", "agent should remain busy");
 }

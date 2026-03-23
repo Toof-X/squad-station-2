@@ -70,7 +70,9 @@ pub fn stop_watchdog(squad_dir: &Path) -> bool {
 
 /// Kill all squad tmux sessions (agents + monitor).
 /// Returns (killed_count, killed_names, skipped_names).
-pub async fn kill_all_sessions(config: &config::SquadConfig) -> Result<(u32, Vec<String>, Vec<String>)> {
+pub async fn kill_all_sessions(
+    config: &config::SquadConfig,
+) -> Result<(u32, Vec<String>, Vec<String>)> {
     let session_names = compute_session_names(config);
     let mut killed = 0u32;
     let mut killed_names: Vec<String> = Vec::new();
@@ -102,9 +104,7 @@ pub async fn run(config_path: PathBuf, yes: bool, delete_all: bool, json: bool) 
     let db_path = config::resolve_db_path(&config)?;
 
     // .squad directory (parent of station.db)
-    let squad_dir = db_path
-        .parent()
-        .unwrap_or(Path::new("."));
+    let squad_dir = db_path.parent().unwrap_or(Path::new("."));
 
     if !yes {
         let prompt = if delete_all {

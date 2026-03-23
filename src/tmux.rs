@@ -242,7 +242,11 @@ pub async fn session_exists(session_name: &str) -> bool {
 
 /// List all live tmux session names.
 pub async fn list_live_session_names() -> Vec<String> {
-    let output = match Command::new("tmux").args(list_sessions_args()).output().await {
+    let output = match Command::new("tmux")
+        .args(list_sessions_args())
+        .output()
+        .await
+    {
         Ok(o) => o,
         Err(_) => return Vec::new(),
     };
@@ -601,7 +605,8 @@ mod tests {
 
     #[test]
     fn test_wrap_with_agent_env() {
-        let result = wrap_with_agent_env("kindle-implement", "claude --dangerously-skip-permissions");
+        let result =
+            wrap_with_agent_env("kindle-implement", "claude --dangerously-skip-permissions");
         assert!(result.contains("SQUAD_AGENT_NAME='kindle-implement'"));
         assert!(result.contains("$HOME/.local/bin"));
         assert!(result.contains("$HOME/.cargo/bin"));

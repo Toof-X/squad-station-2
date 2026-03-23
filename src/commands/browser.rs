@@ -50,15 +50,13 @@ async fn bind_listener(explicit_port: Option<u16>) -> anyhow::Result<TcpListener
                 Err(e) => Err(e.into()),
             }
         }
-        Some(port) => {
-            match TcpListener::bind(format!("127.0.0.1:{port}")).await {
-                Ok(listener) => Ok(listener),
-                Err(e) if e.kind() == ErrorKind::AddrInUse => {
-                    anyhow::bail!("Port {port} is already in use. Choose a different port or omit --port to use automatic fallback.");
-                }
-                Err(e) => Err(e.into()),
+        Some(port) => match TcpListener::bind(format!("127.0.0.1:{port}")).await {
+            Ok(listener) => Ok(listener),
+            Err(e) if e.kind() == ErrorKind::AddrInUse => {
+                anyhow::bail!("Port {port} is already in use. Choose a different port or omit --port to use automatic fallback.");
             }
-        }
+            Err(e) => Err(e.into()),
+        },
     }
 }
 
@@ -99,10 +97,7 @@ async fn build_snapshot(state: &AppState) -> Option<String> {
 }
 
 /// Returns true if the agent list has changed in any observable field.
-fn agents_changed(
-    prev: &[db::agents::Agent],
-    curr: &[db::agents::Agent],
-) -> bool {
+fn agents_changed(prev: &[db::agents::Agent], curr: &[db::agents::Agent]) -> bool {
     if prev.len() != curr.len() {
         return true;
     }
@@ -119,10 +114,7 @@ fn agents_changed(
 }
 
 /// Returns true if the message list has changed in any observable field.
-fn messages_changed(
-    prev: &[db::messages::Message],
-    curr: &[db::messages::Message],
-) -> bool {
+fn messages_changed(prev: &[db::messages::Message], curr: &[db::messages::Message]) -> bool {
     if prev.len() != curr.len() {
         return true;
     }
@@ -171,7 +163,9 @@ fn is_pane_idle(captured_lines: &[&str]) -> bool {
                 return true;
             }
             // Gemini CLI
-            if line.ends_with("$ ") || line == "$" || line == ">"
+            if line.ends_with("$ ")
+                || line == "$"
+                || line == ">"
                 || line.contains("Type your message")
             {
                 return true;
@@ -227,9 +221,7 @@ fn extract_confirm_options(captured_lines: &[&str]) -> Vec<String> {
     for line in captured_lines.iter().rev().take(15) {
         let trimmed = line.trim();
         // Match lines like "[C] Continue", "[A] Advanced", "[Modify] ..."
-        if (trimmed.starts_with('[') && trimmed.contains(']'))
-            || trimmed.starts_with("- [")
-        {
+        if (trimmed.starts_with('[') && trimmed.contains(']')) || trimmed.starts_with("- [") {
             options.push(trimmed.to_string());
         }
     }
@@ -331,8 +323,7 @@ async fn reconcile_for_server(
             if waiting_confirm {
                 let was_waiting = agent.status == "waiting_confirm";
                 if !was_waiting {
-                    db::agents::update_agent_status(pool, &agent.name, "waiting_confirm")
-                        .await?;
+                    db::agents::update_agent_status(pool, &agent.name, "waiting_confirm").await?;
                 }
                 // Notify orchestrator (with 30s cooldown per worker to avoid spam)
                 if agent.role != "orchestrator" {
@@ -352,8 +343,7 @@ async fn reconcile_for_server(
                             "browser: notifying orchestrator — {} waiting_confirm",
                             agent.name
                         );
-                        let _ =
-                            notify_orchestrator_confirm(pool, &agent.name, &options).await;
+                        let _ = notify_orchestrator_confirm(pool, &agent.name, &options).await;
                     }
                 }
             } else if !pane_idle && agent.status != "busy" {
@@ -475,11 +465,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         loop {
             match rx.recv().await {
                 Ok(msg) => {
-                    if ws_sender
-                        .send(Message::Text(msg.into()))
-                        .await
-                        .is_err()
-                    {
+                    if ws_sender.send(Message::Text(msg.into())).await.is_err() {
                         break;
                     }
                 }
@@ -534,9 +520,7 @@ async fn api_status(State(state): State<AppState>) -> Json<StatusResponse> {
 
 /// Manual "Continue All" from browser UI — sends "C" to all waiting workers.
 /// This is a user-initiated override; normal flow is orchestrator deciding.
-async fn api_continue_all(
-    State(state): State<AppState>,
-) -> Json<serde_json::Value> {
+async fn api_continue_all(State(state): State<AppState>) -> Json<serde_json::Value> {
     let mut continued = Vec::new();
     if let Some(ref db_path) = state.db_path {
         if let Ok(pool) = db::connect(db_path).await {

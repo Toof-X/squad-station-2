@@ -261,17 +261,33 @@ async fn test_get_orchestrator_prefers_non_dead() {
     let pool = helpers::setup_test_db().await;
 
     // Insert old orchestrator (will be marked dead)
-    db::agents::insert_agent(&pool, "old-orch", "claude", "orchestrator", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "old-orch",
+        "claude",
+        "orchestrator",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     db::agents::update_agent_status(&pool, "old-orch", "dead")
         .await
         .unwrap();
 
     // Insert new orchestrator (idle)
-    db::agents::insert_agent(&pool, "new-orch", "claude", "orchestrator", None, None, None)
-        .await
-        .unwrap();
+    db::agents::insert_agent(
+        &pool,
+        "new-orch",
+        "claude",
+        "orchestrator",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     let orch = db::agents::get_orchestrator(&pool).await.unwrap().unwrap();
     assert_eq!(

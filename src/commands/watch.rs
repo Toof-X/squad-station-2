@@ -148,9 +148,7 @@ pub async fn run(
         ),
     );
 
-    let is_running = || {
-        !SHUTDOWN.load(std::sync::atomic::Ordering::Relaxed)
-    };
+    let is_running = || !SHUTDOWN.load(std::sync::atomic::Ordering::Relaxed);
 
     // Create DB pool once and reuse across ticks (avoids repeated migration checks)
     let pool = db::connect(&db_path).await?;
@@ -249,7 +247,9 @@ async fn tick(
                         if nudge_state.should_nudge(now) {
                             // Find orchestrator and nudge
                             if let Ok(Some(orch)) = db::agents::get_orchestrator(pool).await {
-                                if orch.tool != "antigravity" && tmux::session_exists(&orch.name).await {
+                                if orch.tool != "antigravity"
+                                    && tmux::session_exists(&orch.name).await
+                                {
                                     let msg = match nudge_state.count {
                                         0 => format!(
                                             "[SQUAD WATCHDOG] System idle for {}m — all agents idle, no pending tasks. Run: squad-station status",
@@ -295,9 +295,7 @@ async fn tick(
     for agent in &agents {
         if agent.status == "busy" {
             if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&agent.status_updated_at) {
-                let busy_mins = chrono::Utc::now()
-                    .signed_duration_since(ts)
-                    .num_minutes();
+                let busy_mins = chrono::Utc::now().signed_duration_since(ts).num_minutes();
                 if busy_mins > 30 {
                     log_watch(
                         squad_dir,

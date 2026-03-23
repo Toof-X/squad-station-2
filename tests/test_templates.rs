@@ -1,11 +1,10 @@
 mod helpers;
 
-use squad_station::commands::templates::{
-    CUSTOM_IDX_ORCHESTRATOR, CUSTOM_IDX_WORKER, ORCHESTRATOR_TEMPLATES,
-    WORKER_TEMPLATES,
-};
 use squad_station::commands::context::build_orchestrator_md;
-use squad_station::db::agents::{insert_agent, get_agent, Agent};
+use squad_station::commands::templates::{
+    CUSTOM_IDX_ORCHESTRATOR, CUSTOM_IDX_WORKER, ORCHESTRATOR_TEMPLATES, WORKER_TEMPLATES,
+};
+use squad_station::db::agents::{get_agent, insert_agent, Agent};
 
 // -- Template catalog unit tests --
 
@@ -39,11 +38,31 @@ fn test_worker_template_order() {
 fn test_template_fields_populated() {
     for t in WORKER_TEMPLATES.iter().chain(ORCHESTRATOR_TEMPLATES.iter()) {
         assert!(!t.slug.is_empty(), "slug empty for {:?}", t.display_name);
-        assert!(!t.display_name.is_empty(), "display_name empty for {}", t.slug);
-        assert!(!t.description.is_empty(), "description empty for {}", t.slug);
-        assert!(!t.default_provider.is_empty(), "default_provider empty for {}", t.slug);
-        assert!(!t.claude_model.is_empty(), "claude_model empty for {}", t.slug);
-        assert!(!t.gemini_model.is_empty(), "gemini_model empty for {}", t.slug);
+        assert!(
+            !t.display_name.is_empty(),
+            "display_name empty for {}",
+            t.slug
+        );
+        assert!(
+            !t.description.is_empty(),
+            "description empty for {}",
+            t.slug
+        );
+        assert!(
+            !t.default_provider.is_empty(),
+            "default_provider empty for {}",
+            t.slug
+        );
+        assert!(
+            !t.claude_model.is_empty(),
+            "claude_model empty for {}",
+            t.slug
+        );
+        assert!(
+            !t.gemini_model.is_empty(),
+            "gemini_model empty for {}",
+            t.slug
+        );
         assert!(
             t.routing_hints.len() >= 3,
             "routing_hints < 3 for {}",
@@ -73,7 +92,7 @@ fn test_custom_sentinel_indices() {
 
 #[test]
 fn test_custom_template_clears_fields() {
-    use squad_station::commands::wizard::{AgentDraft, TextInputState, Provider, ModelSelector};
+    use squad_station::commands::wizard::{AgentDraft, ModelSelector, Provider, TextInputState};
 
     // Create a draft and simulate having a template applied (non-default values)
     let mut draft = AgentDraft::new();
@@ -88,8 +107,7 @@ fn test_custom_template_clears_fields() {
     // Custom clears all fields to defaults
     let custom_idx = WORKER_TEMPLATES.len();
     assert_eq!(
-        draft.template_index,
-        custom_idx,
+        draft.template_index, custom_idx,
         "template_index should be at Custom sentinel"
     );
 
@@ -102,7 +120,10 @@ fn test_custom_template_clears_fields() {
     draft.routing_hints = None;
 
     // Verify all fields are reset
-    assert!(draft.name.value.is_empty(), "Name should be empty after Custom");
+    assert!(
+        draft.name.value.is_empty(),
+        "Name should be empty after Custom"
+    );
     assert!(
         matches!(draft.provider, Provider::ClaudeCode),
         "Provider should reset to ClaudeCode"
@@ -148,8 +169,7 @@ fn test_template_autofill_model_index() {
 
     // Verify they map to different indices (sonnet != opus)
     assert_ne!(
-        expected_index,
-        sa_index,
+        expected_index, sa_index,
         "Different model strings should map to different indices"
     );
 }
@@ -180,10 +200,22 @@ fn test_routing_matrix_with_hints() {
         make_test_agent("my-coder", "worker", Some(r#"["code","build","fix"]"#)),
     ];
     let output = build_orchestrator_md(&agents, "/tmp/test", &[], &[]);
-    assert!(output.contains("## Routing Matrix"), "Missing Routing Matrix heading");
-    assert!(output.contains("| Keyword | Route to |"), "Missing table header");
-    assert!(output.contains("| code | my-coder |"), "Missing keyword row");
-    assert!(output.contains("| build | my-coder |"), "Missing keyword row");
+    assert!(
+        output.contains("## Routing Matrix"),
+        "Missing Routing Matrix heading"
+    );
+    assert!(
+        output.contains("| Keyword | Route to |"),
+        "Missing table header"
+    );
+    assert!(
+        output.contains("| code | my-coder |"),
+        "Missing keyword row"
+    );
+    assert!(
+        output.contains("| build | my-coder |"),
+        "Missing keyword row"
+    );
 }
 
 #[test]
@@ -193,7 +225,10 @@ fn test_routing_matrix_empty() {
         make_test_agent("my-worker", "worker", None),
     ];
     let output = build_orchestrator_md(&agents, "/tmp/test", &[], &[]);
-    assert!(output.contains("## Routing Matrix"), "Missing Routing Matrix heading");
+    assert!(
+        output.contains("## Routing Matrix"),
+        "Missing Routing Matrix heading"
+    );
     assert!(
         output.contains("No routing hints configured"),
         "Missing placeholder"
@@ -211,7 +246,10 @@ fn test_routing_matrix_skips_orchestrator() {
         !output.contains("| plan | orch |"),
         "Orchestrator must not appear in routing matrix"
     );
-    assert!(output.contains("| code | my-worker |"), "Worker must appear");
+    assert!(
+        output.contains("| code | my-worker |"),
+        "Worker must appear"
+    );
 }
 
 // -- DB integration tests --
@@ -237,9 +275,17 @@ async fn test_insert_agent_routing_hints() {
 #[tokio::test]
 async fn test_insert_agent_routing_hints_null() {
     let pool = helpers::setup_test_db().await;
-    insert_agent(&pool, "test-agent", "claude-code", "worker", None, None, None)
-        .await
-        .unwrap();
+    insert_agent(
+        &pool,
+        "test-agent",
+        "claude-code",
+        "worker",
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     let agent = get_agent(&pool, "test-agent").await.unwrap().unwrap();
     assert!(agent.routing_hints.is_none());
 }

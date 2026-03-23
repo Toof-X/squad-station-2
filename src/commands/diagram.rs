@@ -54,7 +54,8 @@ pub fn render_diagram(agents: &[Agent]) -> String {
         }
 
         // Pre-render worker boxes
-        let worker_boxes: Vec<Vec<String>> = workers.iter().map(|w| render_agent_box(w, false)).collect();
+        let worker_boxes: Vec<Vec<String>> =
+            workers.iter().map(|w| render_agent_box(w, false)).collect();
 
         // Group boxes into rows
         let mut rows: Vec<Vec<usize>> = Vec::new();
@@ -63,7 +64,11 @@ pub fn render_diagram(agents: &[Agent]) -> String {
 
         for (idx, box_lines) in worker_boxes.iter().enumerate() {
             let box_width = visible_len(&box_lines[0]);
-            let needed = if current_row.is_empty() { box_width } else { current_width + GAP + box_width };
+            let needed = if current_row.is_empty() {
+                box_width
+            } else {
+                current_width + GAP + box_width
+            };
             if !current_row.is_empty() && needed > MAX_ROW_WIDTH {
                 rows.push(current_row);
                 current_row = Vec::new();
@@ -103,7 +108,8 @@ pub fn render_diagram(agents: &[Agent]) -> String {
             }
 
             // Worker boxes side by side
-            let row_boxes: Vec<&Vec<String>> = row_indices.iter().map(|&i| &worker_boxes[i]).collect();
+            let row_boxes: Vec<&Vec<String>> =
+                row_indices.iter().map(|&i| &worker_boxes[i]).collect();
             let max_height = row_boxes.iter().map(|b| b.len()).max().unwrap_or(0);
             for line_idx in 0..max_height {
                 let mut row_str = String::new();
@@ -167,7 +173,12 @@ fn render_connector(orch_center: usize, worker_mids: &[usize]) -> Vec<String> {
 
     // Line 2: horizontal bar connecting orch_center to all worker_mids
     let mut line2: Vec<char> = vec![' '; canvas];
-    for (i, ch) in line2.iter_mut().enumerate().take(right_most + 1).skip(left_most) {
+    for (i, ch) in line2
+        .iter_mut()
+        .enumerate()
+        .take(right_most + 1)
+        .skip(left_most)
+    {
         let is_left = i == left_most;
         let is_right = i == right_most;
         let up = i == orch_center;
@@ -308,18 +319,11 @@ fn render_agent_box(agent: &Agent, is_orchestrator: bool) -> Vec<String> {
     lines
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_agent(
-        name: &str,
-        tool: &str,
-        role: &str,
-        model: Option<&str>,
-        status: &str,
-    ) -> Agent {
+    fn make_agent(name: &str, tool: &str, role: &str, model: Option<&str>, status: &str) -> Agent {
         Agent {
             id: "test".to_string(),
             name: name.to_string(),
@@ -344,7 +348,11 @@ mod tests {
             make_agent("worker2", "claude", "worker", None, "busy"),
         ];
         let output = render_diagram(&agents);
-        assert!(output.contains("ORCHESTRATOR"), "Expected ORCHESTRATOR in output, got:\n{}", output);
+        assert!(
+            output.contains("ORCHESTRATOR"),
+            "Expected ORCHESTRATOR in output, got:\n{}",
+            output
+        );
     }
 
     #[test]
@@ -370,7 +378,10 @@ mod tests {
         ];
         let output = render_diagram(&agents);
         assert!(output.contains("my-orch"), "Expected agent name my-orch");
-        assert!(output.contains("my-worker"), "Expected agent name my-worker");
+        assert!(
+            output.contains("my-worker"),
+            "Expected agent name my-worker"
+        );
     }
 
     #[test]
@@ -382,7 +393,11 @@ mod tests {
         let output = render_diagram(&agents);
         // Both agents have "tool: " prefix
         let count = output.matches("tool: ").count();
-        assert!(count >= 2, "Expected at least 2 'tool: ' prefixes, got {}", count);
+        assert!(
+            count >= 2,
+            "Expected at least 2 'tool: ' prefixes, got {}",
+            count
+        );
     }
 
     #[test]
@@ -405,7 +420,10 @@ mod tests {
             make_agent("worker1", "claude", "worker", None, "idle"),
         ];
         let output = render_diagram(&agents);
-        assert!(output.contains('▼'), "Expected ▼ arrow in output with workers");
+        assert!(
+            output.contains('▼'),
+            "Expected ▼ arrow in output with workers"
+        );
     }
 
     #[test]
@@ -417,30 +435,39 @@ mod tests {
 
     #[test]
     fn test_render_diagram_orchestrator_only_no_arrows() {
-        let agents = vec![
-            make_agent("orch", "claude", "orchestrator", None, "idle"),
-        ];
+        let agents = vec![make_agent("orch", "claude", "orchestrator", None, "idle")];
         let output = render_diagram(&agents);
         assert!(output.contains("ORCHESTRATOR"), "Expected ORCHESTRATOR");
-        assert!(!output.contains('▼'), "Expected no ▼ arrows with no workers");
+        assert!(
+            !output.contains('▼'),
+            "Expected no ▼ arrows with no workers"
+        );
     }
 
     #[test]
     fn test_render_diagram_model_none_omitted() {
-        let agents = vec![
-            make_agent("orch", "claude", "orchestrator", None, "idle"),
-        ];
+        let agents = vec![make_agent("orch", "claude", "orchestrator", None, "idle")];
         let output = render_diagram(&agents);
-        assert!(!output.contains("model:"), "Expected no 'model:' when model is None");
+        assert!(
+            !output.contains("model:"),
+            "Expected no 'model:' when model is None"
+        );
     }
 
     #[test]
     fn test_render_diagram_model_some_shown() {
-        let agents = vec![
-            make_agent("orch", "claude", "orchestrator", Some("claude-sonnet"), "idle"),
-        ];
+        let agents = vec![make_agent(
+            "orch",
+            "claude",
+            "orchestrator",
+            Some("claude-sonnet"),
+            "idle",
+        )];
         let output = render_diagram(&agents);
-        assert!(output.contains("model: claude-sonnet"), "Expected 'model: claude-sonnet' in output");
+        assert!(
+            output.contains("model: claude-sonnet"),
+            "Expected 'model: claude-sonnet' in output"
+        );
     }
 
     #[test]

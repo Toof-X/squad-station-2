@@ -29,7 +29,12 @@ async fn run(cli: cli::Cli) -> Result<()> {
                 let action = commands::welcome::run_welcome_tui(has_config).await?;
                 match action {
                     Some(commands::welcome::WelcomeAction::LaunchInit) => {
-                        commands::init::run(PathBuf::from(config::DEFAULT_CONFIG_FILE), false, true).await?;
+                        commands::init::run(
+                            PathBuf::from(config::DEFAULT_CONFIG_FILE),
+                            false,
+                            true,
+                        )
+                        .await?;
                     }
                     Some(commands::welcome::WelcomeAction::LaunchDashboard) => {
                         commands::ui::run().await?;
@@ -85,9 +90,15 @@ async fn run(cli: cli::Cli) -> Result<()> {
                     daemon,
                     stop,
                 } => commands::watch::run(interval, stall_threshold, daemon, stop).await,
-                Clean { config, yes, all } => commands::clean::run(config, yes, all, cli.json).await,
+                Clean { config, yes, all } => {
+                    commands::clean::run(config, yes, all, cli.json).await
+                }
                 #[cfg(feature = "browser")]
-                Browser { port, no_open, detach } => {
+                Browser {
+                    port,
+                    no_open,
+                    detach,
+                } => {
                     if detach {
                         commands::browser::run_detached(port).await
                     } else {
@@ -96,7 +107,9 @@ async fn run(cli: cli::Cli) -> Result<()> {
                 }
                 #[cfg(not(feature = "browser"))]
                 Browser { .. } => {
-                    eprintln!("Browser feature not enabled. Rebuild with: cargo build --features browser");
+                    eprintln!(
+                        "Browser feature not enabled. Rebuild with: cargo build --features browser"
+                    );
                     std::process::exit(1);
                 }
             }

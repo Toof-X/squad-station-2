@@ -33,13 +33,7 @@ pub async fn run(dry_run: bool, json: bool) -> anyhow::Result<()> {
                 if dry_run {
                     println!("[DRY RUN] {} → {}: {}", r.agent, r.action, r.reason);
                 } else if std::io::stdout().is_terminal() {
-                    println!(
-                        "{} {} → {}: {}",
-                        "✓".green(),
-                        r.agent,
-                        r.action,
-                        r.reason
-                    );
+                    println!("{} {} → {}: {}", "✓".green(), r.agent, r.action, r.reason);
                 } else {
                     println!("{} → {}: {}", r.agent, r.action, r.reason);
                 }

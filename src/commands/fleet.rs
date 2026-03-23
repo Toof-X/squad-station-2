@@ -58,10 +58,7 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
 
     if is_tty {
         println!();
-        println!(
-            "{}",
-            format!("  Fleet Status — {}", config.project).bold()
-        );
+        println!("{}", format!("  Fleet Status — {}", config.project).bold());
         println!();
     } else {
         println!("Fleet Status — {}", config.project);
@@ -101,7 +98,9 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
     } else {
         println!(
             "  {:<name_w$}  {:>7}  {:>8}  Alignment",
-            "Agent", "Pending", "Busy For",
+            "Agent",
+            "Pending",
+            "Busy For",
             name_w = name_w
         );
         println!(
@@ -152,7 +151,10 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
         } else {
             println!(
                 "  {:<name_w$}  {:>7}  {:>8}  {}",
-                m.agent_name, pending_str, m.busy_for, alignment_str,
+                m.agent_name,
+                pending_str,
+                m.busy_for,
+                alignment_str,
                 name_w = name_w
             );
         }
@@ -162,10 +164,7 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
         println!();
         println!("  {}", "Hints:".dimmed());
         println!("  {} Prefer agents with 0 pending tasks", "•".dimmed());
-        println!(
-            "  {} ⚠ alignment = task may be misrouted",
-            "•".dimmed()
-        );
+        println!("  {} ⚠ alignment = task may be misrouted", "•".dimmed());
         println!();
     }
 

@@ -11,9 +11,9 @@ pub struct Agent {
     pub created_at: String,
     pub status: String,
     pub status_updated_at: String,
-    pub model: Option<String>,        // AGNT-01
-    pub description: Option<String>,  // AGNT-01
-    pub current_task: Option<String>, // AGNT-02: FK to messages.id
+    pub model: Option<String>,         // AGNT-01
+    pub description: Option<String>,   // AGNT-01
+    pub current_task: Option<String>,  // AGNT-02: FK to messages.id
     pub routing_hints: Option<String>, // Phase 24: JSON array of routing keywords
 }
 
