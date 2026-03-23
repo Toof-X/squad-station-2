@@ -32,7 +32,7 @@ Config/DB schema refactor, bidirectional messages, notification hooks, auto-pref
 <details>
 <summary>✅ v1.2 Distribution (Phases 7-9) — SHIPPED 2026-03-09</summary>
 
-GitHub Actions CI/CD cross-compilation, npm package, curl | sh installer, README.md.
+GitHub Actions CI/CD cross-compilation, npm package, README.md.
 
 </details>
 
@@ -67,7 +67,7 @@ Branded welcome screen on bare invocation, ASCII agent fleet diagram after init,
 <details>
 <summary>✅ v1.7 First-Run Onboarding (Phases 20-21) — SHIPPED 2026-03-18</summary>
 
-Interactive ratatui welcome TUI (BigText title, countdown, Tab-navigable Quick Guide) replacing static ASCII screen; TTY-guarded auto-launch from both npm and curl install paths.
+Interactive ratatui welcome TUI (BigText title, countdown, Tab-navigable Quick Guide) replacing static ASCII screen; TTY-guarded auto-launch from npm install path.
 
 </details>
 

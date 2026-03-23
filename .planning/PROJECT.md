@@ -46,7 +46,7 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 - ✓ PLAYBOOK.md rewritten with correct CLI syntax and config format — v1.1
 - ✓ GitHub Actions CI/CD cross-compiles Rust binary for 4 targets (darwin-arm64, darwin-x86_64, linux-arm64, linux-x86_64) and creates GitHub Release — v1.2
 - ✓ npm package detects platform and downloads correct binary on postinstall — v1.2
-- ✓ curl | sh install script as npm-free alternative to install binary — v1.2
+- ✓ ~~curl | sh install script~~ (removed — npx is the only install method) — v1.2
 - ✓ README.md documents all installation methods with usage quickstart — v1.2
 - ✓ `signal` accepts `$TMUX_PANE` env var — zero-arg inline hook, hook shell scripts deprecated — v1.3
 - ✓ `antigravity` provider: DB-only orchestrator skips tmux session creation and send-keys notification — v1.3
@@ -76,7 +76,7 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 - ✓ WelcomeAction routing: Enter launches init wizard (no squad.yml) or dashboard (squad.yml exists); Q/Esc/timeout exit silently — v1.7
 - ✓ Non-TTY fallback: piped/CI invocation prints static text instead of entering raw mode — v1.7
 - ✓ npm postinstall auto-launches `squad-station` via `spawnSync` when `process.stdout.isTTY` — v1.7
-- ✓ curl installer auto-launches `squad-station` via `exec` when `[ -t 1 ]`; silent in non-interactive environments — v1.7
+- ✓ ~~curl installer auto-launches~~ (removed with install.sh) — v1.7
 
 - ✓ `init` requires explicit `--tui` flag to enter wizard; bare `init` reads existing squad.yml directly — v1.8-pre
 
@@ -129,7 +129,7 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 Shipped v1.9 Browser Visualization — live React Flow node graph served from embedded axum server with WebSocket streaming.
 Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.30, crossterm 0.29, tui-big-text 0.8, serde-saphyr, serde_json, owo-colors 3, uuid, chrono. Browser feature: axum 0.7, rust-embed 8, axum-embed 0.1, tower-http 0.5, open 5, React 19, @xyflow/react 12, @dagrejs/dagre 2, Vite 8, Tailwind CSS 4.
-Distribution: npm package (v1.5.15, binaryVersion 0.5.8) + curl | sh installer, both download pre-built binaries from GitHub Releases. Both install paths auto-launch the welcome TUI in interactive terminals.
+Distribution: npm package `squad-station-2` downloads pre-built binary from GitHub Releases. Install auto-launches the welcome TUI in interactive terminals.
 CI/CD: GitHub Actions matrix workflow produces 4 musl/darwin binaries on v* tag push.
 Providers supported: claude-code, gemini-cli, antigravity (DB-only IDE orchestrator).
 Browser visualization: `squad-station browser` (feature-gated) starts axum server serving React Flow SPA from embedded assets. WebSocket pushes topology snapshots and delta events. dagre hierarchical layout, animated edges, dark/light theme.

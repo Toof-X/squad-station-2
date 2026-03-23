@@ -20,15 +20,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 sed -i.bak "s/^version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"$VERSION\"/" "$ROOT/Cargo.toml"
 rm -f "$ROOT/Cargo.toml.bak"
 
-# Update package.json
-sed -i.bak "s/\"version\": \"[0-9]*\.[0-9]*\.[0-9]*\"/\"version\": \"$VERSION\"/" "$ROOT/package.json"
-rm -f "$ROOT/package.json.bak"
-
-# Update install.sh
-sed -i.bak "s/^VERSION=\"[0-9]*\.[0-9]*\.[0-9]*\"/VERSION=\"$VERSION\"/" "$ROOT/install.sh"
-rm -f "$ROOT/install.sh.bak"
+# Update npm-package/package.json (version + binaryVersion)
+sed -i.bak "s/\"version\": \"[0-9]*\.[0-9]*\.[0-9]*\"/\"version\": \"$VERSION\"/" "$ROOT/npm-package/package.json"
+sed -i.bak "s/\"binaryVersion\": \"[0-9]*\.[0-9]*\.[0-9]*\"/\"binaryVersion\": \"$VERSION\"/" "$ROOT/npm-package/package.json"
+rm -f "$ROOT/npm-package/package.json.bak"
 
 echo "Bumped version to $VERSION in:"
 echo "  Cargo.toml"
-echo "  package.json"
-echo "  install.sh"
+echo "  npm-package/package.json"
