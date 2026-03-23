@@ -147,36 +147,31 @@ function scaffoldProject(force) {
 
   console.log('');
 
-  // Copy sdd/ playbooks
-  var sddSrc = path.join(srcSquad, 'sdd');
-  var sddDest = path.join(destSquad, 'sdd');
-  fs.mkdirSync(sddDest, { recursive: true });
+  // Copy bundled directories (sdd/, examples/) if they exist in the package
+  var dirs = [
+    { name: 'sdd', ext: '.md' },
+    { name: 'examples', ext: '.yml' },
+  ];
 
-  var sddFiles = fs.readdirSync(sddSrc).filter(function(f) { return f.endsWith('.md'); });
-  sddFiles.forEach(function(file) {
-    var dest = path.join(sddDest, file);
-    if (fs.existsSync(dest) && !force) {
-      console.log('  \x1b[33m–\x1b[0m .squad/sdd/' + file + ' \x1b[2m(exists, use --force to overwrite)\x1b[0m');
-    } else {
-      fs.copyFileSync(path.join(sddSrc, file), dest);
-      console.log('  \x1b[32m✓\x1b[0m .squad/sdd/' + file);
+  dirs.forEach(function(dir) {
+    var src = path.join(srcSquad, dir.name);
+    if (!fs.existsSync(src)) {
+      console.log('  \x1b[33m–\x1b[0m .squad/' + dir.name + '/ not bundled, skipping');
+      return;
     }
-  });
+    var dest = path.join(destSquad, dir.name);
+    fs.mkdirSync(dest, { recursive: true });
 
-  // Copy examples/
-  var exSrc = path.join(srcSquad, 'examples');
-  var exDest = path.join(destSquad, 'examples');
-  fs.mkdirSync(exDest, { recursive: true });
-
-  var exFiles = fs.readdirSync(exSrc).filter(function(f) { return f.endsWith('.yml'); });
-  exFiles.forEach(function(file) {
-    var dest = path.join(exDest, file);
-    if (fs.existsSync(dest) && !force) {
-      console.log('  \x1b[33m–\x1b[0m .squad/examples/' + file + ' \x1b[2m(exists, use --force to overwrite)\x1b[0m');
-    } else {
-      fs.copyFileSync(path.join(exSrc, file), dest);
-      console.log('  \x1b[32m✓\x1b[0m .squad/examples/' + file);
-    }
+    var files = fs.readdirSync(src).filter(function(f) { return f.endsWith(dir.ext); });
+    files.forEach(function(file) {
+      var destFile = path.join(dest, file);
+      if (fs.existsSync(destFile) && !force) {
+        console.log('  \x1b[33m–\x1b[0m .squad/' + dir.name + '/' + file + ' \x1b[2m(exists, use --force to overwrite)\x1b[0m');
+      } else {
+        fs.copyFileSync(path.join(src, file), destFile);
+        console.log('  \x1b[32m✓\x1b[0m .squad/' + dir.name + '/' + file);
+      }
+    });
   });
 }
 
