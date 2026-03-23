@@ -460,3 +460,48 @@ pub async fn run(port: Option<u16>, no_open: bool) -> anyhow::Result<()> {
     println!("Server stopped.");
     Ok(())
 }
+
+/// Spawn the browser server as a detached background process and return immediately.
+/// The child process runs `squad-station browser --no-open [--port N]` with stdout/stderr
+/// redirected to `.squad/log/browser.log`.
+pub async fn run_detached(port: Option<u16>) -> anyhow::Result<()> {
+    let exe = std::env::current_exe()?;
+    let log_dir = std::path::Path::new(".squad/log");
+    std::fs::create_dir_all(log_dir)?;
+    let log_file = std::fs::File::create(log_dir.join("browser.log"))?;
+    let log_err = log_file.try_clone()?;
+
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg("browser").arg("--no-open");
+    if let Some(p) = port {
+        cmd.arg("--port").arg(p.to_string());
+    }
+    cmd.stdout(log_file).stderr(log_err);
+
+    // Detach: don't wait for child, don't inherit stdin
+    cmd.stdin(std::process::Stdio::null());
+    let child = cmd.spawn()?;
+
+    // Write PID for later stop
+    let pid_file = log_dir.join("browser.pid");
+    std::fs::write(&pid_file, child.id().to_string())?;
+
+    // Wait briefly for server to bind, then read log for URL
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let log_content = std::fs::read_to_string(log_dir.join("browser.log")).unwrap_or_default();
+    let url = log_content
+        .lines()
+        .find_map(|l| {
+            l.find("http://").map(|i| &l[i..])
+        })
+        .unwrap_or("http://127.0.0.1:3000");
+
+    if let Err(e) = open::that(url) {
+        eprintln!("Warning: Could not open browser: {e}");
+    }
+
+    println!("Server running in background (pid={})", child.id());
+    println!("{url}");
+    println!("Stop: kill $(cat .squad/log/browser.pid)");
+    Ok(())
+}

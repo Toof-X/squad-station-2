@@ -169,6 +169,9 @@ pub enum Commands {
         /// Skip auto-opening browser
         #[arg(long)]
         no_open: bool,
+        /// Run server in background and return immediately
+        #[arg(long)]
+        detach: bool,
     },
 }
 
