@@ -214,6 +214,21 @@ function proxyToBinary() {
     binaryPath = which.stdout.trim();
   }
 
+  // Fallback: check common install locations (PATH may not include these in tmux/hooks)
+  if (!binaryPath) {
+    var candidates = [
+      path.join(process.env.HOME || '', '.local', 'bin', 'squad-station'),
+      path.join(process.env.HOME || '', '.cargo', 'bin', 'squad-station'),
+      '/usr/local/bin/squad-station',
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      if (fs.existsSync(candidates[i])) {
+        binaryPath = candidates[i];
+        break;
+      }
+    }
+  }
+
   if (!binaryPath) {
     console.error('squad-station binary not found.');
     console.error('Run: npx squad-station install');

@@ -25,7 +25,7 @@ struct FrontendAssets;
 #[derive(Clone)]
 struct AppState {
     db: Option<sqlx::SqlitePool>,
-    db_write: Option<sqlx::SqlitePool>,
+    db_path: Option<std::path::PathBuf>,
     project_name: String,
     started_at: Instant,
     tx: broadcast::Sender<String>,
@@ -222,23 +222,38 @@ async fn reconcile_for_server(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
 }
 
 /// Background task: poll agent DB state at 1s intervals.
-/// Runs tmux reconciliation each tick (if writable pool available).
+/// Runs tmux reconciliation every 5 ticks (~5s) using a short-lived write connection
+/// to avoid holding the single-writer lock and blocking `squad-station send`.
 /// Broadcasts an agent_update event only when agent state has changed.
 async fn poll_agents(
     db_read: sqlx::SqlitePool,
-    db_write: Option<sqlx::SqlitePool>,
+    db_path: Option<std::path::PathBuf>,
     tx: broadcast::Sender<String>,
 ) {
     let mut cached: Vec<db::agents::Agent> = Vec::new();
     let mut interval = tokio::time::interval(Duration::from_secs(1));
+    let mut tick_count: u64 = 0;
     loop {
         interval.tick().await;
-        // Run reconciliation if writable pool available
-        if let Some(ref pool) = db_write {
-            if let Err(e) = reconcile_for_server(pool).await {
-                eprintln!("browser: reconcile error: {e}");
+        tick_count += 1;
+
+        // Reconcile every 5s with a short-lived write pool (opened + dropped each time).
+        // This avoids holding the single-writer lock continuously, which was blocking
+        // `squad-station send` from inserting messages.
+        if tick_count % 5 == 0 {
+            if let Some(ref path) = db_path {
+                match db::connect(path).await {
+                    Ok(pool) => {
+                        if let Err(e) = reconcile_for_server(&pool).await {
+                            eprintln!("browser: reconcile error: {e}");
+                        }
+                        pool.close().await;
+                    }
+                    Err(e) => eprintln!("browser: reconcile connect error: {e}"),
+                }
             }
         }
+
         // Read current agents
         let current = match db::agents::list_agents(&db_read).await {
             Ok(a) => a,
@@ -375,7 +390,7 @@ pub async fn run(port: Option<u16>, no_open: bool) -> anyhow::Result<()> {
     use std::path::Path;
 
     // Load config — gracefully degrade if not in a squad project
-    let (project_name, db, db_write) = match crate::config::load_config(Path::new(
+    let (project_name, db, db_path) = match crate::config::load_config(Path::new(
         crate::config::DEFAULT_CONFIG_FILE,
     )) {
         Ok(config) => {
@@ -390,14 +405,7 @@ pub async fn run(port: Option<u16>, no_open: bool) -> anyhow::Result<()> {
                             None
                         }
                     };
-                    let write_pool = match crate::db::connect(&db_path).await {
-                        Ok(pool) => Some(pool),
-                        Err(e) => {
-                            eprintln!("Warning: Could not connect to DB (write): {e} (reconciliation disabled)");
-                            None
-                        }
-                    };
-                    (project, read_pool, write_pool)
+                    (project, read_pool, Some(db_path))
                 }
                 Err(e) => {
                     eprintln!("Warning: Could not resolve DB path: {e} (continuing without DB)");
@@ -427,7 +435,7 @@ pub async fn run(port: Option<u16>, no_open: bool) -> anyhow::Result<()> {
 
     let state = AppState {
         db,
-        db_write,
+        db_path,
         project_name,
         started_at: Instant::now(),
         tx,
@@ -436,9 +444,9 @@ pub async fn run(port: Option<u16>, no_open: bool) -> anyhow::Result<()> {
     // Spawn polling tasks before starting the axum server
     if let Some(ref read_pool) = state.db {
         let read_pool_clone = read_pool.clone();
-        let write_pool_clone = state.db_write.clone();
+        let db_path_clone = state.db_path.clone();
         let tx_clone = state.tx.clone();
-        tokio::spawn(poll_agents(read_pool_clone, write_pool_clone, tx_clone));
+        tokio::spawn(poll_agents(read_pool_clone, db_path_clone, tx_clone));
 
         let read_pool_clone2 = read_pool.clone();
         let tx_clone2 = state.tx.clone();

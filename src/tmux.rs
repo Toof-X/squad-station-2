@@ -111,9 +111,12 @@ fn paste_buffer_args(target: &str) -> Vec<String> {
 
 // --- Public API ---
 
-/// Delay (seconds) between sending text and pressing Enter.
+/// Delay (milliseconds) between pasting text and pressing Enter.
 /// Claude Code needs time to render the input before Enter is processed.
-const SEND_ENTER_DELAY_SECS: u64 = 2;
+/// 300ms is sufficient for load-buffer/paste-buffer (content arrives atomically).
+/// send_keys_literal uses a longer delay since text trickles character-by-character.
+const PASTE_ENTER_DELAY_MS: u64 = 300;
+const SENDKEYS_ENTER_DELAY_MS: u64 = 500;
 
 /// Delay (seconds) between sending consecutive commands (e.g., /clear && /gsd:plan-phase 1).
 /// The first command needs time to execute before the next one is sent.
@@ -134,7 +137,7 @@ pub async fn send_keys_literal(target: &str, text: &str) -> Result<()> {
     }
 
     // Step 2: Wait for the pane to receive and render the text
-    tokio::time::sleep(std::time::Duration::from_secs(SEND_ENTER_DELAY_SECS)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(SENDKEYS_ENTER_DELAY_MS)).await;
 
     // Step 3: Send Enter as separate key (NOT -l, so Enter key is recognized)
     let enter = enter_args(target);
@@ -171,7 +174,7 @@ async fn inject_single(target: &str, text: &str) -> Result<()> {
         bail!("tmux paste-buffer failed for target: {}", target);
     }
 
-    tokio::time::sleep(std::time::Duration::from_secs(SEND_ENTER_DELAY_SECS)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(PASTE_ENTER_DELAY_MS)).await;
 
     let enter = enter_args(target);
     let status = Command::new("tmux").args(&enter).status().await?;
