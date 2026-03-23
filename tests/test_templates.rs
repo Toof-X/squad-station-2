@@ -11,12 +11,12 @@ use squad_station::db::agents::{insert_agent, get_agent, Agent};
 
 #[test]
 fn test_worker_template_count() {
-    assert_eq!(WORKER_TEMPLATES.len(), 8);
+    assert_eq!(WORKER_TEMPLATES.len(), 12);
 }
 
 #[test]
 fn test_orchestrator_template_count() {
-    assert_eq!(ORCHESTRATOR_TEMPLATES.len(), 3);
+    assert_eq!(ORCHESTRATOR_TEMPLATES.len(), 4);
 }
 
 #[test]
@@ -29,6 +29,10 @@ fn test_worker_template_order() {
     assert_eq!(WORKER_TEMPLATES[5].slug, "technical-writer");
     assert_eq!(WORKER_TEMPLATES[6].slug, "data-engineer");
     assert_eq!(WORKER_TEMPLATES[7].slug, "security-engineer");
+    assert_eq!(WORKER_TEMPLATES[8].slug, "market-researcher");
+    assert_eq!(WORKER_TEMPLATES[9].slug, "ua-lead");
+    assert_eq!(WORKER_TEMPLATES[10].slug, "design-lead");
+    assert_eq!(WORKER_TEMPLATES[11].slug, "tech-researcher");
 }
 
 #[test]
@@ -63,8 +67,8 @@ fn test_template_description_length() {
 
 #[test]
 fn test_custom_sentinel_indices() {
-    assert_eq!(CUSTOM_IDX_WORKER, 8);
-    assert_eq!(CUSTOM_IDX_ORCHESTRATOR, 3);
+    assert_eq!(CUSTOM_IDX_WORKER, 12);
+    assert_eq!(CUSTOM_IDX_ORCHESTRATOR, 4);
 }
 
 #[test]

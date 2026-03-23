@@ -22,64 +22,67 @@ pub struct AgentTemplate {
 }
 
 // ----------------------------------------------------------------------------
-// Worker templates (8 entries)
+// Worker templates (12 entries)
 // ----------------------------------------------------------------------------
 
 pub const WORKER_TEMPLATES: &[AgentTemplate] = &[
+    // ── Engineering agents ───────────────────────────────────────────────
     AgentTemplate {
         slug: "coder",
         display_name: "Coder",
-        description: "Broad umbrella for all implementation work across the stack. \
-                      Handles frontend, backend, and mobile feature development, bug fixes, \
-                      and general coding tasks. Use this role when the work is primarily writing \
-                      or modifying source code.",
+        description: "Writes and modifies source code: implements features, fixes bugs, \
+                      and handles frontend, backend, and mobile development. Deliverables \
+                      are working code changes, not plans or reviews. Route here for any \
+                      task whose primary output is new or changed source code.",
         default_provider: "claude-code",
         claude_model: "sonnet",
         gemini_model: "gemini-2.5-pro",
         routing_hints: &[
-            "code", "implement", "build", "fix", "feature", "bug", "frontend", "backend",
-            "mobile",
+            "code", "implement", "build", "bugfix", "feature", "frontend", "backend",
+            "mobile", "refactor",
         ],
     },
     AgentTemplate {
         slug: "solution-architect",
         display_name: "Solution Architect",
-        description: "Covers technical leadership, architecture design, and solution planning. \
-                      Suitable for tech lead responsibilities, high-level system design, \
-                      refactoring strategies, and addressing technical debt. Use this role when \
-                      decisions require broad system-level thinking.",
+        description: "Produces architecture decisions, system-design documents, and technical \
+                      plans. Evaluates tradeoffs, defines component boundaries, and addresses \
+                      technical debt at the system level. Route here when the deliverable is \
+                      a design document or architectural recommendation, not code or a PR review.",
         default_provider: "claude-code",
         claude_model: "opus",
         gemini_model: "gemini-2.5-pro",
         routing_hints: &[
             "architecture",
-            "design",
-            "system",
-            "plan",
-            "review",
+            "system-design",
+            "tradeoff",
             "technical-debt",
-            "refactor",
+            "component",
+            "diagram",
+            "rfc",
         ],
     },
     AgentTemplate {
         slug: "qa-engineer",
         display_name: "QA Engineer",
-        description: "Specialises in testing, quality assurance, and test automation. \
-                      Writes unit, integration, and end-to-end tests, investigates regressions, \
-                      and ensures adequate coverage. Use this role whenever the primary output \
-                      is test code or a quality report.",
+        description: "Writes and maintains tests: unit, integration, and end-to-end. \
+                      Investigates regressions, measures coverage, and produces quality reports. \
+                      Route here when the primary output is test code, a test plan, or a \
+                      bug-investigation report — not production code fixes.",
         default_provider: "claude-code",
         claude_model: "sonnet",
         gemini_model: "gemini-2.5-pro",
-        routing_hints: &["test", "qa", "quality", "bug", "regression", "coverage", "e2e"],
+        routing_hints: &[
+            "test", "qa", "regression", "coverage", "e2e", "assertion", "test-plan",
+        ],
     },
     AgentTemplate {
         slug: "devops-engineer",
         display_name: "DevOps Engineer",
-        description: "Handles CI/CD pipelines, infrastructure-as-code, and deployment automation. \
-                      Works with Docker, Kubernetes, cloud providers, and monitoring tooling. \
-                      Use this role for any task touching build, release, or infrastructure \
-                      configuration.",
+        description: "Manages CI/CD pipelines, infrastructure-as-code, containers, and \
+                      deployment automation. Works with Docker, Kubernetes, cloud providers, \
+                      and monitoring. Route here for any task touching build pipelines, release \
+                      processes, or infrastructure configuration.",
         default_provider: "claude-code",
         claude_model: "sonnet",
         gemini_model: "gemini-2.5-pro",
@@ -97,22 +100,24 @@ pub const WORKER_TEMPLATES: &[AgentTemplate] = &[
     AgentTemplate {
         slug: "code-reviewer",
         display_name: "Code Reviewer",
-        description: "Performs thorough code reviews, enforces coding standards, and provides \
-                      constructive feedback on pull requests. Checks for correctness, readability, \
-                      security, and adherence to team conventions. Use this role when the \
-                      primary output is review comments or quality feedback.",
+        description: "Reviews pull requests and enforces coding standards. Checks for \
+                      correctness, readability, security, and convention adherence. Deliverables \
+                      are review comments and approval decisions. Route here when you need a \
+                      PR reviewed — not for writing code or designing systems.",
         default_provider: "claude-code",
         claude_model: "opus",
         gemini_model: "gemini-2.5-pro",
-        routing_hints: &["review", "pr", "pull-request", "feedback", "standards", "lint"],
+        routing_hints: &[
+            "review", "pr", "pull-request", "feedback", "standards", "lint", "approve",
+        ],
     },
     AgentTemplate {
         slug: "technical-writer",
         display_name: "Technical Writer",
-        description: "Creates and maintains technical documentation, API references, README files, \
-                      changelogs, and developer guides. Ensures docs stay in sync with code changes \
-                      and are accessible to the intended audience. Use this role when the primary \
-                      deliverable is documentation rather than code.",
+        description: "Creates and maintains documentation: API references, README files, \
+                      changelogs, and developer guides. Ensures docs stay in sync with code. \
+                      Route here when the primary deliverable is written documentation, not \
+                      code or design artifacts.",
         default_provider: "claude-code",
         claude_model: "sonnet",
         gemini_model: "gemini-2.5-flash",
@@ -121,10 +126,10 @@ pub const WORKER_TEMPLATES: &[AgentTemplate] = &[
     AgentTemplate {
         slug: "data-engineer",
         display_name: "Data Engineer",
-        description: "Designs database schemas, writes SQL migrations, and builds data pipelines. \
-                      Handles ETL processes, analytics queries, and data modelling. Use this role \
-                      when the work centres on data storage, retrieval, transformation, or \
-                      reporting.",
+        description: "Designs database schemas, writes SQL migrations, and builds data \
+                      pipelines and ETL processes. Handles analytics queries and data modelling. \
+                      Route here when the work centres on data storage, retrieval, transformation, \
+                      or reporting — not application-level code.",
         default_provider: "claude-code",
         claude_model: "sonnet",
         gemini_model: "gemini-2.5-pro",
@@ -142,9 +147,9 @@ pub const WORKER_TEMPLATES: &[AgentTemplate] = &[
         slug: "security-engineer",
         display_name: "Security Engineer",
         description: "Conducts security audits, assesses vulnerabilities, and implements \
-                      authentication and authorisation mechanisms. Ensures encryption, compliance, \
-                      and secure coding practices are followed throughout the codebase. Use this \
-                      role for any task with a primary security or compliance objective.",
+                      auth mechanisms and encryption. Ensures compliance and secure coding \
+                      practices. Route here when the task has a primary security or compliance \
+                      objective — not general code reviews.",
         default_provider: "claude-code",
         claude_model: "opus",
         gemini_model: "gemini-2.5-pro",
@@ -157,21 +162,104 @@ pub const WORKER_TEMPLATES: &[AgentTemplate] = &[
             "compliance",
         ],
     },
+    // ── Business & strategy agents ───────────────────────────────────────
+    AgentTemplate {
+        slug: "market-researcher",
+        display_name: "Market Researcher",
+        description: "Conducts market research, target audience analysis, and competitor \
+                      studies. Defines product use cases, user personas, and feature priorities \
+                      based on market data. Route here for competitor benchmarks, audience \
+                      segmentation, or positioning strategy — not technical research or UA channels.",
+        default_provider: "claude-code",
+        claude_model: "opus",
+        gemini_model: "gemini-2.5-pro",
+        routing_hints: &[
+            "market",
+            "competitor",
+            "audience",
+            "persona",
+            "positioning",
+            "use-case",
+            "benchmark",
+        ],
+    },
+    AgentTemplate {
+        slug: "ua-lead",
+        display_name: "UA Lead",
+        description: "Plans user-acquisition channels, growth tactics, and monetisation \
+                      models. Optimises conversion funnels and aligns growth initiatives \
+                      with revenue targets. Route here for acquisition strategy, channel \
+                      evaluation, or pricing models — not market research or visual design.",
+        default_provider: "claude-code",
+        claude_model: "sonnet",
+        gemini_model: "gemini-2.5-pro",
+        routing_hints: &[
+            "acquisition",
+            "growth",
+            "channel",
+            "monetisation",
+            "conversion",
+            "retention",
+            "funnel",
+            "pricing",
+        ],
+    },
+    AgentTemplate {
+        slug: "design-lead",
+        display_name: "Design Lead",
+        description: "Owns visual identity, UI/UX strategy, and design systems. Creates \
+                      wireframes, prototypes, and mockups. Ensures brand consistency and \
+                      cohesive user experience. Route here for visual design, UX flows, or \
+                      brand assets — not system architecture or frontend code.",
+        default_provider: "claude-code",
+        claude_model: "sonnet",
+        gemini_model: "gemini-2.5-pro",
+        routing_hints: &[
+            "ui",
+            "ux",
+            "visual",
+            "brand",
+            "wireframe",
+            "prototype",
+            "mockup",
+            "design-system",
+        ],
+    },
+    AgentTemplate {
+        slug: "tech-researcher",
+        display_name: "Tech Researcher",
+        description: "Researches technology stacks, frameworks, and services to find \
+                      cost-effective solutions that reduce capital investment. Produces \
+                      comparison matrices and build-vs-buy recommendations. Route here for \
+                      stack selection or tool evaluation — not for architecture decisions \
+                      or hands-on implementation.",
+        default_provider: "claude-code",
+        claude_model: "opus",
+        gemini_model: "gemini-2.5-pro",
+        routing_hints: &[
+            "tech-stack",
+            "evaluate",
+            "cost-analysis",
+            "framework",
+            "tooling",
+            "build-vs-buy",
+            "comparison",
+        ],
+    },
 ];
 
 // ----------------------------------------------------------------------------
-// Orchestrator templates (3 entries)
+// Orchestrator templates (4 entries)
 // ----------------------------------------------------------------------------
 
 pub const ORCHESTRATOR_TEMPLATES: &[AgentTemplate] = &[
     AgentTemplate {
         slug: "project-manager",
         display_name: "Project Manager",
-        description: "Coordinates project activities, tracks task progress, and manages \
-                      milestones and priorities. Ensures the team has clarity on deadlines \
-                      and keeps stakeholders informed. Use this role when the orchestrator \
-                      focuses on planning and delivery coordination rather than technical \
-                      decisions.",
+        description: "Coordinates delivery: tracks task progress, manages milestones, and \
+                      enforces deadlines. Distributes work based on agent availability and \
+                      pending queues. Choose this orchestrator when the focus is planning \
+                      and delivery coordination rather than technical or product decisions.",
         default_provider: "claude-code",
         claude_model: "opus",
         gemini_model: "gemini-2.5-pro",
@@ -187,11 +275,10 @@ pub const ORCHESTRATOR_TEMPLATES: &[AgentTemplate] = &[
     AgentTemplate {
         slug: "tech-lead",
         display_name: "Tech Lead",
-        description: "Provides technical leadership, makes architecture decisions, and enforces \
-                      coding standards across the team. Mentors other agents, reviews critical \
-                      design choices, and resolves technical conflicts. Use this role when the \
-                      orchestrator needs strong technical authority and hands-on involvement in \
-                      code quality.",
+        description: "Provides technical authority: makes architecture decisions, enforces \
+                      coding standards, and resolves technical conflicts across the team. \
+                      Routes tasks based on technical domain and agent expertise. Choose this \
+                      orchestrator when routing requires deep technical judgment.",
         default_provider: "claude-code",
         claude_model: "opus",
         gemini_model: "gemini-2.5-pro",
@@ -199,19 +286,18 @@ pub const ORCHESTRATOR_TEMPLATES: &[AgentTemplate] = &[
             "architecture",
             "technical",
             "decision",
-            "review",
             "standard",
             "mentor",
+            "conflict",
         ],
     },
     AgentTemplate {
         slug: "scrum-master",
         display_name: "Scrum Master",
-        description: "Facilitates agile ceremonies, manages the sprint backlog, and removes \
-                      blockers for the team. Tracks velocity, organises stand-ups and \
-                      retrospectives, and ensures the team follows the agreed process. Use this \
-                      role when the orchestrator's primary responsibility is process facilitation \
-                      rather than direct task execution.",
+        description: "Facilitates process: manages sprint backlog, removes blockers, and \
+                      tracks velocity. Ensures agents follow the agreed workflow and ceremonies. \
+                      Choose this orchestrator when the primary responsibility is process \
+                      facilitation and blocker removal rather than direct task decisions.",
         default_provider: "claude-code",
         claude_model: "opus",
         gemini_model: "gemini-2.5-pro",
@@ -222,6 +308,27 @@ pub const ORCHESTRATOR_TEMPLATES: &[AgentTemplate] = &[
             "blocker",
             "velocity",
             "backlog",
+        ],
+    },
+    AgentTemplate {
+        slug: "product-owner",
+        display_name: "Product Owner",
+        description: "Owns product vision: prioritises backlog by business value, defines \
+                      acceptance criteria, and ensures deliverables align with stakeholder \
+                      expectations. Routes tasks to maximise product impact across engineering, \
+                      design, and business agents. Choose this orchestrator for cross-functional \
+                      teams mixing technical and business roles.",
+        default_provider: "claude-code",
+        claude_model: "opus",
+        gemini_model: "gemini-2.5-pro",
+        routing_hints: &[
+            "prioritise",
+            "backlog",
+            "stakeholder",
+            "requirement",
+            "acceptance",
+            "vision",
+            "impact",
         ],
     },
 ];

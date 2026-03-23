@@ -261,9 +261,19 @@ pub fn build_orchestrator_md(
         let model = agent.model.as_deref().unwrap_or(&agent.tool);
         out.push_str(&format!("- **{}** ({}) — {}\n", agent.name, model, desc));
     }
-    out.push_str("\n**Routing rules:**\n");
-    out.push_str("- Reasoning, architecture, planning, review → brainstorm/planning agent\n");
-    out.push_str("- Coding, implement, fix, build, deploy → implementation agent\n");
+    out.push_str("\n**Routing rules — match task to the MOST SPECIFIC agent:**\n");
+    out.push_str("- Write/modify code, bugfix, feature → Coder\n");
+    out.push_str("- Architecture, system-design, tradeoff, RFC → Solution Architect\n");
+    out.push_str("- Test, QA, regression, coverage → QA Engineer\n");
+    out.push_str("- Deploy, CI/CD, Docker, infrastructure → DevOps Engineer\n");
+    out.push_str("- PR review, code standards, lint → Code Reviewer\n");
+    out.push_str("- Documentation, README, changelog → Technical Writer\n");
+    out.push_str("- Database, SQL, ETL, data pipeline → Data Engineer\n");
+    out.push_str("- Security audit, vulnerability, auth, compliance → Security Engineer\n");
+    out.push_str("- Market research, competitor, audience, persona → Market Researcher\n");
+    out.push_str("- User acquisition, growth, channel, monetisation → UA Lead\n");
+    out.push_str("- UI/UX, visual design, wireframe, prototype → Design Lead\n");
+    out.push_str("- Tech-stack evaluation, cost-analysis, build-vs-buy → Tech Researcher\n");
     out.push_str("- **Parallel** only when tasks are independent. **Sequential** when one output feeds another.\n\n");
 
     // -- Routing Matrix --
