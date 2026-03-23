@@ -461,39 +461,79 @@ pub async fn run(port: Option<u16>, no_open: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Spawn the browser server as a detached background process and return immediately.
-/// The child process runs `squad-station browser --no-open [--port N]` with stdout/stderr
-/// redirected to `.squad/log/browser.log`.
+/// Spawn the browser server in a new terminal window and return immediately.
+/// On macOS: opens Terminal.app with the server command visible.
+/// Fallback: spawns as background process with log file.
 pub async fn run_detached(port: Option<u16>) -> anyhow::Result<()> {
     let exe = std::env::current_exe()?;
+    let cwd = std::env::current_dir()?;
+    let exe_str = exe.to_string_lossy();
+    let cwd_str = cwd.to_string_lossy();
+
+    let mut server_cmd = format!("{} browser --no-open", exe_str);
+    if let Some(p) = port {
+        server_cmd.push_str(&format!(" --port {}", p));
+    }
+
+    // Try opening a new terminal window (macOS)
+    #[cfg(target_os = "macos")]
+    {
+        let apple_script = format!(
+            r#"tell application "Terminal"
+    do script "cd '{}' && {}"
+    activate
+end tell"#,
+            cwd_str, server_cmd
+        );
+        let result = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&apple_script)
+            .status();
+
+        if let Ok(status) = result {
+            if status.success() {
+                // Wait for Terminal.app to launch and server to bind
+                tokio::time::sleep(Duration::from_secs(4)).await;
+                let url = if let Some(p) = port {
+                    format!("http://127.0.0.1:{}", p)
+                } else {
+                    "http://127.0.0.1:3000".to_string()
+                };
+                if let Err(e) = open::that(&url) {
+                    eprintln!("Warning: Could not open browser: {e}");
+                }
+                println!("Server started in new terminal");
+                println!("{url}");
+                return Ok(());
+            }
+        }
+    }
+
+    // Fallback: background process with log file
     let log_dir = std::path::Path::new(".squad/log");
     std::fs::create_dir_all(log_dir)?;
     let log_file = std::fs::File::create(log_dir.join("browser.log"))?;
     let log_err = log_file.try_clone()?;
 
-    let mut cmd = std::process::Command::new(exe);
+    let mut cmd = std::process::Command::new(&exe);
     cmd.arg("browser").arg("--no-open");
     if let Some(p) = port {
         cmd.arg("--port").arg(p.to_string());
     }
-    cmd.stdout(log_file).stderr(log_err);
-
-    // Detach: don't wait for child, don't inherit stdin
-    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(log_file)
+        .stderr(log_err)
+        .stdin(std::process::Stdio::null())
+        .current_dir(&cwd);
     let child = cmd.spawn()?;
 
-    // Write PID for later stop
     let pid_file = log_dir.join("browser.pid");
     std::fs::write(&pid_file, child.id().to_string())?;
 
-    // Wait briefly for server to bind, then read log for URL
     tokio::time::sleep(Duration::from_secs(1)).await;
     let log_content = std::fs::read_to_string(log_dir.join("browser.log")).unwrap_or_default();
     let url = log_content
         .lines()
-        .find_map(|l| {
-            l.find("http://").map(|i| &l[i..])
-        })
+        .find_map(|l| l.find("http://").map(|i| &l[i..]))
         .unwrap_or("http://127.0.0.1:3000");
 
     if let Err(e) = open::that(url) {
