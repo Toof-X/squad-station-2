@@ -4,7 +4,7 @@ use axum::{
         State,
     },
     response::Response,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use axum_embed::ServeEmbed;
@@ -15,6 +15,9 @@ use std::io::ErrorKind;
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
+
+use std::collections::HashMap;
+use std::sync::Mutex;
 
 use crate::{db, tmux};
 
@@ -136,41 +139,154 @@ fn messages_changed(
 /// to avoid coupling server code to CLI helpers.
 /// Check if a tmux pane last line indicates the agent is at an idle prompt.
 /// Returns true for known prompt patterns across supported providers.
-fn is_idle_prompt(last_line: &str) -> bool {
-    let trimmed = last_line.trim();
-    if trimmed.is_empty() {
-        return true; // Empty pane = idle (no output)
-    }
-    // Claude Code: prompt "❯", status bar lines at bottom
-    trimmed.ends_with('❯')
-        || trimmed.ends_with("bypass permissions on")
-        || trimmed.ends_with("(shift+tab to cycle)")
+/// Status bar / chrome lines that should be skipped when finding the last meaningful line.
+fn is_status_bar_line(trimmed: &str) -> bool {
+    trimmed.ends_with("(shift+tab to cycle)")
         || trimmed.ends_with("to cycle)")
-        // Gemini CLI: shell prompts
-        || trimmed.ends_with("$ ")
-        || trimmed == "$"
-        || trimmed == ">"
+        || trimmed.ends_with("bypass permissions on")
+        || trimmed.starts_with("⎿") // Claude Code continuation marker
+        || trimmed.starts_with("⏎") // interrupt hint
 }
 
-/// Capture the last non-empty line from a tmux pane using async Command.
-/// Uses tokio::process::Command to avoid spawn_blocking overhead.
-async fn capture_pane_last_line(session_name: &str) -> Option<String> {
+/// Determine if pane is idle by checking only the last meaningful line (bottom-up).
+/// Skips empty lines and status bar chrome. When Claude Code is busy, `❯` from the
+/// previous input may still be visible higher up — only the bottom matters.
+fn is_pane_idle(captured_lines: &[&str]) -> bool {
+    if captured_lines.is_empty() || captured_lines.iter().all(|l| l.trim().is_empty()) {
+        return true; // Empty pane = idle
+    }
+
+    // Walk from bottom, skip empty lines and status bar chrome
+    let last_meaningful = captured_lines
+        .iter()
+        .rev()
+        .map(|l| l.trim())
+        .find(|t| !t.is_empty() && !is_status_bar_line(t));
+
+    match last_meaningful {
+        None => true, // only status bar / empty lines = idle
+        Some(line) => {
+            // Claude Code: prompt line is exactly "❯" or ends with "❯"
+            if line.ends_with('❯') {
+                return true;
+            }
+            // Gemini CLI
+            if line.ends_with("$ ") || line == "$" || line == ">"
+                || line.contains("Type your message")
+            {
+                return true;
+            }
+            false
+        }
+    }
+}
+
+/// Check if the pane shows a confirmation prompt (e.g., [C] Continue).
+/// Scans the last few meaningful lines for known confirm patterns.
+fn is_pane_waiting_confirm(captured_lines: &[&str]) -> bool {
+    let meaningful: Vec<&str> = captured_lines
+        .iter()
+        .rev()
+        .map(|l| l.trim())
+        .filter(|t| !t.is_empty() && !is_status_bar_line(t))
+        .take(8)
+        .collect();
+
+    meaningful.iter().any(|line| {
+        line.contains("[C] Continue")
+            || line.contains("[C]")
+            || line.contains("[Modify]")
+            || line.contains("[A] Advanced")
+            || line.contains("[P] Party")
+            || line.contains("Do you want to continue")
+            || line.contains("Ready to begin")
+            || line.contains("Select your preference")
+    })
+}
+
+/// Send a keystroke + Enter to a tmux session (for browser UI "Continue All" button).
+async fn send_keys_to_session(session_name: &str, keys: &str) -> anyhow::Result<()> {
+    let status = tokio::process::Command::new("tmux")
+        .args(["send-keys", "-t", session_name, "-l", keys])
+        .status()
+        .await?;
+    if !status.success() {
+        anyhow::bail!("send-keys failed");
+    }
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::process::Command::new("tmux")
+        .args(["send-keys", "-t", session_name, "Enter"])
+        .status()
+        .await?;
+    Ok(())
+}
+
+/// Extract the visible options from pane lines (e.g., "[C] Continue", "[A] Advanced").
+fn extract_confirm_options(captured_lines: &[&str]) -> Vec<String> {
+    let mut options = Vec::new();
+    for line in captured_lines.iter().rev().take(15) {
+        let trimmed = line.trim();
+        // Match lines like "[C] Continue", "[A] Advanced", "[Modify] ..."
+        if (trimmed.starts_with('[') && trimmed.contains(']'))
+            || trimmed.starts_with("- [")
+        {
+            options.push(trimmed.to_string());
+        }
+    }
+    options.reverse();
+    options
+}
+
+/// Notify orchestrator that a worker is waiting for confirmation.
+/// Sends a structured message to orchestrator's tmux pane with the options.
+async fn notify_orchestrator_confirm(
+    pool: &sqlx::SqlitePool,
+    worker_name: &str,
+    options: &[String],
+) -> anyhow::Result<()> {
+    let orch = db::agents::get_orchestrator(pool).await?;
+    let orch = match orch {
+        Some(o) => o,
+        None => return Ok(()), // No orchestrator registered
+    };
+    if orch.tool == "antigravity" || !tmux::session_exists(&orch.name).await {
+        return Ok(());
+    }
+
+    let options_str = if options.is_empty() {
+        "See pane for details".to_string()
+    } else {
+        options.join(" | ")
+    };
+
+    let notification = format!(
+        "[SQUAD CONFIRM] Agent '{}' needs your decision. Options: {} | \
+         Read pane: tmux capture-pane -t {} -p -S -30 | \
+         Respond: squad-station send --to {} --task '<your choice>'",
+        worker_name, options_str, worker_name, worker_name,
+    );
+
+    tmux::send_keys_literal(&orch.name, &notification).await?;
+    Ok(())
+}
+
+/// Capture the last N lines from a tmux pane using async Command.
+async fn capture_pane_lines(session_name: &str) -> Option<String> {
     let output = tokio::process::Command::new("tmux")
-        .args(["capture-pane", "-t", session_name, "-p", "-l", "5"])
+        .args(["capture-pane", "-t", session_name, "-p", "-S", "-20"])
         .output()
         .await
         .ok()?;
     if !output.status.success() {
         return None;
     }
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .rev()
-        .find(|l| !l.trim().is_empty())
-        .map(|l| l.trim().to_string())
+    Some(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-async fn reconcile_for_server(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
+async fn reconcile_for_server(
+    pool: &sqlx::SqlitePool,
+    notified_cooldown: &Mutex<HashMap<String, Instant>>,
+) -> anyhow::Result<()> {
     let agents = db::agents::list_agents(pool).await?;
 
     // Collect agents that need tmux session checks (skip frozen and db-only)
@@ -186,12 +302,12 @@ async fn reconcile_for_server(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
             let name = a.name.clone();
             async move {
                 let alive = tmux::session_exists(&name).await;
-                let last_line = if alive {
-                    capture_pane_last_line(&name).await
+                let pane_output = if alive {
+                    capture_pane_lines(&name).await
                 } else {
                     None
                 };
-                (alive, last_line)
+                (alive, pane_output)
             }
         })
         .collect();
@@ -199,21 +315,50 @@ async fn reconcile_for_server(pool: &sqlx::SqlitePool) -> anyhow::Result<()> {
     let results = futures::future::join_all(futures).await;
 
     // Apply status updates sequentially (single-writer DB)
-    for (agent, (session_alive, last_line)) in checkable.iter().zip(results) {
+    for (agent, (session_alive, pane_output)) in checkable.iter().zip(results) {
         if !session_alive && agent.status != "dead" {
             db::agents::update_agent_status(pool, &agent.name, "dead").await?;
         } else if session_alive && agent.status == "dead" {
             db::agents::update_agent_status(pool, &agent.name, "idle").await?;
         } else if session_alive {
-            // Detect busy/idle from pane content
-            let pane_idle = last_line
+            let lines: Vec<&str> = pane_output
                 .as_deref()
-                .map(is_idle_prompt)
-                .unwrap_or(true);
+                .map(|s| s.lines().collect())
+                .unwrap_or_default();
+            let pane_idle = is_pane_idle(&lines);
+            let waiting_confirm = pane_idle && is_pane_waiting_confirm(&lines);
 
-            if !pane_idle && agent.status != "busy" {
+            if waiting_confirm {
+                let was_waiting = agent.status == "waiting_confirm";
+                if !was_waiting {
+                    db::agents::update_agent_status(pool, &agent.name, "waiting_confirm")
+                        .await?;
+                }
+                // Notify orchestrator (with 30s cooldown per worker to avoid spam)
+                if agent.role != "orchestrator" {
+                    let should_notify = {
+                        let mut map = notified_cooldown.lock().unwrap();
+                        let last = map.get(&agent.name);
+                        if last.map_or(true, |t| t.elapsed() > Duration::from_secs(30)) {
+                            map.insert(agent.name.clone(), Instant::now());
+                            true
+                        } else {
+                            false
+                        }
+                    };
+                    if should_notify {
+                        let options = extract_confirm_options(&lines);
+                        eprintln!(
+                            "browser: notifying orchestrator — {} waiting_confirm",
+                            agent.name
+                        );
+                        let _ =
+                            notify_orchestrator_confirm(pool, &agent.name, &options).await;
+                    }
+                }
+            } else if !pane_idle && agent.status != "busy" {
                 db::agents::update_agent_status(pool, &agent.name, "busy").await?;
-            } else if pane_idle && agent.status == "busy" {
+            } else if pane_idle && !waiting_confirm && agent.status != "idle" {
                 db::agents::update_agent_status(pool, &agent.name, "idle").await?;
             }
         }
@@ -233,18 +378,19 @@ async fn poll_agents(
     let mut cached: Vec<db::agents::Agent> = Vec::new();
     let mut interval = tokio::time::interval(Duration::from_secs(1));
     let mut tick_count: u64 = 0;
+    let cooldown: Mutex<HashMap<String, Instant>> = Mutex::new(HashMap::new());
     loop {
         interval.tick().await;
         tick_count += 1;
 
-        // Reconcile every 5s with a short-lived write pool (opened + dropped each time).
+        // Reconcile every 2s with a short-lived write pool (opened + dropped each time).
         // This avoids holding the single-writer lock continuously, which was blocking
         // `squad-station send` from inserting messages.
-        if tick_count % 5 == 0 {
+        if tick_count % 2 == 0 {
             if let Some(ref path) = db_path {
                 match db::connect(path).await {
                     Ok(pool) => {
-                        if let Err(e) = reconcile_for_server(&pool).await {
+                        if let Err(e) = reconcile_for_server(&pool, &cooldown).await {
                             eprintln!("browser: reconcile error: {e}");
                         }
                         pool.close().await;
@@ -386,6 +532,35 @@ async fn api_status(State(state): State<AppState>) -> Json<StatusResponse> {
     })
 }
 
+/// Manual "Continue All" from browser UI — sends "C" to all waiting workers.
+/// This is a user-initiated override; normal flow is orchestrator deciding.
+async fn api_continue_all(
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
+    let mut continued = Vec::new();
+    if let Some(ref db_path) = state.db_path {
+        if let Ok(pool) = db::connect(db_path).await {
+            if let Ok(agents) = db::agents::list_agents(&pool).await {
+                for agent in agents
+                    .iter()
+                    .filter(|a| a.status == "waiting_confirm" && a.role != "orchestrator")
+                {
+                    if tmux::session_exists(&agent.name).await {
+                        if send_keys_to_session(&agent.name, "C").await.is_ok() {
+                            continued.push(agent.name.clone());
+                        }
+                    }
+                }
+            }
+            pool.close().await;
+        }
+    }
+    Json(serde_json::json!({
+        "continued": continued,
+        "count": continued.len(),
+    }))
+}
+
 pub async fn run(port: Option<u16>, no_open: bool) -> anyhow::Result<()> {
     use std::path::Path;
 
@@ -457,6 +632,7 @@ pub async fn run(port: Option<u16>, no_open: bool) -> anyhow::Result<()> {
     // to ensure they take priority over the SPA fallback handler
     let app = Router::new()
         .route("/api/status", get(api_status))
+        .route("/api/continue-all", post(api_continue_all))
         .route("/ws", get(ws_handler))
         .nest_service("/", ServeEmbed::<FrontendAssets>::new())
         .with_state(state);

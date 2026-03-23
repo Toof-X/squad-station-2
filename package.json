@@ -1,13 +1,13 @@
 {
-  "name": "squad-station",
-  "version": "0.5.1",
+  "name": "squad-station-2",
+  "version": "1.11.0",
   "description": "Message routing and orchestration for AI agent squads",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Toof-X/squad-station-2.git"
   },
   "bin": {
-    "squad-station": "./bin/run.js"
+    "squad-station": "bin/run.js"
   },
   "files": [
     "bin/",
