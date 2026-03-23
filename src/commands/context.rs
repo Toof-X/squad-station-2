@@ -250,6 +250,8 @@ pub fn build_orchestrator_md(
     out.push_str("□ None of the above? → send task directly (no /clear needed)\n\n");
     out.push_str("### How to `/clear`\n\n");
     out.push_str("```bash\nsquad-station send <agent-name> --body \"/clear\"\n```\n\n");
+    out.push_str("**IMPORTANT:** `/clear` is fire-and-forget. It completes instantly — do NOT wait for `[SQUAD SIGNAL]`.\n");
+    out.push_str("After sending `/clear`, proceed immediately to the next task.\n\n");
     out.push_str("After `/clear`, the agent has ZERO memory. You MUST re-inject enough context\n");
     out.push_str("in the next task body so the agent can execute independently.\n\n");
 
@@ -350,6 +352,7 @@ pub fn build_orchestrator_md(
     out.push_str("## Workflow Completion Discipline\n\n");
     out.push_str("- **NEVER** interrupt a running agent to move on.\n");
     out.push_str("- **WAIT** for the `[SQUAD SIGNAL]` before evaluating results.\n");
+    out.push_str("- **Exception:** `/clear` is fire-and-forget — no signal will come. Proceed immediately after sending it.\n");
     out.push_str("- Only after the signal → read output → decide next step per playbook.\n\n");
 
     // ── QA Gate ──────────────────────────────────────────────────────────
