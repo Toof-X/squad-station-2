@@ -396,11 +396,17 @@ pub async fn session_name_from_pane(pane_id: &str) -> Option<String> {
         .map(String::from)
 }
 
-/// Wrap a command with `export SQUAD_AGENT_NAME='<session>'` so hook subprocesses
-/// can reliably identify which agent they belong to via environment variable.
-/// This is more reliable than `tmux display-message` which can fail in subprocess contexts.
+/// Wrap a command with environment setup so hook subprocesses can reliably
+/// identify which agent they belong to and find the squad-station binary.
+/// - `SQUAD_AGENT_NAME` — agent identity for signal/hook scripts
+/// - `PATH` prepend — ensures `squad-station` is findable inside tmux sessions
+///   even when ~/.local/bin or ~/.cargo/bin aren't in the default tmux PATH.
 fn wrap_with_agent_env(session_name: &str, command: &str) -> String {
-    format!("export SQUAD_AGENT_NAME='{}'; {}", session_name, command)
+    format!(
+        "export SQUAD_AGENT_NAME='{}'; \
+         export PATH=\"$HOME/.local/bin:$HOME/.cargo/bin:$PATH\"; {}",
+        session_name, command
+    )
 }
 
 /// Launch an agent in a new detached tmux session (SAFE-03)
@@ -596,16 +602,16 @@ mod tests {
     #[test]
     fn test_wrap_with_agent_env() {
         let result = wrap_with_agent_env("kindle-implement", "claude --dangerously-skip-permissions");
-        assert_eq!(
-            result,
-            "export SQUAD_AGENT_NAME='kindle-implement'; claude --dangerously-skip-permissions"
-        );
+        assert!(result.contains("SQUAD_AGENT_NAME='kindle-implement'"));
+        assert!(result.contains("$HOME/.local/bin"));
+        assert!(result.contains("$HOME/.cargo/bin"));
+        assert!(result.ends_with("claude --dangerously-skip-permissions"));
     }
 
     #[test]
     fn test_wrap_with_agent_env_preserves_special_chars() {
         let result = wrap_with_agent_env("my-agent", "gemini -y --model gemini-3.1-pro");
-        assert!(result.starts_with("export SQUAD_AGENT_NAME='my-agent';"));
+        assert!(result.contains("SQUAD_AGENT_NAME='my-agent'"));
         assert!(result.ends_with("gemini -y --model gemini-3.1-pro"));
     }
 
