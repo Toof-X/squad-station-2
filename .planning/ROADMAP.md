@@ -91,12 +91,12 @@ Embedded axum web server with React + React Flow SPA served from binary, live no
 
 </details>
 
-### 🚧 v2.0 Workflow Watchdog (In Progress)
+### v2.0 Workflow Watchdog (In Progress)
 
 **Milestone Goal:** Detect stalled workflows where no agent is busy but pending/processing messages exist, and alert both the orchestrator (tmux injection) and the user (Telegram).
 
 - [x] **Phase 29: Watchdog Core Correctness** - Deadlock detection, debounce, deduplication, prolonged-busy injection, configurable operations flags, and --status subcommand (completed 2026-03-24)
-- [ ] **Phase 30: Telegram Integration** - Non-blocking Telegram Bot API dispatch with timeout guard, rate-limit handling, and graceful degradation when unconfigured
+- [ ] **Phase 30: Telegram Integration** - Delegation-based Telegram alerting via orchestrator MCP plugin: updated watchdog messages with relay instructions, --channels config, and orchestrator context section
 - [ ] **Phase 31: End-to-End Test Coverage** - Integration tests verifying full tick loop: deadlock condition, idle-pending non-trigger, debounce hold, alert fire-once, Telegram no-op when env vars absent
 
 ## Phase Details
@@ -118,18 +118,17 @@ Plans:
 - [x] 29-03-PLAN.md — Status file writing and --status subcommand
 
 ### Phase 30: Telegram Integration
-**Goal**: When a stall is detected, the user receives a Telegram message on their phone — and a missing or misconfigured Telegram setup never crashes or stalls the watchdog loop
+**Goal**: When a stall is detected, the user receives a Telegram message on their phone — delegated through the orchestrator's MCP plugin, with no HTTP client in the Rust binary
 **Depends on**: Phase 29
 **Requirements**: ALERT-03, ALERT-04
 **Success Criteria** (what must be TRUE):
-  1. When `SQUAD_TELEGRAM_TOKEN` and `SQUAD_TELEGRAM_CHAT_ID` are set, a genuine stall detection sends a Telegram message containing stuck message count, agent states, and oldest message age
-  2. When Telegram env vars are absent or the API call times out (>10 seconds), the watchdog continues polling without error or interruption
-  3. A 429 rate-limit response from the Telegram API does not cause immediate retry; the watchdog respects the `retry_after` value and resumes normal operation
-**Plans**: 3 plans
+  1. Watchdog deadlock and prolonged-busy alert messages contain explicit "IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN" instruction for the orchestrator
+  2. The orchestrator context markdown includes a "Watchdog Alert Relay" section explaining how to handle Telegram relay requests
+  3. The orchestrator's Claude Code session is launched with `--channels plugin:telegram` when the channels config field is present in squad.yml
+**Plans**: 2 plans
 Plans:
-- [x] 29-01-PLAN.md — CLI flags, DB query, main.rs dispatch (foundation)
-- [x] 29-02-PLAN.md — Deadlock detection, debounce, message age, dry-run, prolonged-busy injection
-- [x] 29-03-PLAN.md — Status file writing and --status subcommand
+- [ ] 30-01-PLAN.md — Update watchdog alert messages and orchestrator context with Telegram relay instructions
+- [ ] 30-02-PLAN.md — Add channels config field, wire through launch command and YAML generation, rewrite requirements
 
 ### Phase 31: End-to-End Test Coverage
 **Goal**: The full tick loop behavior is verified by integration tests that run against a real SQLite DB, so correctness of deadlock detection, debounce, and deduplication is not only manually verifiable
@@ -170,5 +169,5 @@ Plans:
 | 27. Event-Driven WebSocket Streaming | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 28. React Flow Node Graph | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 29. Watchdog Core Correctness | 3/3 | Complete   | 2026-03-24 | - |
-| 30. Telegram Integration | v2.0 | 0/TBD | Not started | - |
+| 30. Telegram Integration | v2.0 | 0/2 | Not started | - |
 | 31. End-to-End Test Coverage | v2.0 | 0/TBD | Not started | - |
