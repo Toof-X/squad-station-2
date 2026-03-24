@@ -111,7 +111,11 @@ Embedded axum web server with React + React Flow SPA served from binary, live no
   3. A stall alert fires exactly once per stall event; subsequent polls during the same stall do not re-inject until the configurable cooldown expires
   4. Messages younger than the configurable age threshold do not trigger stall alerts
   5. Running `watch --dry-run` logs stall detections to watch.log without injecting into any tmux pane
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 29-01-PLAN.md — CLI flags, DB query, main.rs dispatch (foundation)
+- [ ] 29-02-PLAN.md — Deadlock detection, debounce, message age, dry-run, prolonged-busy injection
+- [ ] 29-03-PLAN.md — Status file writing and --status subcommand
 
 ### Phase 30: Telegram Integration
 **Goal**: When a stall is detected, the user receives a Telegram message on their phone — and a missing or misconfigured Telegram setup never crashes or stalls the watchdog loop
@@ -121,7 +125,11 @@ Embedded axum web server with React + React Flow SPA served from binary, live no
   1. When `SQUAD_TELEGRAM_TOKEN` and `SQUAD_TELEGRAM_CHAT_ID` are set, a genuine stall detection sends a Telegram message containing stuck message count, agent states, and oldest message age
   2. When Telegram env vars are absent or the API call times out (>10 seconds), the watchdog continues polling without error or interruption
   3. A 429 rate-limit response from the Telegram API does not cause immediate retry; the watchdog respects the `retry_after` value and resumes normal operation
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 29-01-PLAN.md — CLI flags, DB query, main.rs dispatch (foundation)
+- [ ] 29-02-PLAN.md — Deadlock detection, debounce, message age, dry-run, prolonged-busy injection
+- [ ] 29-03-PLAN.md — Status file writing and --status subcommand
 
 ### Phase 31: End-to-End Test Coverage
 **Goal**: The full tick loop behavior is verified by integration tests that run against a real SQLite DB, so correctness of deadlock detection, debounce, and deduplication is not only manually verifiable
@@ -132,7 +140,11 @@ Embedded axum web server with React + React Flow SPA served from binary, live no
   2. A test that seeds only pending messages (no processing) with zero busy agents verifies no false alert fires
   3. A test that calls `alert::send_telegram()` with absent env vars verifies it returns false without spawning a subprocess
   4. `cargo test` passes with all new tests green alongside the existing 362-test suite
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 29-01-PLAN.md — CLI flags, DB query, main.rs dispatch (foundation)
+- [ ] 29-02-PLAN.md — Deadlock detection, debounce, message age, dry-run, prolonged-busy injection
+- [ ] 29-03-PLAN.md — Status file writing and --status subcommand
 
 ## Progress
 
