@@ -171,6 +171,7 @@ pub struct AgentInput {
     pub model: Option<String>,
     pub description: Option<String>,
     pub routing_hints: Option<String>, // Phase 24: JSON-serialized routing keywords
+    pub channels: Option<Vec<String>>, // MCP channels (e.g., ["plugin:telegram"])
 }
 
 // ----------------------------------------------------------------------------
@@ -626,6 +627,7 @@ fn draft_to_agent_input(d: AgentDraft, role: &str) -> AgentInput {
         model,
         description,
         routing_hints,
+        channels: None, // workers do not get channels by default
     }
 }
 

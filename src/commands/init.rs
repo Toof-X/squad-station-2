@@ -75,6 +75,8 @@ struct SquadYmlAgent<'a> {
     model: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channels: Option<Vec<String>>,
 }
 
 #[derive(serde::Serialize)]
@@ -112,6 +114,7 @@ fn append_workers_to_yaml(
             role: "worker",
             model: agent.model.as_deref(),
             description: agent.description.as_deref(),
+            channels: agent.channels.clone(),
         };
         let yaml_str = serde_saphyr::to_string(&single).unwrap_or_default();
         let cleaned = yaml_str.replace("---\n", "");
@@ -929,6 +932,7 @@ fn generate_squad_yml(result: &crate::commands::wizard::WizardResult) -> String 
             role: "orchestrator",
             model: result.orchestrator.model.as_deref(),
             description: result.orchestrator.description.as_deref(),
+            channels: result.orchestrator.channels.clone(),
         },
         agents: result
             .agents
@@ -943,6 +947,7 @@ fn generate_squad_yml(result: &crate::commands::wizard::WizardResult) -> String 
                 role: "worker",
                 model: a.model.as_deref(),
                 description: a.description.as_deref(),
+                channels: a.channels.clone(),
             })
             .collect(),
     };
@@ -1226,6 +1231,18 @@ fn get_launch_command(agent: &config::AgentConfig) -> String {
                     );
                 }
             }
+            if let Some(channels) = &agent.channels {
+                for ch in channels {
+                    if is_safe_model_value(ch) {
+                        cmd.push_str(&format!(" --channels {}", ch));
+                    } else {
+                        eprintln!(
+                            "squad-station: warning: skipping unsafe channel value: {:?}",
+                            ch
+                        );
+                    }
+                }
+            }
             cmd
         }
         "gemini-cli" => {
@@ -1259,6 +1276,7 @@ mod tests {
             model: None,
             description: None,
             routing_hints: None,
+            channels: None,
         }
     }
 
@@ -1270,6 +1288,7 @@ mod tests {
             model: Some(model.to_string()),
             description: None,
             routing_hints: None,
+            channels: None,
         }
     }
 
@@ -1369,6 +1388,7 @@ mod tests {
                 model: Some("sonnet".to_string()),
                 description: Some("main orchestrator".to_string()),
                 routing_hints: None,
+                channels: Some(vec!["plugin:telegram".to_string()]),
             },
             agents: vec![AgentInput {
                 name: "backend".to_string(),
@@ -1377,6 +1397,7 @@ mod tests {
                 model: Some("gemini-2.5-pro".to_string()),
                 description: None,
                 routing_hints: None,
+                channels: None,
             }],
         }
     }
@@ -1662,6 +1683,103 @@ mod tests {
         assert!(!is_safe_model_value("model$(whoami)"));
         assert!(!is_safe_model_value("model`id`"));
         assert!(!is_safe_model_value(""));
+    }
+
+    #[test]
+    fn test_get_launch_command_claude_with_channels() {
+        let agent = config::AgentConfig {
+            name: None,
+            provider: "claude-code".to_string(),
+            role: "orchestrator".to_string(),
+            model: None,
+            description: None,
+            channels: Some(vec!["plugin:telegram".to_string()]),
+        };
+        let cmd = get_launch_command(&agent);
+        assert_eq!(
+            cmd,
+            "claude --dangerously-skip-permissions --channels plugin:telegram"
+        );
+    }
+
+    #[test]
+    fn test_get_launch_command_claude_with_model_and_channels() {
+        let agent = config::AgentConfig {
+            name: None,
+            provider: "claude-code".to_string(),
+            role: "orchestrator".to_string(),
+            model: Some("opus".to_string()),
+            description: None,
+            channels: Some(vec!["plugin:telegram".to_string()]),
+        };
+        let cmd = get_launch_command(&agent);
+        assert_eq!(
+            cmd,
+            "claude --dangerously-skip-permissions --model opus --channels plugin:telegram"
+        );
+    }
+
+    #[test]
+    fn test_get_launch_command_claude_no_channels() {
+        let agent = config::AgentConfig {
+            name: None,
+            provider: "claude-code".to_string(),
+            role: "orchestrator".to_string(),
+            model: None,
+            description: None,
+            channels: None,
+        };
+        let cmd = get_launch_command(&agent);
+        assert_eq!(cmd, "claude --dangerously-skip-permissions");
+    }
+
+    #[test]
+    fn test_get_launch_command_gemini_ignores_channels() {
+        let agent = config::AgentConfig {
+            name: None,
+            provider: "gemini-cli".to_string(),
+            role: "worker".to_string(),
+            model: None,
+            description: None,
+            channels: Some(vec!["plugin:telegram".to_string()]),
+        };
+        let cmd = get_launch_command(&agent);
+        assert_eq!(cmd, "gemini -y");
+    }
+
+    #[test]
+    fn test_generate_squad_yml_includes_channels() {
+        let result = make_wizard_result();
+        let yaml = generate_squad_yml(&result);
+        assert!(
+            yaml.contains("channels:"),
+            "YAML must contain channels section for orchestrator, got:\n{}",
+            yaml
+        );
+        assert!(
+            yaml.contains("plugin:telegram"),
+            "YAML must contain plugin:telegram channel, got:\n{}",
+            yaml
+        );
+    }
+
+    #[test]
+    fn test_generate_squad_yml_roundtrips_with_channels() {
+        let result = make_wizard_result();
+        let yaml = generate_squad_yml(&result);
+        let config: Result<crate::config::SquadConfig, _> = serde_saphyr::from_str(&yaml);
+        assert!(
+            config.is_ok(),
+            "Generated YAML with channels must parse, got: {:?}",
+            config.err()
+        );
+        let config = config.unwrap();
+        let channels = config
+            .orchestrator
+            .channels
+            .as_ref()
+            .expect("orchestrator must have channels");
+        assert_eq!(channels, &vec!["plugin:telegram".to_string()]);
     }
 }
 

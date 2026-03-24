@@ -71,6 +71,7 @@ pub struct AgentConfig {
     pub model: Option<String>, // CONF-02: optional model override
     pub description: Option<String>, // CONF-02: optional description
                                // command field is REMOVED (CONF-03: provider infers launch command)
+    pub channels: Option<Vec<String>>, // MCP channels (e.g., ["plugin:telegram"])
 }
 
 /// Sanitize a string for use as a tmux session name.
@@ -208,6 +209,7 @@ mod tests {
             role: "worker".to_string(),
             model: model.map(str::to_string),
             description: None,
+            channels: None,
         }
     }
 
