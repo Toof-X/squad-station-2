@@ -23,7 +23,7 @@ Requirements for workflow watchdog milestone. Each maps to roadmap phases.
 
 ### Operations
 
-- [ ] **OPS-01**: `squad-station watch --status` reports whether daemon is alive, PID, and uptime
+- [x] **OPS-01**: `squad-station watch --status` reports whether daemon is alive, PID, and uptime
 - [x] **OPS-02**: Watchdog supports configurable poll interval, stall threshold, and alert cooldown via CLI flags
 - [x] **OPS-03**: Watchdog supports `--dry-run` mode that logs stall detections without sending alerts
 
@@ -63,7 +63,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ALERT-02 | Phase 29 | Complete |
 | ALERT-03 | Phase 30 | Pending |
 | ALERT-04 | Phase 30 | Pending |
-| OPS-01 | Phase 29 | Pending |
+| OPS-01 | Phase 29 | Complete |
 | OPS-02 | Phase 29 | Complete |
 | OPS-03 | Phase 29 | Complete |
 
