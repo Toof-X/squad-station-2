@@ -189,6 +189,102 @@ fn write_status(
     }
 }
 
+fn show_status(squad_dir: &std::path::Path) -> Result<()> {
+    let pid_file = squad_dir.join("watch.pid");
+    let status_file = squad_dir.join("watch.status.json");
+
+    // Check PID file exists
+    if !pid_file.exists() {
+        println!("No watchdog daemon running (no PID file)");
+        return Ok(());
+    }
+
+    let pid_content = std::fs::read_to_string(&pid_file)?;
+    let pid: i32 = pid_content
+        .trim()
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid PID file"))?;
+
+    // Check if process is alive
+    let alive = {
+        #[cfg(unix)]
+        {
+            unsafe { libc::kill(pid, 0) == 0 }
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
+    };
+
+    if !alive {
+        println!("Watchdog daemon not running (stale PID {})", pid);
+        // Clean up stale files
+        let _ = std::fs::remove_file(&pid_file);
+        let _ = std::fs::remove_file(&status_file);
+        return Ok(());
+    }
+
+    // Read status file if it exists
+    if !status_file.exists() {
+        println!("Watchdog Status");
+        println!("  PID:           {}", pid);
+        println!("  Status:        alive (starting up — no status yet)");
+        return Ok(());
+    }
+
+    let status_json = std::fs::read_to_string(&status_file)?;
+    let ws: WatchStatus = serde_json::from_str(&status_json)
+        .map_err(|e| anyhow::anyhow!("Failed to parse status file: {}", e))?;
+
+    // Calculate uptime
+    let uptime = if let Ok(started) = chrono::DateTime::parse_from_rfc3339(&ws.started_at) {
+        let dur = chrono::Utc::now().signed_duration_since(started);
+        let hours = dur.num_hours();
+        let mins = dur.num_minutes() % 60;
+        if hours > 0 {
+            format!("{}h {}m", hours, mins)
+        } else {
+            format!("{}m", mins)
+        }
+    } else {
+        "unknown".to_string()
+    };
+
+    // Format last alert
+    let last_alert = match (&ws.last_alert_at, &ws.last_alert_type) {
+        (Some(at), Some(typ)) => format!(
+            "{} ({} nudge #{})",
+            at,
+            typ,
+            if typ == "idle" {
+                ws.idle_nudge_count
+            } else {
+                ws.deadlock_nudge_count
+            }
+        ),
+        _ => "none".to_string(),
+    };
+
+    println!("Watchdog Status");
+    println!("  PID:             {}", ws.pid);
+    println!("  Status:          {}", if alive { "alive" } else { "dead" });
+    println!("  Uptime:          {}", uptime);
+    println!("  Stall State:     {}", ws.stall_state);
+    println!("  Last Alert:      {}", last_alert);
+    println!(
+        "  Nudge Counts:    idle={}/{}, deadlock={}/{}",
+        ws.idle_nudge_count, ws.idle_nudge_max, ws.deadlock_nudge_count, ws.deadlock_nudge_max
+    );
+    println!("  Poll Interval:   {}s", ws.poll_interval_secs);
+    println!("  Stall Threshold: {}m", ws.stall_threshold_mins);
+    if ws.dry_run {
+        println!("  Mode:            dry-run");
+    }
+
+    Ok(())
+}
+
 pub async fn run(
     interval_secs: u64,
     stall_threshold_mins: u64,
@@ -199,10 +295,15 @@ pub async fn run(
     cooldown_secs: u64,
     debounce_cycles: u32,
 ) -> Result<()> {
-    // --status: handled in Plan 03
     if status {
-        println!("--status not yet implemented (Plan 03)");
-        return Ok(());
+        let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
+        let config = config::load_config(config_path)?;
+        let db_path = config::resolve_db_path(&config)?;
+        let squad_dir = db_path
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .to_path_buf();
+        return show_status(&squad_dir);
     }
 
     let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
