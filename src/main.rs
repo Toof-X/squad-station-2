@@ -89,7 +89,11 @@ async fn run(cli: cli::Cli) -> Result<()> {
                     stall_threshold,
                     daemon,
                     stop,
-                } => commands::watch::run(interval, stall_threshold, daemon, stop).await,
+                    dry_run,
+                    status,
+                    cooldown,
+                    debounce,
+                } => commands::watch::run(interval, stall_threshold, daemon, stop, dry_run, status, cooldown, debounce).await,
                 Clean { config, yes, all } => {
                     commands::clean::run(config, yes, all, cli.json).await
                 }

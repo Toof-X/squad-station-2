@@ -47,7 +47,15 @@ pub async fn run(
     stall_threshold_mins: u64,
     daemon: bool,
     stop: bool,
+    dry_run: bool,
+    status: bool,
+    cooldown_secs: u64,
+    debounce_cycles: u32,
 ) -> Result<()> {
+    let _ = dry_run;
+    let _ = status;
+    let _ = cooldown_secs;
+    let _ = debounce_cycles;
     let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
     let config = config::load_config(config_path)?;
     let db_path = config::resolve_db_path(&config)?;
@@ -112,7 +120,14 @@ pub async fn run(
                 .arg("--interval")
                 .arg(interval_secs.to_string())
                 .arg("--stall-threshold")
-                .arg(stall_threshold_mins.to_string());
+                .arg(stall_threshold_mins.to_string())
+                .arg("--cooldown")
+                .arg(cooldown_secs.to_string())
+                .arg("--debounce")
+                .arg(debounce_cycles.to_string());
+            if dry_run {
+                cmd.arg("--dry-run");
+            }
             // Explicitly set CWD to ensure the child finds squad.yml
             cmd.current_dir(std::env::current_dir()?);
             cmd.stdin(std::process::Stdio::null())

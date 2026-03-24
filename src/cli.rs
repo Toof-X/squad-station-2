@@ -148,6 +148,18 @@ pub enum Commands {
         /// Stop a running watchdog daemon
         #[arg(long)]
         stop: bool,
+        /// Log stall detections without injecting into tmux or running reconciliation
+        #[arg(long)]
+        dry_run: bool,
+        /// Show watchdog daemon status (PID, uptime, stall state)
+        #[arg(long)]
+        status: bool,
+        /// Alert cooldown in seconds (minimum gap between repeated alerts for same condition)
+        #[arg(long, default_value = "600")]
+        cooldown: u64,
+        /// Number of consecutive poll cycles a stall must persist before alerting
+        #[arg(long, default_value = "3")]
+        debounce: u32,
     },
     /// Kill all squad tmux sessions and delete the database
     Clean {

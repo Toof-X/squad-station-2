@@ -468,7 +468,7 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
             }
 
             // Start watchdog
-            match crate::commands::watch::run(30, 5, true, false).await {
+            match crate::commands::watch::run(30, 5, true, false, false, false, 600, 3).await {
                 Ok(()) => println!("  Watchdog: started (30s interval)"),
                 Err(e) => {
                     let msg = format!("{}", e);
@@ -695,7 +695,7 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
 
         if !is_new_tui_project {
             // Non-TUI: start watchdog after sessions
-            match crate::commands::watch::run(30, 5, true, false).await {
+            match crate::commands::watch::run(30, 5, true, false, false, false, 600, 3).await {
                 Ok(()) => println!("  Watchdog: started (30s interval)"),
                 Err(e) => {
                     let msg = format!("{}", e);
