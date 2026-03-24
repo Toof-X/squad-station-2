@@ -113,15 +113,7 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ### Active
 
-## Current Milestone: v2.0 Workflow Watchdog
-
-**Goal:** Detect stalled workflows where no agent is busy but pending/processing messages exist, and alert both the orchestrator (tmux injection) and the user (Telegram plugin).
-
-**Target features:**
-- `squad-station watchdog` long-lived background command that polls agent status and message queue
-- Stall detection: pending/processing messages with zero busy agents = deadlock
-- Orchestrator alert: inject stall notification into orchestrator's tmux pane
-- User alert: notify via Telegram MCP plugin (if available)
+(Next milestone not yet started — run `/gsd:new-milestone` to begin)
 
 ### Out of Scope
 
@@ -135,14 +127,14 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ## Context
 
-Shipped v1.9 Browser Visualization — live React Flow node graph served from embedded axum server with WebSocket streaming. Starting v2.0 Workflow Watchdog — first long-lived background process for stall detection and multi-channel alerting.
+Shipped v2.0 Workflow Watchdog — deadlock/prolonged-busy stall detection, delegation-based Telegram alerting via orchestrator MCP plugin, and CLI-level integration tests. 11 milestones shipped (v1.0–v2.0), 31 phases, 399 tests.
 Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.30, crossterm 0.29, tui-big-text 0.8, serde-saphyr, serde_json, owo-colors 3, uuid, chrono. Browser feature: axum 0.7, rust-embed 8, axum-embed 0.1, tower-http 0.5, open 5, React 19, @xyflow/react 12, @dagrejs/dagre 2, Vite 8, Tailwind CSS 4.
 Distribution: npm package `squad-station-2` downloads pre-built binary from GitHub Releases. Install auto-launches the welcome TUI in interactive terminals.
 CI/CD: GitHub Actions matrix workflow produces 4 musl/darwin binaries on v* tag push.
 Providers supported: claude-code, gemini-cli, antigravity (DB-only IDE orchestrator).
 Browser visualization: `squad-station browser` (feature-gated) starts axum server serving React Flow SPA from embedded assets. WebSocket pushes topology snapshots and delta events. dagre hierarchical layout, animated edges, dark/light theme.
 Database: `.squad/station.db` in project directory. 5 migrations (latest: 0005_routing_hints). Read-only pool for browser server (5 connections).
-Test suite: 362 tests (all green).
+Test suite: 399 tests (all green).
 
 ## Constraints
 

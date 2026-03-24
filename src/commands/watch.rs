@@ -2,6 +2,20 @@ use anyhow::{bail, Result};
 
 use crate::{commands::reconcile, config, db, tmux};
 
+/// Abstraction over time, enabling deterministic testing of debounce and cooldown logic.
+pub(crate) trait TimeProvider: Send + Sync {
+    fn now(&self) -> chrono::DateTime<chrono::Utc>;
+}
+
+/// Real time provider — delegates to `chrono::Utc::now()`.
+struct RealTime;
+
+impl TimeProvider for RealTime {
+    fn now(&self) -> chrono::DateTime<chrono::Utc> {
+        chrono::Utc::now()
+    }
+}
+
 /// Nudge state for global stall detection (Pass 2).
 /// Tracks nudge count, cooldown, and escalation.
 struct NudgeState {
@@ -419,9 +433,13 @@ pub async fn run(
 
     // Create DB pool once and reuse across ticks (avoids repeated migration checks)
     let pool = db::connect(&db_path).await?;
+    let real_tmux = tmux::RealTmux;
+    let real_time = RealTime;
 
     while is_running() {
         if let Err(e) = tick(
+            &real_tmux,
+            &real_time,
             &pool,
             &squad_dir,
             stall_threshold_mins,
@@ -478,6 +496,8 @@ extern "C" fn signal_trampoline(_sig: libc::c_int) {
 }
 
 async fn tick(
+    tmux_layer: &impl tmux::TmuxLayer,
+    time: &impl TimeProvider,
     pool: &sqlx::SqlitePool,
     squad_dir: &std::path::Path,
     stall_threshold_mins: u64,
@@ -487,7 +507,7 @@ async fn tick(
     dry_run: bool,
 ) -> Result<()> {
     // Pass 1: Individual agent reconciliation
-    let results = reconcile::reconcile_agents(pool, dry_run).await?;
+    let results = reconcile::reconcile_agents_with(tmux_layer, pool, dry_run).await?;
     for r in &results {
         if r.action != "skip" {
             log_watch(
@@ -522,16 +542,16 @@ async fn tick(
 
             if let Some(ref ts) = last_activity {
                 if let Ok(last_ts) = chrono::DateTime::parse_from_rfc3339(ts) {
-                    let idle_duration = chrono::Utc::now().signed_duration_since(last_ts);
+                    let idle_duration = time.now().signed_duration_since(last_ts);
                     let idle_mins = idle_duration.num_minutes();
 
                     if idle_mins >= stall_threshold_mins as i64 {
-                        let now = chrono::Utc::now();
+                        let now = time.now();
                         if nudge_state.should_nudge(now) {
                             // Find orchestrator and nudge
                             if let Ok(Some(orch)) = db::agents::get_orchestrator(pool).await {
                                 if orch.tool != "antigravity"
-                                    && tmux::session_exists(&orch.name).await
+                                    && tmux_layer.session_exists(&orch.name).await
                                 {
                                     let msg = match nudge_state.count {
                                         0 => format!(
@@ -548,7 +568,7 @@ async fn tick(
                                         ),
                                     };
                                     if !dry_run {
-                                        let _ = tmux::send_keys_literal(&orch.name, &msg).await;
+                                        let _ = tmux_layer.send_keys_literal(&orch.name, &msg).await;
                                     }
                                     log_watch(
                                         squad_dir,
@@ -580,7 +600,7 @@ async fn tick(
     for agent in &agents {
         if agent.status == "busy" {
             if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&agent.status_updated_at) {
-                let busy_mins = chrono::Utc::now().signed_duration_since(ts).num_minutes();
+                let busy_mins = time.now().signed_duration_since(ts).num_minutes();
                 if busy_mins > 30 {
                     log_watch(
                         squad_dir,
@@ -594,13 +614,13 @@ async fn tick(
                     if !dry_run {
                         if let Ok(Some(orch)) = db::agents::get_orchestrator(pool).await {
                             if orch.tool != "antigravity"
-                                && tmux::session_exists(&orch.name).await
+                                && tmux_layer.session_exists(&orch.name).await
                             {
                                 let msg = format!(
                                     "\u{1f6a8} [SQUAD WATCHDOG] Agent '{}' busy for {}m — may be stuck. IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER. Check: squad-station peek {}",
                                     agent.name, busy_mins, agent.name
                                 );
-                                let _ = tmux::send_keys_literal(&orch.name, &msg).await;
+                                let _ = tmux_layer.send_keys_literal(&orch.name, &msg).await;
                             }
                         }
                     }
@@ -615,7 +635,7 @@ async fn tick(
 
     if !processing_msgs.is_empty() && busy_agents.is_empty() {
         // Filter by message age — only count messages older than stall_threshold
-        let now = chrono::Utc::now();
+        let now = time.now();
         let threshold = chrono::Duration::minutes(stall_threshold_mins as i64);
         let stale_msgs: Vec<_> = processing_msgs
             .iter()
@@ -640,7 +660,7 @@ async fn tick(
                 ),
             );
 
-            let now_utc = chrono::Utc::now();
+            let now_utc = time.now();
             if deadlock_state.should_nudge(now_utc) {
                 // Build message IDs string (truncate to first 5 for readability)
                 let msg_ids: Vec<&str> = stale_msgs.iter().map(|(id, _)| id.as_str()).take(5).collect();
@@ -675,9 +695,9 @@ async fn tick(
                 };
 
                 if let Ok(Some(orch)) = db::agents::get_orchestrator(pool).await {
-                    if orch.tool != "antigravity" && tmux::session_exists(&orch.name).await {
+                    if orch.tool != "antigravity" && tmux_layer.session_exists(&orch.name).await {
                         if !dry_run {
-                            let _ = tmux::send_keys_literal(&orch.name, &msg).await;
+                            let _ = tmux_layer.send_keys_literal(&orch.name, &msg).await;
                         }
                         log_watch(
                             squad_dir,
@@ -978,5 +998,740 @@ mod tests {
         assert!(msg.contains("42m"), "must contain busy minutes");
         assert!(msg.contains("squad-station peek agent-7"), "must contain peek command");
         assert!(msg.contains('\u{1f6a8}'), "must have alarm emoji prefix");
+    }
+
+    // ── Integration test infrastructure ──────────────────────────────────
+
+    /// Mock tmux layer that records all calls and returns configurable results.
+    struct MockTmux {
+        /// All sessions that "exist" in this mock.
+        live_sessions: std::collections::HashSet<String>,
+        /// Captured send_keys_literal calls: (target, text).
+        sent: std::sync::Mutex<Vec<(String, String)>>,
+    }
+
+    impl MockTmux {
+        fn new(live_sessions: &[&str]) -> Self {
+            Self {
+                live_sessions: live_sessions.iter().map(|s| s.to_string()).collect(),
+                sent: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn sent_messages(&self) -> Vec<(String, String)> {
+            self.sent.lock().unwrap().clone()
+        }
+    }
+
+    impl tmux::TmuxLayer for MockTmux {
+        async fn send_keys_literal(&self, target: &str, text: &str) -> Result<()> {
+            self.sent.lock().unwrap().push((target.to_string(), text.to_string()));
+            Ok(())
+        }
+
+        async fn session_exists(&self, session_name: &str) -> bool {
+            self.live_sessions.contains(session_name)
+        }
+
+        async fn capture_pane_last_line(&self, _session_name: &str) -> Option<String> {
+            // Return an active-looking prompt — prevents reconcile from
+            // marking busy agents as idle (which would mask deadlock tests).
+            Some("working...".to_string())
+        }
+    }
+
+    /// Controllable time provider for deterministic testing.
+    struct TestTime {
+        current: std::sync::Mutex<chrono::DateTime<chrono::Utc>>,
+    }
+
+    impl TestTime {
+        fn new(base: chrono::DateTime<chrono::Utc>) -> Self {
+            Self {
+                current: std::sync::Mutex::new(base),
+            }
+        }
+
+        fn advance(&self, duration: chrono::Duration) {
+            let mut t = self.current.lock().unwrap();
+            *t = *t + duration;
+        }
+
+}
+
+    impl TimeProvider for TestTime {
+        fn now(&self) -> chrono::DateTime<chrono::Utc> {
+            *self.current.lock().unwrap()
+        }
+    }
+
+    /// Create an isolated test DB with migrations applied (same as tests/helpers.rs).
+    async fn setup_test_db() -> sqlx::SqlitePool {
+        let tmp = tempfile::NamedTempFile::new().expect("failed to create tempfile");
+        let path = tmp.path().to_owned();
+        std::mem::forget(tmp);
+
+        let opts = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true)
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
+
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .expect("failed to create test pool");
+
+        sqlx::migrate!("./src/db/migrations")
+            .run(&pool)
+            .await
+            .expect("failed to run migrations");
+
+        pool
+    }
+
+    /// Seed an orchestrator + worker in the DB. Returns (orch_name, worker_name).
+    async fn seed_agents(pool: &sqlx::SqlitePool) -> (String, String) {
+        let orch = "test-orch";
+        let worker = "test-worker";
+        db::agents::insert_agent(pool, orch, "claude-code", "orchestrator", None, None, None)
+            .await
+            .unwrap();
+        db::agents::insert_agent(pool, worker, "claude-code", "worker", None, None, None)
+            .await
+            .unwrap();
+        (orch.to_string(), worker.to_string())
+    }
+
+    /// Insert a processing message from orchestrator to worker, backdated by `age_mins`.
+    async fn insert_old_processing_msg(
+        pool: &sqlx::SqlitePool,
+        from: &str,
+        to: &str,
+        age_mins: i64,
+    ) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        let created = (chrono::Utc::now() - chrono::Duration::minutes(age_mins)).to_rfc3339();
+        sqlx::query(
+            "INSERT INTO messages (id, agent_name, from_agent, to_agent, type, task, status, priority, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, 'task_request', 'test task', 'processing', 'normal', ?, ?)"
+        )
+        .bind(&id)
+        .bind(to)
+        .bind(from)
+        .bind(to)
+        .bind(&created)
+        .bind(&created)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    // ── Integration tests: full tick loop ────────────────────────────────
+
+    #[tokio::test]
+    async fn test_tick_deadlock_fires_after_debounce() {
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch]);
+
+        // Set agents to idle
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "idle").await.unwrap();
+
+        // Insert a processing message older than threshold (5 mins old, threshold = 1 min)
+        insert_old_processing_msg(&pool, &orch, &worker, 5).await;
+
+        // Time set to "now" (messages are already old relative to real Utc::now)
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(600, 3, 3); // debounce = 3 ticks
+        let mut last_count = None;
+
+        // Tick 1 & 2: debounce accumulates, no alert yet
+        for i in 0..2 {
+            tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+                .await.unwrap();
+            assert!(
+                mock_tmux.sent_messages().iter().all(|(_, msg)| !msg.contains("Deadlock")),
+                "tick {}: should NOT fire deadlock alert during debounce", i + 1
+            );
+        }
+
+        // Tick 3: debounce threshold reached → deadlock alert fires
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        let sent = mock_tmux.sent_messages();
+        let deadlock_msgs: Vec<_> = sent.iter().filter(|(_, msg)| msg.contains("Deadlock detected")).collect();
+        assert_eq!(deadlock_msgs.len(), 1, "exactly one deadlock alert should fire after 3 ticks");
+        assert!(deadlock_msgs[0].1.contains("IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN"));
+        assert_eq!(deadlock_msgs[0].0, orch, "alert must target orchestrator");
+    }
+
+    #[tokio::test]
+    async fn test_tick_no_false_alert_for_pending_only() {
+        // Pending messages (not processing) should NOT trigger deadlock
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "idle").await.unwrap();
+
+        // Insert a message and immediately complete it (status = 'completed')
+        let msg_id = insert_old_processing_msg(&pool, &orch, &worker, 10).await;
+        db::messages::complete_by_id(&pool, &msg_id).await.unwrap();
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(600, 3, 1);
+        let mut last_count = None;
+
+        // Run 5 ticks — no deadlock should fire (no processing messages)
+        for _ in 0..5 {
+            tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+                .await.unwrap();
+        }
+
+        let sent = mock_tmux.sent_messages();
+        assert!(
+            sent.iter().all(|(_, msg)| !msg.contains("Deadlock")),
+            "no deadlock alert should fire when only completed messages exist"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tick_no_deadlock_when_agent_is_busy() {
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch, &worker]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        // Worker is BUSY — so deadlock condition (0 busy agents) is NOT met
+        db::agents::update_agent_status(&pool, &worker, "busy").await.unwrap();
+
+        insert_old_processing_msg(&pool, &orch, &worker, 10).await;
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(600, 3, 1);
+        let mut last_count = None;
+
+        for _ in 0..5 {
+            tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+                .await.unwrap();
+        }
+
+        let sent = mock_tmux.sent_messages();
+        assert!(
+            sent.iter().all(|(_, msg)| !msg.contains("Deadlock")),
+            "no deadlock when a busy agent exists"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tick_activity_resets_nudges() {
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "idle").await.unwrap();
+
+        insert_old_processing_msg(&pool, &orch, &worker, 10).await;
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(600, 3, 3);
+        let mut last_count = None;
+
+        // Run 2 ticks to accumulate debounce
+        for _ in 0..2 {
+            tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+                .await.unwrap();
+        }
+        assert_eq!(deadlock.consecutive_ticks, 2, "2 ticks accumulated");
+
+        // Simulate new message activity (inserts a new message → total_count changes)
+        db::messages::insert_message(&pool, &orch, &worker, "task_request", "new task", "normal", None)
+            .await.unwrap();
+
+        // Next tick sees count change → resets deadlock state first,
+        // then re-evaluates and finds deadlock condition still holds (old msg still processing),
+        // so consecutive_ticks goes from 0 → 1 within the same tick.
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        assert_eq!(deadlock.consecutive_ticks, 1, "debounce must restart from 1 after reset (condition still holds)");
+        assert_eq!(deadlock.count, 0, "nudge count must reset on activity");
+    }
+
+    #[tokio::test]
+    async fn test_tick_cooldown_prevents_repeated_alerts() {
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "idle").await.unwrap();
+
+        insert_old_processing_msg(&pool, &orch, &worker, 10).await;
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3); // 600s cooldown
+        let mut deadlock = DeadlockState::new(600, 3, 1); // 1-tick debounce for easy testing
+        let mut last_count = None;
+
+        // Tick 1: alert fires (debounce=1, first nudge)
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        let count_after_first = mock_tmux.sent_messages().iter()
+            .filter(|(_, msg)| msg.contains("Deadlock")).count();
+        assert_eq!(count_after_first, 1, "first alert fires");
+
+        // Tick 2-5: still within cooldown → no additional alert
+        for _ in 0..4 {
+            tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+                .await.unwrap();
+        }
+
+        let count_during_cooldown = mock_tmux.sent_messages().iter()
+            .filter(|(_, msg)| msg.contains("Deadlock")).count();
+        assert_eq!(count_during_cooldown, 1, "no additional alerts during cooldown");
+
+        // Advance time past cooldown
+        time.advance(chrono::Duration::seconds(601));
+
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        let count_after_cooldown = mock_tmux.sent_messages().iter()
+            .filter(|(_, msg)| msg.contains("Deadlock")).count();
+        assert_eq!(count_after_cooldown, 2, "second alert fires after cooldown");
+    }
+
+    #[tokio::test]
+    async fn test_tick_dry_run_no_tmux_injection() {
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "idle").await.unwrap();
+
+        insert_old_processing_msg(&pool, &orch, &worker, 10).await;
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(600, 3, 1);
+        let mut last_count = None;
+
+        // Run with dry_run = true
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, true)
+            .await.unwrap();
+
+        assert!(
+            mock_tmux.sent_messages().is_empty(),
+            "dry-run must not inject any tmux messages"
+        );
+        // But deadlock state should still advance
+        assert_eq!(deadlock.count, 1, "nudge count still tracks in dry-run");
+
+        // Verify log file records DRY-RUN
+        let log_content = std::fs::read_to_string(tmp.path().join("log").join("watch.log")).unwrap();
+        assert!(log_content.contains("DRY-RUN"), "log must show DRY-RUN entries");
+    }
+
+    #[tokio::test]
+    async fn test_tick_young_messages_not_stale() {
+        // Messages younger than stall_threshold should NOT trigger deadlock
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "idle").await.unwrap();
+
+        // Insert a processing message that is only 30 seconds old (threshold = 5 mins)
+        let id = uuid::Uuid::new_v4().to_string();
+        let created = (chrono::Utc::now() - chrono::Duration::seconds(30)).to_rfc3339();
+        sqlx::query(
+            "INSERT INTO messages (id, agent_name, from_agent, to_agent, type, task, status, priority, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, 'task_request', 'new task', 'processing', 'normal', ?, ?)"
+        )
+        .bind(&id)
+        .bind(&worker)
+        .bind(&orch)
+        .bind(&worker)
+        .bind(&created)
+        .bind(&created)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(600, 3, 1); // 1-tick debounce
+        let mut last_count = None;
+
+        // stall_threshold = 5 mins, message is 30s old → not stale
+        for _ in 0..5 {
+            tick(&mock_tmux, &time, &pool, tmp.path(), 5, &mut nudge, &mut deadlock, &mut last_count, false)
+                .await.unwrap();
+        }
+
+        let sent = mock_tmux.sent_messages();
+        assert!(
+            sent.iter().all(|(_, msg)| !msg.contains("Deadlock")),
+            "young processing messages must not trigger deadlock"
+        );
+        assert_eq!(deadlock.consecutive_ticks, 0, "debounce should be cleared for young msgs");
+    }
+
+    #[tokio::test]
+    async fn test_tick_debounce_resets_when_condition_clears() {
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch, &worker]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "idle").await.unwrap();
+
+        let msg_id = insert_old_processing_msg(&pool, &orch, &worker, 10).await;
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(600, 3, 3);
+        let mut last_count = None;
+
+        // 2 ticks → debounce at 2
+        for _ in 0..2 {
+            tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+                .await.unwrap();
+        }
+        assert_eq!(deadlock.consecutive_ticks, 2);
+
+        // Complete the message → condition clears
+        db::messages::complete_by_id(&pool, &msg_id).await.unwrap();
+
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        assert_eq!(deadlock.consecutive_ticks, 0, "debounce must reset when condition clears");
+    }
+
+    #[tokio::test]
+    async fn test_tick_max_nudges_stops_alerts() {
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "idle").await.unwrap();
+
+        insert_old_processing_msg(&pool, &orch, &worker, 10).await;
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(0, 3, 1); // 0 cooldown, 3 max, 1-tick debounce
+        let mut last_count = None;
+
+        // Fire 3 nudges
+        for i in 0..3 {
+            time.advance(chrono::Duration::seconds(1));
+            tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+                .await.unwrap();
+            let count = mock_tmux.sent_messages().iter()
+                .filter(|(_, msg)| msg.contains("Deadlock") || msg.contains("CRITICAL")).count();
+            assert_eq!(count, i + 1, "nudge {} should have fired", i + 1);
+        }
+
+        // 4th tick: max reached, no more alerts
+        time.advance(chrono::Duration::seconds(1));
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        let final_count = mock_tmux.sent_messages().iter()
+            .filter(|(_, msg)| msg.contains("Deadlock") || msg.contains("CRITICAL")).count();
+        assert_eq!(final_count, 3, "no more alerts after max nudges");
+
+        // Verify log contains DEADLOCK_UNRESOLVED
+        let log = std::fs::read_to_string(tmp.path().join("log").join("watch.log")).unwrap();
+        assert!(log.contains("DEADLOCK_UNRESOLVED"), "must log unresolved state");
+    }
+
+    #[tokio::test]
+    async fn test_tick_prolonged_busy_alert() {
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch, &worker]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "busy").await.unwrap();
+
+        // Backdate the worker's busy status to 45 minutes ago
+        let old_ts = (chrono::Utc::now() - chrono::Duration::minutes(45)).to_rfc3339();
+        sqlx::query("UPDATE agents SET status_updated_at = ? WHERE name = ?")
+            .bind(&old_ts)
+            .bind(&worker)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(600, 3, 3);
+        let mut last_count = None;
+
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        let sent = mock_tmux.sent_messages();
+        let busy_alerts: Vec<_> = sent.iter().filter(|(_, msg)| msg.contains("busy for")).collect();
+        assert_eq!(busy_alerts.len(), 1, "prolonged-busy alert should fire");
+        assert!(busy_alerts[0].1.contains(&worker), "alert must mention the stuck agent");
+        assert!(busy_alerts[0].1.contains("TELEGRAM MCP PLUGIN"), "must include Telegram instruction");
+    }
+
+    // ── Telegram relay integration tests ────────────────────────────────
+    // Verify that actual tick() injections contain the correct Telegram MCP
+    // instruction at each escalation level, exercising the full code path
+    // (DB → deadlock detection → message formatting → tmux injection).
+
+    #[tokio::test]
+    async fn test_tick_deadlock_escalation_telegram_instructions() {
+        // Exercises all 3 deadlock escalation levels through real tick() calls
+        // and verifies each produces the correct Telegram relay instruction.
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "idle").await.unwrap();
+
+        insert_old_processing_msg(&pool, &orch, &worker, 10).await;
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(0, 3, 1); // 0 cooldown, 1-tick debounce
+        let mut last_count = None;
+
+        // Nudge 0: "SEND THIS ALERT TO THE USER"
+        time.advance(chrono::Duration::seconds(1));
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        let msgs = mock_tmux.sent_messages();
+        assert_eq!(msgs.len(), 1);
+        assert!(
+            msgs[0].1.contains("IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO SEND THIS ALERT TO THE USER"),
+            "nudge 0 must instruct orchestrator to SEND alert via Telegram, got: {}", msgs[0].1
+        );
+        assert!(msgs[0].1.contains("Deadlock detected"), "nudge 0 label");
+
+        // Nudge 1: "ALERT THE USER"
+        time.advance(chrono::Duration::seconds(1));
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        let msgs = mock_tmux.sent_messages();
+        assert_eq!(msgs.len(), 2);
+        assert!(
+            msgs[1].1.contains("IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER"),
+            "nudge 1 must instruct orchestrator to ALERT via Telegram, got: {}", msgs[1].1
+        );
+        assert!(msgs[1].1.contains("Deadlock persists"), "nudge 1 label");
+
+        // Nudge 2: CRITICAL — "ALERT THE USER"
+        time.advance(chrono::Duration::seconds(1));
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        let msgs = mock_tmux.sent_messages();
+        assert_eq!(msgs.len(), 3);
+        assert!(
+            msgs[2].1.contains("IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER"),
+            "nudge 2 must instruct orchestrator to ALERT via Telegram, got: {}", msgs[2].1
+        );
+        assert!(msgs[2].1.contains("CRITICAL"), "nudge 2 must be CRITICAL level");
+        assert!(msgs[2].1.contains("Manual intervention required"), "nudge 2 must signal final escalation");
+    }
+
+    #[tokio::test]
+    async fn test_tick_prolonged_busy_telegram_instruction() {
+        // Verify prolonged-busy alerts (Pass 3) include Telegram relay instruction
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch, &worker]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "busy").await.unwrap();
+
+        // Backdate busy status to 60 minutes ago
+        let old_ts = (chrono::Utc::now() - chrono::Duration::minutes(60)).to_rfc3339();
+        sqlx::query("UPDATE agents SET status_updated_at = ? WHERE name = ?")
+            .bind(&old_ts)
+            .bind(&worker)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(600, 3, 3);
+        let mut last_count = None;
+
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        let msgs = mock_tmux.sent_messages();
+        let busy_alert = msgs.iter().find(|(_, msg)| msg.contains("busy for"));
+        assert!(busy_alert.is_some(), "prolonged-busy alert must fire");
+
+        let (target, text) = busy_alert.unwrap();
+        assert_eq!(target, &orch, "alert targets orchestrator");
+        assert!(
+            text.contains("IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER"),
+            "prolonged-busy must contain Telegram ALERT instruction, got: {text}"
+        );
+        assert!(text.contains(&worker), "must name the stuck agent");
+        assert!(text.contains("squad-station peek"), "must include diagnostic command");
+    }
+
+    #[tokio::test]
+    async fn test_tick_deadlock_alert_contains_message_ids_and_age() {
+        // Verify the Telegram-destined alert includes actionable content:
+        // stuck message IDs and oldest message age
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "idle").await.unwrap();
+
+        // Insert two processing messages with different ages
+        let msg1 = insert_old_processing_msg(&pool, &orch, &worker, 15).await;
+        let msg2 = insert_old_processing_msg(&pool, &orch, &worker, 8).await;
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(600, 3, 1); // 1-tick debounce
+        let mut last_count = None;
+
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        let msgs = mock_tmux.sent_messages();
+        let alert = msgs.iter().find(|(_, msg)| msg.contains("Deadlock detected"));
+        assert!(alert.is_some(), "deadlock alert must fire");
+
+        let text = &alert.unwrap().1;
+        // Both message IDs should appear (truncated to first 5 chars of UUID)
+        assert!(text.contains(&msg1[..5]) || text.contains(&msg1), "must contain first msg ID");
+        assert!(text.contains(&msg2[..5]) || text.contains(&msg2), "must contain second msg ID");
+        // "2 processing message(s)"
+        assert!(text.contains("2 processing message(s)"), "must report correct stale count");
+        // Age should be ~15m (oldest message)
+        assert!(text.contains("15m"), "must report oldest message age");
+        // Telegram instruction
+        assert!(text.contains("TELEGRAM MCP PLUGIN"), "must include Telegram relay instruction");
+    }
+
+    #[tokio::test]
+    async fn test_tick_idle_nudge_does_not_contain_telegram_instruction() {
+        // Idle nudges (Pass 2) are informational — they should NOT contain
+        // the Telegram relay instruction (only deadlock and prolonged-busy do)
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let (orch, worker) = seed_agents(&pool).await;
+        let mock_tmux = MockTmux::new(&[&orch]);
+
+        db::agents::update_agent_status(&pool, &orch, "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, &worker, "idle").await.unwrap();
+
+        // Insert a completed message with old timestamp to trigger idle detection
+        let old_ts = (chrono::Utc::now() - chrono::Duration::minutes(10)).to_rfc3339();
+        let id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO messages (id, agent_name, from_agent, to_agent, type, task, status, priority, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, 'task_request', 'old task', 'completed', 'normal', ?, ?)"
+        )
+        .bind(&id)
+        .bind(&worker)
+        .bind(&orch)
+        .bind(&worker)
+        .bind(&old_ts)
+        .bind(&old_ts)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(600, 3, 3);
+        let mut last_count = None;
+
+        // stall_threshold = 1 min, last activity = 10 mins ago → idle nudge fires
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        let msgs = mock_tmux.sent_messages();
+        let idle_msgs: Vec<_> = msgs.iter().filter(|(_, msg)| msg.contains("SQUAD WATCHDOG")).collect();
+        assert!(!idle_msgs.is_empty(), "idle nudge should fire");
+
+        for (_, text) in &idle_msgs {
+            assert!(
+                !text.contains("TELEGRAM MCP PLUGIN"),
+                "idle nudge must NOT contain Telegram instruction — only deadlock/busy alerts do. Got: {text}"
+            );
+            assert!(text.contains("System idle"), "should be an idle nudge");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tick_antigravity_orchestrator_no_telegram_alert() {
+
+        // Antigravity orchestrator should not receive tmux injections
+        let pool = setup_test_db().await;
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        db::agents::insert_agent(&pool, "orch", "antigravity", "orchestrator", None, None, None)
+            .await.unwrap();
+        db::agents::insert_agent(&pool, "worker", "claude-code", "worker", None, None, None)
+            .await.unwrap();
+        db::agents::update_agent_status(&pool, "orch", "idle").await.unwrap();
+        db::agents::update_agent_status(&pool, "worker", "idle").await.unwrap();
+
+        insert_old_processing_msg(&pool, "orch", "worker", 10).await;
+
+        let mock_tmux = MockTmux::new(&["orch", "worker"]);
+        let time = TestTime::new(chrono::Utc::now());
+        let mut nudge = NudgeState::new(600, 3);
+        let mut deadlock = DeadlockState::new(600, 3, 1);
+        let mut last_count = None;
+
+        tick(&mock_tmux, &time, &pool, tmp.path(), 1, &mut nudge, &mut deadlock, &mut last_count, false)
+            .await.unwrap();
+
+        assert!(
+            mock_tmux.sent_messages().is_empty(),
+            "antigravity orchestrator must not receive tmux messages"
+        );
     }
 }

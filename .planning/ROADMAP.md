@@ -12,7 +12,7 @@
 - ✅ **v1.7 First-Run Onboarding** — Phases 20-21 (shipped 2026-03-18)
 - ✅ **v1.8 Smart Agent Management** — Phases 22-24 (shipped 2026-03-19)
 - ✅ **v1.9 Browser Visualization** — Phases 25-28 (shipped 2026-03-22)
-- ✅ **v2.0 Workflow Watchdog** — Phases 29-31 (shipped 2026-03-24)
+- ✅ **v2.0 Workflow Watchdog** — Phases 29-31 ([details](milestones/v2.0-ROADMAP.md), shipped 2026-03-24)
 
 ## Phases
 
@@ -84,65 +84,14 @@ Fleet Status metrics in orchestrator context, dynamic agent cloning command, 11 
 
 Embedded axum web server with React + React Flow SPA served from binary, live node-graph visualization with event-driven WebSocket streaming, animated in-flight edges, and dark/light theme.
 
-- [x] Phase 25: Architecture Research (2/2 plans) — completed 2026-03-22
-- [x] Phase 26: Axum Server & CLI Command (2/2 plans) — completed 2026-03-22
-- [x] Phase 27: Event-Driven WebSocket Streaming (2/2 plans) — completed 2026-03-22
-- [x] Phase 28: React Flow Node Graph (2/2 plans) — completed 2026-03-22
-
 </details>
 
-### v2.0 Workflow Watchdog (In Progress)
+<details>
+<summary>✅ v2.0 Workflow Watchdog (Phases 29-31) — SHIPPED 2026-03-24</summary>
 
-**Milestone Goal:** Detect stalled workflows where no agent is busy but pending/processing messages exist, and alert both the orchestrator (tmux injection) and the user (Telegram).
+Watchdog daemon with deadlock/prolonged-busy stall detection, delegation-based Telegram alerting via orchestrator MCP plugin, configurable operations flags (--status, --dry-run, debounce, cooldown), and CLI-level integration tests with full requirement traceability.
 
-- [x] **Phase 29: Watchdog Core Correctness** - Deadlock detection, debounce, deduplication, prolonged-busy injection, configurable operations flags, and --status subcommand (completed 2026-03-24)
-- [x] **Phase 30: Telegram Integration** - Delegation-based Telegram alerting via orchestrator MCP plugin: updated watchdog messages with relay instructions, --channels config, and orchestrator context section (completed 2026-03-24)
-- [x] **Phase 31: End-to-End Test Coverage** - CLI-level integration tests for watch subcommand: --status output, --dry-run lifecycle, --help flag completeness, channels config parsing, and v2.0 requirement traceability (completed 2026-03-24)
-
-## Phase Details
-
-### Phase 29: Watchdog Core Correctness
-**Goal**: Users can run `squad-station watch` and have the daemon reliably detect real stalls — deadlocks and prolonged-busy agents — without false positives, while safely coexisting with all other CLI commands
-**Depends on**: Phase 28 (v1.9 shipped baseline)
-**Requirements**: DETECT-01, DETECT-02, DETECT-03, DETECT-04, ALERT-01, ALERT-02, OPS-01, OPS-02, OPS-03
-**Success Criteria** (what must be TRUE):
-  1. Running `watch --status` after `watch --daemon` prints daemon PID, alive status, and uptime
-  2. A deadlock state (processing messages present, zero busy agents) triggers a tmux injection into the orchestrator pane with agent count, pending message count, and stall duration — but only after N consecutive poll cycles confirm it (debounce)
-  3. A stall alert fires exactly once per stall event; subsequent polls during the same stall do not re-inject until the configurable cooldown expires
-  4. Messages younger than the configurable age threshold do not trigger stall alerts
-  5. Running `watch --dry-run` logs stall detections to watch.log without injecting into any tmux pane
-**Plans**: 3 plans
-Plans:
-- [x] 29-01-PLAN.md — CLI flags, DB query, main.rs dispatch (foundation)
-- [x] 29-02-PLAN.md — Deadlock detection, debounce, message age, dry-run, prolonged-busy injection
-- [x] 29-03-PLAN.md — Status file writing and --status subcommand
-
-### Phase 30: Telegram Integration
-**Goal**: When a stall is detected, the user receives a Telegram message on their phone — delegated through the orchestrator's MCP plugin, with no HTTP client in the Rust binary
-**Depends on**: Phase 29
-**Requirements**: ALERT-03, ALERT-04
-**Success Criteria** (what must be TRUE):
-  1. Watchdog deadlock and prolonged-busy alert messages contain explicit "IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN" instruction for the orchestrator
-  2. The orchestrator context markdown includes a "Watchdog Alert Relay" section explaining how to handle Telegram relay requests
-  3. The orchestrator's Claude Code session is launched with `--channels plugin:telegram` when the channels config field is present in squad.yml
-**Plans**: 2 plans
-Plans:
-- [x] 30-01-PLAN.md — Update watchdog alert messages and orchestrator context with Telegram relay instructions
-- [x] 30-02-PLAN.md — Add channels config field, wire through launch command and YAML generation, rewrite requirements
-
-### Phase 31: End-to-End Test Coverage
-**Goal**: The full tick loop behavior is verified by integration tests that run against a real SQLite DB, so correctness of deadlock detection, debounce, and deduplication is not only manually verifiable
-**Depends on**: Phase 30
-**Requirements**: (test coverage for all v2.0 requirements — no new feature requirements)
-**Success Criteria** (what must be TRUE):
-  1. `tests/test_watchdog.rs` exists with CLI-level tests exercising the binary
-  2. `watch --status` output is tested (daemon running vs not running)
-  3. `watch --dry-run` is tested at CLI level (exits cleanly, log file created)
-  4. `cargo test` passes with all new tests green alongside the existing suite
-  5. All v2.0 requirements have at least one test covering them (traceability verified)
-**Plans**: 1 plan
-Plans:
-- [x] 31-01-PLAN.md — CLI-level watchdog tests: --status, --dry-run, --help, flag validation, channels config
+</details>
 
 ## Progress
 

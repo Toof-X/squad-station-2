@@ -1,8 +1,7 @@
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
-use tokio::process::Command;
 
-use crate::{config, db, providers, tmux};
+use crate::{config, db, providers, tmux::{self, TmuxLayer}};
 
 pub async fn run(dry_run: bool, json: bool) -> anyhow::Result<()> {
     let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
@@ -57,6 +56,15 @@ pub async fn reconcile_agents(
     pool: &sqlx::SqlitePool,
     dry_run: bool,
 ) -> anyhow::Result<Vec<ReconcileResult>> {
+    reconcile_agents_with(&tmux::RealTmux, pool, dry_run).await
+}
+
+/// Reconcile with an injectable TmuxLayer — used by watchdog tests.
+pub async fn reconcile_agents_with(
+    tmux_layer: &impl TmuxLayer,
+    pool: &sqlx::SqlitePool,
+    dry_run: bool,
+) -> anyhow::Result<Vec<ReconcileResult>> {
     let agents = db::agents::list_agents(pool).await?;
     let mut results = Vec::new();
 
@@ -78,7 +86,7 @@ pub async fn reconcile_agents(
             }
         }
 
-        if !tmux::session_exists(&agent.name).await {
+        if !tmux_layer.session_exists(&agent.name).await {
             // Session is dead
             if !dry_run {
                 db::agents::update_agent_status(pool, &agent.name, "dead").await?;
@@ -91,7 +99,7 @@ pub async fn reconcile_agents(
             continue;
         }
 
-        if pane_looks_idle(&agent.name, &agent.tool).await {
+        if pane_looks_idle_with(tmux_layer, &agent.name, &agent.tool).await {
             // Agent is idle in tmux but busy in DB — signal was lost
             if !dry_run {
                 // Complete all processing messages
@@ -109,12 +117,14 @@ pub async fn reconcile_agents(
 
                 // Notify orchestrator
                 if let Ok(Some(orch)) = db::agents::get_orchestrator(pool).await {
-                    if orch.tool != "antigravity" && tmux::session_exists(&orch.name).await {
+                    if orch.tool != "antigravity"
+                        && tmux_layer.session_exists(&orch.name).await
+                    {
                         let notification = format!(
                             "[SQUAD RECONCILE] Agent '{}' completed {} task(s) (signal was lost). Run: squad-station status",
                             agent.name, completed_count
                         );
-                        let _ = tmux::send_keys_literal(&orch.name, &notification).await;
+                        let _ = tmux_layer.send_keys_literal(&orch.name, &notification).await;
                     }
                 }
 
@@ -142,23 +152,14 @@ pub async fn reconcile_agents(
     Ok(results)
 }
 
-/// Detect if an agent's tmux pane shows an idle prompt.
-/// Provider-aware: each provider has different prompt patterns and terminal modes.
-async fn pane_looks_idle(session_name: &str, provider: &str) -> bool {
-    let text = capture_pane(session_name).await;
-
-    // If capture is empty, try alternate screen buffer (Gemini CLI uses full-screen TUI)
-    let text = if text.trim().is_empty() && providers::uses_alternate_buffer(provider) {
-        capture_pane_alternate(session_name).await
-    } else {
-        text
-    };
-
-    let last_line = text
-        .lines()
-        .rev()
-        .find(|l| !l.trim().is_empty())
-        .unwrap_or("");
+/// Detect if an agent's tmux pane shows an idle prompt (injectable for testing).
+async fn pane_looks_idle_with(
+    tmux_layer: &impl TmuxLayer,
+    session_name: &str,
+    provider: &str,
+) -> bool {
+    let last_line = tmux_layer.capture_pane_last_line(session_name).await;
+    let last_line = last_line.as_deref().unwrap_or("");
 
     if let Some(patterns) = providers::idle_patterns(provider) {
         patterns.iter().any(|p| last_line.contains(p))
@@ -167,28 +168,6 @@ async fn pane_looks_idle(session_name: &str, provider: &str) -> bool {
     }
 }
 
-async fn capture_pane(session: &str) -> String {
-    Command::new("tmux")
-        .args(["capture-pane", "-t", session, "-p", "-l", "5"])
-        .output()
-        .await
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_default()
-}
-
-/// Capture from alternate screen buffer (for full-screen TUI apps like Gemini CLI)
-async fn capture_pane_alternate(session: &str) -> String {
-    Command::new("tmux")
-        .args(["capture-pane", "-t", session, "-p", "-a", "-l", "5"])
-        .output()
-        .await
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-        .unwrap_or_default()
-}
 
 #[cfg(test)]
 mod tests {

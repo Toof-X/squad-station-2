@@ -1,6 +1,46 @@
 use anyhow::{bail, Result};
 use tokio::process::Command;
 
+// --- TmuxLayer trait for testability ---
+
+/// Abstraction over tmux interactions, enabling mock implementations for testing.
+/// The real implementation (`RealTmux`) delegates to actual tmux commands.
+/// Tests use `MockTmux` to avoid requiring a real tmux server.
+pub trait TmuxLayer: Send + Sync {
+    fn send_keys_literal(
+        &self,
+        target: &str,
+        text: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn session_exists(
+        &self,
+        session_name: &str,
+    ) -> impl std::future::Future<Output = bool> + Send;
+
+    fn capture_pane_last_line(
+        &self,
+        session_name: &str,
+    ) -> impl std::future::Future<Output = Option<String>> + Send;
+}
+
+/// Real tmux implementation — delegates to the module-level functions.
+pub struct RealTmux;
+
+impl TmuxLayer for RealTmux {
+    async fn send_keys_literal(&self, target: &str, text: &str) -> Result<()> {
+        send_keys_literal(target, text).await
+    }
+
+    async fn session_exists(&self, session_name: &str) -> bool {
+        session_exists(session_name).await
+    }
+
+    async fn capture_pane_last_line(&self, session_name: &str) -> Option<String> {
+        capture_pane_last_line(session_name).await
+    }
+}
+
 // --- Argument builders (testable without invoking tmux) ---
 
 fn send_keys_args(target: &str, text: &str) -> Vec<String> {
