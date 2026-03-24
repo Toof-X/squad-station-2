@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 ## Current Position
 
 Phase: 30 of 31 (Telegram Integration)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-03-24 — Phase 29 verified and complete
+Plan: 02 complete
+Status: In progress
+Last activity: 2026-03-24 — Completed Plan 02 of Phase 30 (channels config field, --channels launch flag, REQUIREMENTS update)
 
 Progress: [██████████] 100%
 
@@ -61,6 +61,7 @@ Recent decisions affecting current work:
 - 29-01: Cooldown default 600s, debounce default 3 cycles; new params suppressed with let _ = until Plan 02
 - 29-02: DeadlockState separate from NudgeState; message age filtering uses stall_threshold_mins; alert IDs truncated to 5
 - 29-03: Status file uses serde_json structured format; show_status resolves config independently for early return
+- 30-02: channels field is Option<Vec<String>> on AgentConfig — backward-compatible with deny_unknown_fields; injection only for claude-code provider; is_safe_model_value reused for channel validation
 
 ### Pending Todos
 
@@ -73,5 +74,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-24
-Stopped at: Completed 29-03-PLAN.md (Phase 29 complete)
+Stopped at: Completed 30-02-PLAN.md (channels config field wired through launch command and squad.yml)
 Resume file: None

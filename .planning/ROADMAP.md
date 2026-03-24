@@ -96,7 +96,7 @@ Embedded axum web server with React + React Flow SPA served from binary, live no
 **Milestone Goal:** Detect stalled workflows where no agent is busy but pending/processing messages exist, and alert both the orchestrator (tmux injection) and the user (Telegram).
 
 - [x] **Phase 29: Watchdog Core Correctness** - Deadlock detection, debounce, deduplication, prolonged-busy injection, configurable operations flags, and --status subcommand (completed 2026-03-24)
-- [ ] **Phase 30: Telegram Integration** - Delegation-based Telegram alerting via orchestrator MCP plugin: updated watchdog messages with relay instructions, --channels config, and orchestrator context section
+- [x] **Phase 30: Telegram Integration** - Delegation-based Telegram alerting via orchestrator MCP plugin: updated watchdog messages with relay instructions, --channels config, and orchestrator context section (completed 2026-03-24)
 - [ ] **Phase 31: End-to-End Test Coverage** - Integration tests verifying full tick loop: deadlock condition, idle-pending non-trigger, debounce hold, alert fire-once, Telegram no-op when env vars absent
 
 ## Phase Details
@@ -169,5 +169,5 @@ Plans:
 | 27. Event-Driven WebSocket Streaming | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 28. React Flow Node Graph | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 29. Watchdog Core Correctness | 3/3 | Complete   | 2026-03-24 | - |
-| 30. Telegram Integration | v2.0 | 0/2 | Not started | - |
+| 30. Telegram Integration | 2/2 | Complete   | 2026-03-24 | - |
 | 31. End-to-End Test Coverage | v2.0 | 0/TBD | Not started | - |
