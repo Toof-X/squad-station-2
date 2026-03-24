@@ -97,7 +97,7 @@ Embedded axum web server with React + React Flow SPA served from binary, live no
 
 - [x] **Phase 29: Watchdog Core Correctness** - Deadlock detection, debounce, deduplication, prolonged-busy injection, configurable operations flags, and --status subcommand (completed 2026-03-24)
 - [x] **Phase 30: Telegram Integration** - Delegation-based Telegram alerting via orchestrator MCP plugin: updated watchdog messages with relay instructions, --channels config, and orchestrator context section (completed 2026-03-24)
-- [ ] **Phase 31: End-to-End Test Coverage** - Integration tests verifying full tick loop: deadlock condition, idle-pending non-trigger, debounce hold, alert fire-once, Telegram no-op when env vars absent
+- [ ] **Phase 31: End-to-End Test Coverage** - CLI-level integration tests for watch subcommand: --status output, --dry-run lifecycle, --help flag completeness, channels config parsing, and v2.0 requirement traceability
 
 ## Phase Details
 
@@ -127,23 +127,22 @@ Plans:
   3. The orchestrator's Claude Code session is launched with `--channels plugin:telegram` when the channels config field is present in squad.yml
 **Plans**: 2 plans
 Plans:
-- [ ] 30-01-PLAN.md — Update watchdog alert messages and orchestrator context with Telegram relay instructions
-- [ ] 30-02-PLAN.md — Add channels config field, wire through launch command and YAML generation, rewrite requirements
+- [x] 30-01-PLAN.md — Update watchdog alert messages and orchestrator context with Telegram relay instructions
+- [x] 30-02-PLAN.md — Add channels config field, wire through launch command and YAML generation, rewrite requirements
 
 ### Phase 31: End-to-End Test Coverage
 **Goal**: The full tick loop behavior is verified by integration tests that run against a real SQLite DB, so correctness of deadlock detection, debounce, and deduplication is not only manually verifiable
 **Depends on**: Phase 30
 **Requirements**: (test coverage for all v2.0 requirements — no new feature requirements)
 **Success Criteria** (what must be TRUE):
-  1. A test that seeds processing messages + zero busy agents verifies the deadlock condition fires after N debounce cycles and not before
-  2. A test that seeds only pending messages (no processing) with zero busy agents verifies no false alert fires
-  3. A test that calls `alert::send_telegram()` with absent env vars verifies it returns false without spawning a subprocess
-  4. `cargo test` passes with all new tests green alongside the existing 362-test suite
-**Plans**: 3 plans
+  1. `tests/test_watchdog.rs` exists with CLI-level tests exercising the binary
+  2. `watch --status` output is tested (daemon running vs not running)
+  3. `watch --dry-run` is tested at CLI level (exits cleanly, log file created)
+  4. `cargo test` passes with all new tests green alongside the existing suite
+  5. All v2.0 requirements have at least one test covering them (traceability verified)
+**Plans**: 1 plan
 Plans:
-- [x] 29-01-PLAN.md — CLI flags, DB query, main.rs dispatch (foundation)
-- [x] 29-02-PLAN.md — Deadlock detection, debounce, message age, dry-run, prolonged-busy injection
-- [x] 29-03-PLAN.md — Status file writing and --status subcommand
+- [ ] 31-01-PLAN.md — CLI-level watchdog tests: --status, --dry-run, --help, flag validation, channels config
 
 ## Progress
 
@@ -168,6 +167,6 @@ Plans:
 | 26. Axum Server & CLI Command | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 27. Event-Driven WebSocket Streaming | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 28. React Flow Node Graph | v1.9 | 2/2 | Complete | 2026-03-22 |
-| 29. Watchdog Core Correctness | 3/3 | Complete   | 2026-03-24 | - |
-| 30. Telegram Integration | 2/2 | Complete    | 2026-03-24 | - |
-| 31. End-to-End Test Coverage | v2.0 | 0/TBD | Not started | - |
+| 29. Watchdog Core Correctness | v2.0 | 3/3 | Complete | 2026-03-24 |
+| 30. Telegram Integration | v2.0 | 2/2 | Complete | 2026-03-24 |
+| 31. End-to-End Test Coverage | v2.0 | 0/1 | Not started | - |
