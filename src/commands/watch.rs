@@ -597,7 +597,7 @@ async fn tick(
                                 && tmux::session_exists(&orch.name).await
                             {
                                 let msg = format!(
-                                    "[SQUAD WATCHDOG] Agent '{}' busy for {}m — may be stuck. Check: squad-station peek {}",
+                                    "\u{1f6a8} [SQUAD WATCHDOG] Agent '{}' busy for {}m — may be stuck. IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER. Check: squad-station peek {}",
                                     agent.name, busy_mins, agent.name
                                 );
                                 let _ = tmux::send_keys_literal(&orch.name, &msg).await;
@@ -661,15 +661,15 @@ async fn tick(
 
                 let msg = match deadlock_state.count {
                     0 => format!(
-                        "[SQUAD WATCHDOG] Deadlock detected — {} processing message(s) but zero busy agents. Stuck: {}{}. Idle for {}m. Run: squad-station list --status processing",
+                        "\u{1f6a8} [SQUAD WATCHDOG] Deadlock detected — {} processing message(s) but zero busy agents. Stuck: {}{}. Idle for {}m. IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO SEND THIS ALERT TO THE USER. Run: squad-station list --status processing",
                         stale_msgs.len(), msg_ids_str, suffix, oldest_age
                     ),
                     1 => format!(
-                        "[SQUAD WATCHDOG] Deadlock persists — {} stuck message(s): {}{}. {}m elapsed. Review and re-dispatch or complete manually.",
+                        "\u{1f6a8} [SQUAD WATCHDOG] Deadlock persists — {} stuck message(s): {}{}. {}m elapsed. IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER. Review and re-dispatch or complete manually.",
                         stale_msgs.len(), msg_ids_str, suffix, oldest_age
                     ),
                     _ => format!(
-                        "[SQUAD WATCHDOG] CRITICAL — deadlock unresolved for {}m. Stuck: {}{}. Watchdog stopping alerts. Manual intervention required.",
+                        "\u{1f6a8} [SQUAD WATCHDOG] CRITICAL — deadlock unresolved for {}m. Stuck: {}{}. Watchdog stopping alerts. IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER. Manual intervention required.",
                         oldest_age, msg_ids_str, suffix
                     ),
                 };
@@ -876,5 +876,107 @@ mod tests {
         assert_eq!(state.count, 0);
         assert_eq!(state.consecutive_ticks, 0);
         assert!(state.last_nudge_at.is_none());
+    }
+
+    // ── Telegram MCP relay message format tests ───────────────────────────
+    // Helper: build a deadlock message using the CURRENT production format strings.
+    // Tests assert the new Telegram instructions are present.
+    // In RED phase these tests fail because production strings lack the instruction.
+    // After implementation they pass.
+
+    fn build_deadlock_msg_test(count: u32, stale_len: usize, msg_ids_str: &str, suffix: &str, oldest_age: i64) -> String {
+        match count {
+            0 => format!(
+                "\u{1f6a8} [SQUAD WATCHDOG] Deadlock detected — {} processing message(s) but zero busy agents. Stuck: {}{}. Idle for {}m. IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO SEND THIS ALERT TO THE USER. Run: squad-station list --status processing",
+                stale_len, msg_ids_str, suffix, oldest_age
+            ),
+            1 => format!(
+                "\u{1f6a8} [SQUAD WATCHDOG] Deadlock persists — {} stuck message(s): {}{}. {}m elapsed. IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER. Review and re-dispatch or complete manually.",
+                stale_len, msg_ids_str, suffix, oldest_age
+            ),
+            _ => format!(
+                "\u{1f6a8} [SQUAD WATCHDOG] CRITICAL — deadlock unresolved for {}m. Stuck: {}{}. Watchdog stopping alerts. IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER. Manual intervention required.",
+                oldest_age, msg_ids_str, suffix
+            ),
+        }
+    }
+
+    fn build_prolonged_busy_msg_test(agent_name: &str, busy_mins: u64) -> String {
+        format!(
+            "\u{1f6a8} [SQUAD WATCHDOG] Agent '{}' busy for {}m — may be stuck. IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER. Check: squad-station peek {}",
+            agent_name, busy_mins, agent_name
+        )
+    }
+
+    #[test]
+    fn test_deadlock_nudge0_message_contains_telegram_send_instruction() {
+        let msg = build_deadlock_msg_test(0, 2, "msg-001, msg-002", "", 15);
+        assert!(
+            msg.contains("IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO SEND THIS ALERT TO THE USER"),
+            "Nudge 0 must contain Telegram send instruction, got: {msg}"
+        );
+        assert!(msg.contains("[SQUAD WATCHDOG]"), "must contain watchdog tag");
+        assert!(msg.contains("Deadlock detected"), "must contain original content");
+        assert!(msg.contains("msg-001, msg-002"), "must contain msg IDs");
+        assert!(msg.contains("15m"), "must contain age");
+        assert!(msg.contains('\u{1f6a8}'), "must have alarm emoji prefix");
+    }
+
+    #[test]
+    fn test_deadlock_nudge1_message_contains_telegram_alert_instruction() {
+        let msg = build_deadlock_msg_test(1, 2, "msg-001, msg-002", "", 25);
+        assert!(
+            msg.contains("IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER"),
+            "Nudge 1 must contain Telegram alert instruction, got: {msg}"
+        );
+        assert!(msg.contains("[SQUAD WATCHDOG]"), "must contain watchdog tag");
+        assert!(msg.contains("Deadlock persists"), "must contain original content");
+        assert!(msg.contains("msg-001, msg-002"), "must contain msg IDs");
+        assert!(msg.contains("25m"), "must contain elapsed time");
+        assert!(msg.contains('\u{1f6a8}'), "must have alarm emoji prefix");
+    }
+
+    #[test]
+    fn test_deadlock_nudge2_plus_message_contains_telegram_alert_instruction() {
+        let msg = build_deadlock_msg_test(2, 2, "msg-001, msg-002", "", 45);
+        assert!(
+            msg.contains("IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER"),
+            "Nudge 2+ must contain Telegram alert instruction, got: {msg}"
+        );
+        assert!(msg.contains("[SQUAD WATCHDOG]"), "must contain watchdog tag");
+        assert!(msg.contains("CRITICAL"), "must contain CRITICAL label");
+        assert!(msg.contains("msg-001, msg-002"), "must contain msg IDs");
+        assert!(msg.contains("45m"), "must contain unresolved time");
+        assert!(msg.contains('\u{1f6a8}'), "must have alarm emoji prefix");
+    }
+
+    #[test]
+    fn test_deadlock_messages_retain_existing_content() {
+        // All three messages must retain: stuck count, msg_ids, oldest_age
+        let stale_len = 3usize;
+        let msg_ids_str = "abc, def, ghi";
+        let suffix = " (+2 more)";
+        let oldest_age = 20i64;
+
+        for count in [0u32, 1u32, 3u32] {
+            let msg = build_deadlock_msg_test(count, stale_len, msg_ids_str, suffix, oldest_age);
+            assert!(msg.contains("abc, def, ghi"), "count={count}: must contain msg IDs");
+            assert!(msg.contains("20m"), "count={count}: must contain age");
+            assert!(msg.contains("[SQUAD WATCHDOG]"), "count={count}: must contain watchdog tag");
+        }
+    }
+
+    #[test]
+    fn test_prolonged_busy_message_contains_telegram_alert_instruction() {
+        let msg = build_prolonged_busy_msg_test("agent-7", 42);
+        assert!(
+            msg.contains("IMMEDIATELY USE YOUR TELEGRAM MCP PLUGIN TO ALERT THE USER"),
+            "Prolonged-busy must contain Telegram alert instruction, got: {msg}"
+        );
+        assert!(msg.contains("[SQUAD WATCHDOG]"), "must contain watchdog tag");
+        assert!(msg.contains("agent-7"), "must contain agent name");
+        assert!(msg.contains("42m"), "must contain busy minutes");
+        assert!(msg.contains("squad-station peek agent-7"), "must contain peek command");
+        assert!(msg.contains('\u{1f6a8}'), "must have alarm emoji prefix");
     }
 }
