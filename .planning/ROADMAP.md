@@ -12,7 +12,7 @@
 - ✅ **v1.7 First-Run Onboarding** — Phases 20-21 (shipped 2026-03-18)
 - ✅ **v1.8 Smart Agent Management** — Phases 22-24 (shipped 2026-03-19)
 - ✅ **v1.9 Browser Visualization** — Phases 25-28 (shipped 2026-03-22)
-- 🚧 **v2.0 Workflow Watchdog** — Phases 29-31 (in progress)
+- ✅ **v2.0 Workflow Watchdog** — Phases 29-31 (shipped 2026-03-24)
 
 ## Phases
 
@@ -97,7 +97,7 @@ Embedded axum web server with React + React Flow SPA served from binary, live no
 
 - [x] **Phase 29: Watchdog Core Correctness** - Deadlock detection, debounce, deduplication, prolonged-busy injection, configurable operations flags, and --status subcommand (completed 2026-03-24)
 - [x] **Phase 30: Telegram Integration** - Delegation-based Telegram alerting via orchestrator MCP plugin: updated watchdog messages with relay instructions, --channels config, and orchestrator context section (completed 2026-03-24)
-- [ ] **Phase 31: End-to-End Test Coverage** - CLI-level integration tests for watch subcommand: --status output, --dry-run lifecycle, --help flag completeness, channels config parsing, and v2.0 requirement traceability
+- [x] **Phase 31: End-to-End Test Coverage** - CLI-level integration tests for watch subcommand: --status output, --dry-run lifecycle, --help flag completeness, channels config parsing, and v2.0 requirement traceability (completed 2026-03-24)
 
 ## Phase Details
 
@@ -142,7 +142,7 @@ Plans:
   5. All v2.0 requirements have at least one test covering them (traceability verified)
 **Plans**: 1 plan
 Plans:
-- [ ] 31-01-PLAN.md — CLI-level watchdog tests: --status, --dry-run, --help, flag validation, channels config
+- [x] 31-01-PLAN.md — CLI-level watchdog tests: --status, --dry-run, --help, flag validation, channels config
 
 ## Progress
 
@@ -169,4 +169,4 @@ Plans:
 | 28. React Flow Node Graph | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 29. Watchdog Core Correctness | v2.0 | 3/3 | Complete | 2026-03-24 |
 | 30. Telegram Integration | v2.0 | 2/2 | Complete | 2026-03-24 |
-| 31. End-to-End Test Coverage | v2.0 | 0/1 | Not started | - |
+| 31. End-to-End Test Coverage | v2.0 | 1/1 | Complete | 2026-03-24 |
