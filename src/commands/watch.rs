@@ -42,6 +42,67 @@ impl NudgeState {
     }
 }
 
+/// Deadlock state for stall detection (Pass 4).
+/// Tracks debounce cycles, nudge count, cooldown, and escalation.
+/// Separate from NudgeState to prevent idle nudges from suppressing deadlock alerts.
+struct DeadlockState {
+    count: u32,
+    last_nudge_at: Option<chrono::DateTime<chrono::Utc>>,
+    cooldown_secs: u64,
+    max_nudges: u32,
+    consecutive_ticks: u32,
+    debounce_threshold: u32,
+}
+
+impl DeadlockState {
+    fn new(cooldown_secs: u64, max_nudges: u32, debounce_threshold: u32) -> Self {
+        Self {
+            count: 0,
+            last_nudge_at: None,
+            cooldown_secs,
+            max_nudges,
+            consecutive_ticks: 0,
+            debounce_threshold,
+        }
+    }
+
+    fn record_tick(&mut self) {
+        self.consecutive_ticks += 1;
+    }
+
+    fn clear_ticks(&mut self) {
+        self.consecutive_ticks = 0;
+    }
+
+    fn is_confirmed(&self) -> bool {
+        self.consecutive_ticks >= self.debounce_threshold
+    }
+
+    fn should_nudge(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
+        if !self.is_confirmed() {
+            return false;
+        }
+        if self.count >= self.max_nudges {
+            return false;
+        }
+        match self.last_nudge_at {
+            None => true,
+            Some(last) => (now - last).num_seconds() > self.cooldown_secs as i64,
+        }
+    }
+
+    fn record_nudge(&mut self, now: chrono::DateTime<chrono::Utc>) {
+        self.count += 1;
+        self.last_nudge_at = Some(now);
+    }
+
+    fn reset(&mut self) {
+        self.count = 0;
+        self.last_nudge_at = None;
+        self.consecutive_ticks = 0;
+    }
+}
+
 pub async fn run(
     interval_secs: u64,
     stall_threshold_mins: u64,
@@ -418,5 +479,80 @@ mod tests {
         let content = std::fs::read_to_string(&log_file).unwrap();
         assert!(content.contains("INFO"));
         assert!(content.contains("test message"));
+    }
+
+    #[test]
+    fn test_deadlock_state_debounce_not_confirmed_until_threshold() {
+        let mut state = DeadlockState::new(600, 3, 3);
+        let now = chrono::Utc::now();
+        // 0 ticks: not confirmed
+        assert!(!state.is_confirmed());
+        assert!(!state.should_nudge(now));
+        // 1 tick
+        state.record_tick();
+        assert!(!state.is_confirmed());
+        // 2 ticks
+        state.record_tick();
+        assert!(!state.is_confirmed());
+        // 3 ticks: confirmed
+        state.record_tick();
+        assert!(state.is_confirmed());
+        assert!(state.should_nudge(now));
+    }
+
+    #[test]
+    fn test_deadlock_state_clear_ticks_resets_debounce() {
+        let mut state = DeadlockState::new(600, 3, 3);
+        state.record_tick();
+        state.record_tick();
+        state.record_tick();
+        assert!(state.is_confirmed());
+        state.clear_ticks();
+        assert!(!state.is_confirmed());
+        assert_eq!(state.consecutive_ticks, 0);
+    }
+
+    #[test]
+    fn test_deadlock_state_cooldown_and_max() {
+        let mut state = DeadlockState::new(600, 3, 1); // 1-tick debounce for easy testing
+        let base = chrono::Utc::now();
+        state.record_tick(); // confirm immediately
+
+        // First nudge: allowed
+        assert!(state.should_nudge(base));
+        state.record_nudge(base);
+
+        // Immediately after: blocked by cooldown
+        assert!(!state.should_nudge(base));
+
+        // After cooldown: allowed
+        let after_cooldown = base + chrono::Duration::seconds(601);
+        assert!(state.should_nudge(after_cooldown));
+        state.record_nudge(after_cooldown);
+
+        let after_cooldown2 = after_cooldown + chrono::Duration::seconds(601);
+        assert!(state.should_nudge(after_cooldown2));
+        state.record_nudge(after_cooldown2);
+
+        // After 3 nudges: blocked forever
+        let future = after_cooldown2 + chrono::Duration::seconds(9999);
+        assert!(!state.should_nudge(future));
+    }
+
+    #[test]
+    fn test_deadlock_state_reset_clears_everything() {
+        let mut state = DeadlockState::new(0, 3, 3);
+        let now = chrono::Utc::now();
+        state.record_tick();
+        state.record_tick();
+        state.record_tick();
+        state.record_nudge(now);
+        assert_eq!(state.count, 1);
+        assert_eq!(state.consecutive_ticks, 3);
+
+        state.reset();
+        assert_eq!(state.count, 0);
+        assert_eq!(state.consecutive_ticks, 0);
+        assert!(state.last_nudge_at.is_none());
     }
 }
