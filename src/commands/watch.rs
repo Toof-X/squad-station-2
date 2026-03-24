@@ -103,6 +103,92 @@ impl DeadlockState {
     }
 }
 
+/// Watchdog status written to .squad/watch.status.json each tick.
+/// Read by --status subcommand without IPC.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct WatchStatus {
+    pid: u32,
+    started_at: String,
+    last_tick_at: String,
+    poll_interval_secs: u64,
+    stall_threshold_mins: u64,
+    dry_run: bool,
+    idle_nudge_count: u32,
+    idle_nudge_max: u32,
+    deadlock_nudge_count: u32,
+    deadlock_nudge_max: u32,
+    deadlock_debounce_ticks: u32,
+    deadlock_debounce_threshold: u32,
+    last_alert_at: Option<String>,
+    last_alert_type: Option<String>,
+    stall_state: String,
+}
+
+fn write_status(
+    squad_dir: &std::path::Path,
+    nudge_state: &NudgeState,
+    deadlock_state: &DeadlockState,
+    interval_secs: u64,
+    stall_threshold_mins: u64,
+    dry_run: bool,
+    started_at: &str,
+) {
+    let stall_state = if deadlock_state.is_confirmed() {
+        format!(
+            "deadlock (debounce {}/{})",
+            deadlock_state.consecutive_ticks, deadlock_state.debounce_threshold
+        )
+    } else if deadlock_state.consecutive_ticks > 0 {
+        format!(
+            "debouncing ({}/{})",
+            deadlock_state.consecutive_ticks, deadlock_state.debounce_threshold
+        )
+    } else {
+        "clear".to_string()
+    };
+
+    // Determine last alert info
+    let (last_alert_at, last_alert_type) = {
+        let idle_last = nudge_state.last_nudge_at;
+        let deadlock_last = deadlock_state.last_nudge_at;
+        match (idle_last, deadlock_last) {
+            (Some(i), Some(d)) => {
+                if i > d {
+                    (Some(i.to_rfc3339()), Some("idle".to_string()))
+                } else {
+                    (Some(d.to_rfc3339()), Some("deadlock".to_string()))
+                }
+            }
+            (Some(i), None) => (Some(i.to_rfc3339()), Some("idle".to_string())),
+            (None, Some(d)) => (Some(d.to_rfc3339()), Some("deadlock".to_string())),
+            (None, None) => (None, None),
+        }
+    };
+
+    let status = WatchStatus {
+        pid: std::process::id(),
+        started_at: started_at.to_string(),
+        last_tick_at: chrono::Utc::now().to_rfc3339(),
+        poll_interval_secs: interval_secs,
+        stall_threshold_mins,
+        dry_run,
+        idle_nudge_count: nudge_state.count,
+        idle_nudge_max: nudge_state.max_nudges,
+        deadlock_nudge_count: deadlock_state.count,
+        deadlock_nudge_max: deadlock_state.max_nudges,
+        deadlock_debounce_ticks: deadlock_state.consecutive_ticks,
+        deadlock_debounce_threshold: deadlock_state.debounce_threshold,
+        last_alert_at,
+        last_alert_type,
+        stall_state,
+    };
+
+    let status_file = squad_dir.join("watch.status.json");
+    if let Ok(json) = serde_json::to_string_pretty(&status) {
+        let _ = std::fs::write(&status_file, json);
+    }
+}
+
 pub async fn run(
     interval_secs: u64,
     stall_threshold_mins: u64,
@@ -214,6 +300,7 @@ pub async fn run(
     // Setup graceful shutdown via SIGTERM/SIGINT
     setup_signal_handlers();
 
+    let started_at = chrono::Utc::now().to_rfc3339();
     let mut nudge_state = NudgeState::new(cooldown_secs, 3);
     let mut deadlock_state = DeadlockState::new(cooldown_secs, 3, debounce_cycles);
     let mut last_msg_count: Option<i64> = None;
@@ -247,6 +334,16 @@ pub async fn run(
             log_watch(&squad_dir, "ERROR", &format!("tick failed: {}", e));
         }
 
+        write_status(
+            &squad_dir,
+            &nudge_state,
+            &deadlock_state,
+            interval_secs,
+            stall_threshold_mins,
+            dry_run,
+            &started_at,
+        );
+
         // Sleep in small increments so we can check the shutdown flag
         for _ in 0..interval_secs {
             if !is_running() {
@@ -259,6 +356,7 @@ pub async fn run(
     pool.close().await;
     log_watch(&squad_dir, "INFO", "watchdog stopped");
     let _ = std::fs::remove_file(&pid_file);
+    let _ = std::fs::remove_file(squad_dir.join("watch.status.json"));
     Ok(())
 }
 
