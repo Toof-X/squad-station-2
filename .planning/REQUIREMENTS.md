@@ -55,23 +55,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DETECT-01 | — | Pending |
-| DETECT-02 | — | Pending |
-| DETECT-03 | — | Pending |
-| DETECT-04 | — | Pending |
-| ALERT-01 | — | Pending |
-| ALERT-02 | — | Pending |
-| ALERT-03 | — | Pending |
-| ALERT-04 | — | Pending |
-| OPS-01 | — | Pending |
-| OPS-02 | — | Pending |
-| OPS-03 | — | Pending |
+| DETECT-01 | Phase 29 | Pending |
+| DETECT-02 | Phase 29 | Pending |
+| DETECT-03 | Phase 29 | Pending |
+| DETECT-04 | Phase 29 | Pending |
+| ALERT-01 | Phase 29 | Pending |
+| ALERT-02 | Phase 29 | Pending |
+| ALERT-03 | Phase 30 | Pending |
+| ALERT-04 | Phase 30 | Pending |
+| OPS-01 | Phase 29 | Pending |
+| OPS-02 | Phase 29 | Pending |
+| OPS-03 | Phase 29 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 11 total
-- Mapped to phases: 0
-- Unmapped: 11 ⚠️
+- Mapped to phases: 11
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-24*
-*Last updated: 2026-03-24 after initial definition*
+*Last updated: 2026-03-24 — traceability updated after roadmap creation*

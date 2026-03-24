@@ -12,6 +12,7 @@
 - ✅ **v1.7 First-Run Onboarding** — Phases 20-21 (shipped 2026-03-18)
 - ✅ **v1.8 Smart Agent Management** — Phases 22-24 (shipped 2026-03-19)
 - ✅ **v1.9 Browser Visualization** — Phases 25-28 (shipped 2026-03-22)
+- 🚧 **v2.0 Workflow Watchdog** — Phases 29-31 (in progress)
 
 ## Phases
 
@@ -90,6 +91,49 @@ Embedded axum web server with React + React Flow SPA served from binary, live no
 
 </details>
 
+### 🚧 v2.0 Workflow Watchdog (In Progress)
+
+**Milestone Goal:** Detect stalled workflows where no agent is busy but pending/processing messages exist, and alert both the orchestrator (tmux injection) and the user (Telegram).
+
+- [ ] **Phase 29: Watchdog Core Correctness** - Deadlock detection, debounce, deduplication, prolonged-busy injection, configurable operations flags, and --status subcommand
+- [ ] **Phase 30: Telegram Integration** - Non-blocking Telegram Bot API dispatch with timeout guard, rate-limit handling, and graceful degradation when unconfigured
+- [ ] **Phase 31: End-to-End Test Coverage** - Integration tests verifying full tick loop: deadlock condition, idle-pending non-trigger, debounce hold, alert fire-once, Telegram no-op when env vars absent
+
+## Phase Details
+
+### Phase 29: Watchdog Core Correctness
+**Goal**: Users can run `squad-station watch` and have the daemon reliably detect real stalls — deadlocks and prolonged-busy agents — without false positives, while safely coexisting with all other CLI commands
+**Depends on**: Phase 28 (v1.9 shipped baseline)
+**Requirements**: DETECT-01, DETECT-02, DETECT-03, DETECT-04, ALERT-01, ALERT-02, OPS-01, OPS-02, OPS-03
+**Success Criteria** (what must be TRUE):
+  1. Running `watch --status` after `watch --daemon` prints daemon PID, alive status, and uptime
+  2. A deadlock state (processing messages present, zero busy agents) triggers a tmux injection into the orchestrator pane with agent count, pending message count, and stall duration — but only after N consecutive poll cycles confirm it (debounce)
+  3. A stall alert fires exactly once per stall event; subsequent polls during the same stall do not re-inject until the configurable cooldown expires
+  4. Messages younger than the configurable age threshold do not trigger stall alerts
+  5. Running `watch --dry-run` logs stall detections to watch.log without injecting into any tmux pane
+**Plans**: TBD
+
+### Phase 30: Telegram Integration
+**Goal**: When a stall is detected, the user receives a Telegram message on their phone — and a missing or misconfigured Telegram setup never crashes or stalls the watchdog loop
+**Depends on**: Phase 29
+**Requirements**: ALERT-03, ALERT-04
+**Success Criteria** (what must be TRUE):
+  1. When `SQUAD_TELEGRAM_TOKEN` and `SQUAD_TELEGRAM_CHAT_ID` are set, a genuine stall detection sends a Telegram message containing stuck message count, agent states, and oldest message age
+  2. When Telegram env vars are absent or the API call times out (>10 seconds), the watchdog continues polling without error or interruption
+  3. A 429 rate-limit response from the Telegram API does not cause immediate retry; the watchdog respects the `retry_after` value and resumes normal operation
+**Plans**: TBD
+
+### Phase 31: End-to-End Test Coverage
+**Goal**: The full tick loop behavior is verified by integration tests that run against a real SQLite DB, so correctness of deadlock detection, debounce, and deduplication is not only manually verifiable
+**Depends on**: Phase 30
+**Requirements**: (test coverage for all v2.0 requirements — no new feature requirements)
+**Success Criteria** (what must be TRUE):
+  1. A test that seeds processing messages + zero busy agents verifies the deadlock condition fires after N debounce cycles and not before
+  2. A test that seeds only pending messages (no processing) with zero busy agents verifies no false alert fires
+  3. A test that calls `alert::send_telegram()` with absent env vars verifies it returns false without spawning a subprocess
+  4. `cargo test` passes with all new tests green alongside the existing 362-test suite
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -113,3 +157,6 @@ Embedded axum web server with React + React Flow SPA served from binary, live no
 | 26. Axum Server & CLI Command | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 27. Event-Driven WebSocket Streaming | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 28. React Flow Node Graph | v1.9 | 2/2 | Complete | 2026-03-22 |
+| 29. Watchdog Core Correctness | v2.0 | 0/TBD | Not started | - |
+| 30. Telegram Integration | v2.0 | 0/TBD | Not started | - |
+| 31. End-to-End Test Coverage | v2.0 | 0/TBD | Not started | - |
