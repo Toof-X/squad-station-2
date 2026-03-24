@@ -113,10 +113,12 @@ pub async fn run(
     cooldown_secs: u64,
     debounce_cycles: u32,
 ) -> Result<()> {
-    let _ = dry_run;
-    let _ = status;
-    let _ = cooldown_secs;
-    let _ = debounce_cycles;
+    // --status: handled in Plan 03
+    if status {
+        println!("--status not yet implemented (Plan 03)");
+        return Ok(());
+    }
+
     let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
     let config = config::load_config(config_path)?;
     let db_path = config::resolve_db_path(&config)?;
@@ -212,7 +214,8 @@ pub async fn run(
     // Setup graceful shutdown via SIGTERM/SIGINT
     setup_signal_handlers();
 
-    let mut nudge_state = NudgeState::new(600, 3); // 10min cooldown, 3 max nudges
+    let mut nudge_state = NudgeState::new(cooldown_secs, 3);
+    let mut deadlock_state = DeadlockState::new(cooldown_secs, 3, debounce_cycles);
     let mut last_msg_count: Option<i64> = None;
 
     log_watch(
@@ -235,7 +238,9 @@ pub async fn run(
             &squad_dir,
             stall_threshold_mins,
             &mut nudge_state,
+            &mut deadlock_state,
             &mut last_msg_count,
+            dry_run,
         )
         .await
         {
@@ -278,10 +283,12 @@ async fn tick(
     squad_dir: &std::path::Path,
     stall_threshold_mins: u64,
     nudge_state: &mut NudgeState,
+    deadlock_state: &mut DeadlockState,
     last_msg_count: &mut Option<i64>,
+    dry_run: bool,
 ) -> Result<()> {
     // Pass 1: Individual agent reconciliation
-    let results = reconcile::reconcile_agents(pool, false).await?;
+    let results = reconcile::reconcile_agents(pool, dry_run).await?;
     for r in &results {
         if r.action != "skip" {
             log_watch(
@@ -297,6 +304,7 @@ async fn tick(
     if let Some(prev) = last_msg_count {
         if current_count != *prev {
             nudge_state.reset();
+            deadlock_state.reset();
         }
     }
     *last_msg_count = Some(current_count);
@@ -340,10 +348,12 @@ async fn tick(
                                             idle_mins
                                         ),
                                     };
-                                    let _ = tmux::send_keys_literal(&orch.name, &msg).await;
+                                    if !dry_run {
+                                        let _ = tmux::send_keys_literal(&orch.name, &msg).await;
+                                    }
                                     log_watch(
                                         squad_dir,
-                                        "NUDGE",
+                                        if dry_run { "DRY-RUN" } else { "NUDGE" },
                                         &format!(
                                             "orch={} idle_mins={} nudge_count={}",
                                             orch.name,
@@ -367,7 +377,7 @@ async fn tick(
         }
     }
 
-    // Pass 3: Prolonged busy detection
+    // Pass 3: Prolonged busy detection — inject into orchestrator pane
     for agent in &agents {
         if agent.status == "busy" {
             if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&agent.status_updated_at) {
@@ -375,15 +385,128 @@ async fn tick(
                 if busy_mins > 30 {
                     log_watch(
                         squad_dir,
-                        "WARN",
+                        if dry_run { "DRY-RUN" } else { "WARN" },
                         &format!(
                             "agent={} busy_minutes={} reason=prolonged_busy",
                             agent.name, busy_mins
                         ),
                     );
+                    // Inject warning into orchestrator pane
+                    if !dry_run {
+                        if let Ok(Some(orch)) = db::agents::get_orchestrator(pool).await {
+                            if orch.tool != "antigravity"
+                                && tmux::session_exists(&orch.name).await
+                            {
+                                let msg = format!(
+                                    "[SQUAD WATCHDOG] Agent '{}' busy for {}m — may be stuck. Check: squad-station peek {}",
+                                    agent.name, busy_mins, agent.name
+                                );
+                                let _ = tmux::send_keys_literal(&orch.name, &msg).await;
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+
+    // Pass 4: Deadlock detection — processing messages exist but zero agents are busy
+    let busy_agents: Vec<_> = agents.iter().filter(|a| a.status == "busy").collect();
+    let processing_msgs = db::messages::list_processing_messages(pool).await.unwrap_or_default();
+
+    if !processing_msgs.is_empty() && busy_agents.is_empty() {
+        // Filter by message age — only count messages older than stall_threshold
+        let now = chrono::Utc::now();
+        let threshold = chrono::Duration::minutes(stall_threshold_mins as i64);
+        let stale_msgs: Vec<_> = processing_msgs
+            .iter()
+            .filter(|(_, created_at)| {
+                chrono::DateTime::parse_from_rfc3339(created_at)
+                    .map(|ts| now.signed_duration_since(ts) >= threshold)
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        if !stale_msgs.is_empty() {
+            deadlock_state.record_tick();
+            log_watch(
+                squad_dir,
+                "DEADLOCK",
+                &format!(
+                    "tick={}/{} stale_msgs={} total_processing={} busy_agents=0",
+                    deadlock_state.consecutive_ticks,
+                    deadlock_state.debounce_threshold,
+                    stale_msgs.len(),
+                    processing_msgs.len()
+                ),
+            );
+
+            let now_utc = chrono::Utc::now();
+            if deadlock_state.should_nudge(now_utc) {
+                // Build message IDs string (truncate to first 5 for readability)
+                let msg_ids: Vec<&str> = stale_msgs.iter().map(|(id, _)| id.as_str()).take(5).collect();
+                let msg_ids_str = msg_ids.join(", ");
+                let suffix = if stale_msgs.len() > 5 {
+                    format!(" (+{} more)", stale_msgs.len() - 5)
+                } else {
+                    String::new()
+                };
+
+                // Calculate oldest message age
+                let oldest_age = stale_msgs
+                    .iter()
+                    .filter_map(|(_, ts)| chrono::DateTime::parse_from_rfc3339(ts).ok())
+                    .map(|ts| now_utc.signed_duration_since(ts).num_minutes())
+                    .max()
+                    .unwrap_or(0);
+
+                let msg = match deadlock_state.count {
+                    0 => format!(
+                        "[SQUAD WATCHDOG] Deadlock detected — {} processing message(s) but zero busy agents. Stuck: {}{}. Idle for {}m. Run: squad-station list --status processing",
+                        stale_msgs.len(), msg_ids_str, suffix, oldest_age
+                    ),
+                    1 => format!(
+                        "[SQUAD WATCHDOG] Deadlock persists — {} stuck message(s): {}{}. {}m elapsed. Review and re-dispatch or complete manually.",
+                        stale_msgs.len(), msg_ids_str, suffix, oldest_age
+                    ),
+                    _ => format!(
+                        "[SQUAD WATCHDOG] CRITICAL — deadlock unresolved for {}m. Stuck: {}{}. Watchdog stopping alerts. Manual intervention required.",
+                        oldest_age, msg_ids_str, suffix
+                    ),
+                };
+
+                if let Ok(Some(orch)) = db::agents::get_orchestrator(pool).await {
+                    if orch.tool != "antigravity" && tmux::session_exists(&orch.name).await {
+                        if !dry_run {
+                            let _ = tmux::send_keys_literal(&orch.name, &msg).await;
+                        }
+                        log_watch(
+                            squad_dir,
+                            if dry_run { "DRY-RUN" } else { "ALERT" },
+                            &format!(
+                                "deadlock orch={} stale={} nudge_count={}",
+                                orch.name,
+                                stale_msgs.len(),
+                                deadlock_state.count + 1
+                            ),
+                        );
+                    }
+                }
+                deadlock_state.record_nudge(now_utc);
+            } else if deadlock_state.count >= deadlock_state.max_nudges {
+                log_watch(
+                    squad_dir,
+                    "STALL",
+                    &format!("DEADLOCK_UNRESOLVED stale_msgs={}", stale_msgs.len()),
+                );
+            }
+        } else {
+            // Processing messages exist but all are younger than threshold — not a deadlock yet
+            deadlock_state.clear_ticks();
+        }
+    } else {
+        // No deadlock condition — clear debounce
+        deadlock_state.clear_ticks();
     }
 
     Ok(())
