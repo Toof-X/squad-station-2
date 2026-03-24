@@ -9,15 +9,15 @@ Requirements for workflow watchdog milestone. Each maps to roadmap phases.
 
 ### Stall Detection
 
-- [ ] **DETECT-01**: Watchdog detects deadlock state — processing/pending messages exist but zero agents are busy
-- [ ] **DETECT-02**: Watchdog debounces stall detection across N consecutive poll cycles before triggering alert (prevents false positives from transient windows)
-- [ ] **DETECT-03**: Watchdog respects configurable message age threshold — only flags messages older than threshold as stalled
-- [ ] **DETECT-04**: Watchdog detects prolonged-busy single-agent stall and injects notification into orchestrator pane (completes existing Pass 3 gap)
+- [x] **DETECT-01**: Watchdog detects deadlock state — processing/pending messages exist but zero agents are busy
+- [x] **DETECT-02**: Watchdog debounces stall detection across N consecutive poll cycles before triggering alert (prevents false positives from transient windows)
+- [x] **DETECT-03**: Watchdog respects configurable message age threshold — only flags messages older than threshold as stalled
+- [x] **DETECT-04**: Watchdog detects prolonged-busy single-agent stall and injects notification into orchestrator pane (completes existing Pass 3 gap)
 
 ### Alerting
 
-- [ ] **ALERT-01**: Watchdog injects stall notification into orchestrator's tmux pane with actionable message (agent count, pending message count, stall duration)
-- [ ] **ALERT-02**: Watchdog deduplicates alerts with configurable cooldown — same stall condition does not repeat until cooldown expires
+- [x] **ALERT-01**: Watchdog injects stall notification into orchestrator's tmux pane with actionable message (agent count, pending message count, stall duration)
+- [x] **ALERT-02**: Watchdog deduplicates alerts with configurable cooldown — same stall condition does not repeat until cooldown expires
 - [ ] **ALERT-03**: Watchdog sends stall alert to user via Telegram Bot API (bot token + chat ID configuration)
 - [ ] **ALERT-04**: Telegram dispatch is non-blocking and error-isolated — network timeouts, 429 rate limits, and MCP unavailability do not crash or stall the watchdog loop
 
@@ -55,12 +55,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DETECT-01 | Phase 29 | Pending |
-| DETECT-02 | Phase 29 | Pending |
-| DETECT-03 | Phase 29 | Pending |
-| DETECT-04 | Phase 29 | Pending |
-| ALERT-01 | Phase 29 | Pending |
-| ALERT-02 | Phase 29 | Pending |
+| DETECT-01 | Phase 29 | Complete |
+| DETECT-02 | Phase 29 | Complete |
+| DETECT-03 | Phase 29 | Complete |
+| DETECT-04 | Phase 29 | Complete |
+| ALERT-01 | Phase 29 | Complete |
+| ALERT-02 | Phase 29 | Complete |
 | ALERT-03 | Phase 30 | Pending |
 | ALERT-04 | Phase 30 | Pending |
 | OPS-01 | Phase 29 | Pending |
