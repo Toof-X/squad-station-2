@@ -1,179 +1,241 @@
 # Pitfalls Research
 
-**Domain:** Stateless CLI with SQLite + tmux — adding agent templates, orchestrator intelligence metrics, and dynamic agent cloning
-**Researched:** 2026-03-19
-**Confidence:** HIGH — all findings grounded in direct codebase inspection (`signal.rs`, `db/agents.rs`, `tmux.rs`, `config.rs`, `context.rs`, `ui.rs`) and the existing CONCERNS.md audit
+**Domain:** Stateless CLI with SQLite WAL + tmux — adding a long-lived watchdog process for stall detection and multi-channel alerting (Telegram)
+**Researched:** 2026-03-24
+**Confidence:** HIGH — findings grounded in direct codebase inspection (`db/mod.rs`, `commands/monitor.rs`, `commands/browser.rs`, `commands/signal.rs`, `tmux.rs`, `db/agents.rs`, `db/messages.rs`) plus verified external sources for SQLite WAL checkpoint starvation, Telegram Bot API reliability, and tokio graceful shutdown patterns.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Clone Name Collision — DB Sees Only DB, Not tmux Reality
+### Pitfall 1: Watchdog Holds a Long-Lived Write Pool — Starves All Other CLI Commands
 
 **What goes wrong:**
-`squad-station clone <agent>` must derive a unique name like `proj-claude-code-implement-2`. A naive implementation queries the DB for the highest existing suffix and increments by one. After a re-init with overwrite (`delete_all_agents()` clears the DB), the DB resets but orphaned tmux sessions `<name>-2`, `<name>-3` still exist. The next `clone` derives `-2`, then calls `tmux new-session -d -s proj-claude-code-implement-2`. tmux returns exit code 1 (session already exists). The clone command either errors out or silently no-ops, but the orchestrator believes a new agent was registered.
+The watchdog polls every N seconds. If it creates a `db::connect()` pool at startup and holds it alive for the process lifetime, it owns the single-writer SQLite connection permanently. Every other CLI command that calls `db::connect()` — `send`, `signal`, `peek`, `register`, `clone` — blocks waiting for the 5-second acquire timeout, then errors with "connection pool timed out." The squad becomes unusable while the watchdog runs.
+
+This is a concrete risk because `db::connect()` uses `max_connections(1)` by design (SAFE-01: prevents async write-contention deadlock). There is no second write slot available for concurrent CLI callers.
 
 **Why it happens:**
-Agent name = tmux session name is a foundational design decision. The DB and tmux state can diverge after a re-init. The DB reflects declared intent; tmux reflects live reality. The auto-increment logic only has visibility into the DB.
+Developers building daemon-style processes habitually create a pool at startup and reuse it throughout the process lifetime. This is correct for web servers with a read-write pool. For Squad Station's single-writer pattern, it is catastrophic — the watchdog becomes the sole holder of the write lock indefinitely.
 
 **How to avoid:**
-The clone command must check both `db::agents::get_agent(pool, candidate_name)` AND `tmux::session_exists(candidate_name)` before committing to a derived name. Keep incrementing until a name is free in both. Explicitly document: `squad-station clone` does not kill existing sessions; use `squad-station close <clone>` to fully remove a clone.
+Apply the same connect-per-refresh pattern already used in `monitor.rs` (3-second refresh cycle, fresh `db::connect()` each time, pool dropped after use) and `browser.rs` (write pool opened, used, `.close().await` called, then dropped every 2 seconds). The watchdog must:
+1. Open a `db::connect_readonly()` pool at startup and hold it only for reads (no WAL starvation risk from a read-only pool).
+2. For any write operations (if any), call `db::connect()`, write, then explicitly `.close().await` before the next poll tick.
+3. Never hold a write pool across poll intervals.
 
 **Warning signs:**
-- `tmux new-session` returns non-zero during a clone attempt
-- `squad-station agents` shows clones as `dead` (DB says they exist, tmux sessions are gone)
-- Re-init with overwrite followed by clone produces "session already exists" errors
+- `squad-station send` hangs for 5+ seconds while watchdog is running
+- "connection pool timed out" errors from CLI commands during watchdog session
+- `db::connect()` call at the top of `watchdog::run()` with no corresponding `.close().await` in the poll loop
 
 **Phase to address:**
-Phase implementing the `clone` command. Double-check logic must be specified in the implementation plan before the name resolution loop is written.
+Phase 1 (watchdog core implementation). Pool lifecycle must be the first architectural decision, before any polling logic is written.
 
 ---
 
-### Pitfall 2: Clone Partially Succeeds — tmux Session Created But DB Registration Failed
+### Pitfall 2: False Positive Stall — Transient Window Between Signal Completion and Agent Status Update
 
 **What goes wrong:**
-The clone command has two sequential steps: (1) register the agent in the DB, (2) launch a new tmux session. If the implementation reverses the order — launch tmux first, then write to DB — and the DB write fails (busy_timeout under write contention, or a bug), the tmux session is running with no DB record. The stop hook fires `squad-station signal <clone-name>`, hits GUARD 3 (`get_agent` returns `None`), silently exits. The orchestrator is never notified of the clone's task completion. The clone works in tmux but is invisible to the squad.
+The stall condition is: `pending/processing messages exist AND zero agents are busy`. However, between the moment an agent completes a task and the moment `signal.rs` updates both the message status (to `completed`) and the agent status (to `idle`), there is a brief window where the message is still `processing` but the agent's status may already have been updated to `idle` (or not yet updated). The watchdog polling at that exact instant reads: message = processing, all agents = idle → declares a stall → fires an alert → injects noise into the orchestrator's tmux pane.
 
-Alternatively: if DB registration succeeds but `tmux new-session` fails, the DB contains a ghost record that the TUI shows as `idle` but the session does not exist. This will flip to `dead` on next reconciliation, but the user sees a phantom agent in the list.
+More critically: the `signal` command itself has a busy_timeout of 3 seconds. If the DB write is delayed (contention from the watchdog's own reads), the agent status update is delayed, widening this window.
 
 **Why it happens:**
-tmux and SQLite are separate systems with no shared transaction boundary. Developers write the "happy path" sequentially without considering partial failure. The existing pattern in `register.rs` does DB-only registration with no tmux involvement, so there is no established precedent for the two-step pattern.
+The watchdog's poll snapshot is not atomic with the signal write transaction. Two separate processes reading/writing the DB at overlapping moments will always encounter transient inconsistency at transaction boundaries. SQLite WAL mode allows readers to see the last committed state, but the state machine transition (processing → completed, busy → idle) involves two sequential writes that are not grouped in a single transaction.
 
 **How to avoid:**
-Always register in DB first, launch tmux second. If the DB write fails, return an error before touching tmux. If the tmux launch fails after a successful DB write, immediately call `db::agents::delete_agent_by_name(pool, &clone_name)` (a compensating transaction). Log the compensating action to stderr. This is the closest thing to atomicity achievable without a shared transaction.
+Implement a debounce threshold: the stall condition must persist for at least 2–3 consecutive poll cycles (e.g., at 5-second poll interval, require 15 seconds of continuous stall) before triggering an alert. A single snapshot showing "no busy agents, pending messages" is insufficient. Only declare a stall when the condition is stable across N consecutive reads. Additionally, examine `updated_at` on pending messages: if `now - updated_at < 30 seconds`, the message is likely in-flight and not a true stall.
 
 **Warning signs:**
-- `squad-station agents` shows a clone as `idle` but `tmux ls` does not show its session
-- Clone completes a task but no `[SQUAD SIGNAL]` notification reaches the orchestrator
-- The DB contains agents with suffix names that do not correspond to live tmux sessions
+- Alert fires immediately on first detection without debounce
+- Alert fires when a single agent just completed a task (within 5 seconds of signal)
+- No `consecutive_stall_count` or equivalent state variable in the watchdog's detection loop
+- No minimum age check on `processing` messages before declaring stall
 
 **Phase to address:**
-Phase implementing the `clone` command. The DB-first ordering and compensating rollback must be explicit requirements in the implementation plan.
+Phase 1 (stall detection logic). Debounce and message age threshold must be specified as explicit acceptance criteria before any detection code is written.
 
 ---
 
-### Pitfall 3: Clone Does Not Update squad-orchestrator.md — Orchestrator Never Learns About the Clone
+### Pitfall 3: False Positive Stall — Agents Busy in tmux But DB Status Is Stale
 
 **What goes wrong:**
-After `squad-station clone <agent>` successfully registers the clone and launches its session, the orchestrator's routing instructions in `squad-orchestrator.md` still only list the original agents. The orchestrator never routes tasks to the clone. The clone idles. Workload is not distributed. From the user's perspective, cloning did nothing useful.
+Agent status in the DB (`busy`/`idle`) is written by `signal.rs` when the agent's Stop hook fires. If an agent is actively running a long task and has not yet fired its Stop hook, the DB shows `idle` (the last known state before the task started — unless `send` sets it to `busy` explicitly). The watchdog reads DB-only and sees: message = processing, agent = idle → false stall alert.
+
+The v2.0 design inherits the same "DB is source of truth" constraint as all other commands. But DB state can lag real tmux state for long-running tasks, especially if the `send` command does not set agent status to `busy` at send time.
 
 **Why it happens:**
-`context` is a separate, read-only command that regenerates `squad-orchestrator.md` from the current DB state. It is not called automatically after `clone`. The orchestrator loads the playbook once at session start via `/squad-orchestrator`. Without a re-invocation, the orchestrator has no mechanism to detect new agents.
+In the current schema, agent status transitions are driven by `signal` (completion) and reconciliation (session-aliveness check). There is no guaranteed "set to busy on receive" step because the agent's AI tool does not call `squad-station` when it picks up a task — only when it completes one (via Stop hook). The DB may correctly show `idle` for an agent that is actively working on a multi-minute task.
 
 **How to avoid:**
-The `clone` command must call the `context` regeneration logic internally as its final step — equivalent to running `squad-station context` after the agent is registered. The `build_orchestrator_md` function is already exported from `context.rs` as a `pub fn`; call it directly rather than shelling out to the binary. Additionally, the clone command output must instruct the user: "Orchestrator playbook updated at `.claude/commands/squad-orchestrator.md`. Reload `/squad-orchestrator` in your orchestrator session."
+The watchdog's stall detection must combine both conditions before alerting:
+1. DB check: `processing` messages exist AND no agents show `busy` status.
+2. tmux check: cross-reference with `tmux::list_live_session_names()` to confirm the target agents have active sessions. An agent with a live tmux session is likely running even if its DB status shows `idle`.
+3. Apply the message age threshold (see Pitfall 2): only flag messages older than a configurable minimum (e.g., 5 minutes) as potentially stalled.
+
+Note: tmux capture-pane can be used to check if the agent's session is showing a prompt (idle) vs. active output (busy), but this is fragile. Prefer the age threshold approach over pane content parsing.
 
 **Warning signs:**
-- `squad-orchestrator.md` contains only original agents after a clone
-- TUI shows the clone as `idle` but the orchestrator never sends it tasks
-- No call to `build_orchestrator_md` or equivalent in the clone command's implementation
+- Watchdog fires alert for agents running multi-minute tasks
+- Stall detection logic only queries the `agents` table with no tmux session cross-check
+- No configurable `min_stall_age_seconds` parameter in watchdog options
+- Alert fires within 2 minutes of a `send` command for a known long-running task
 
 **Phase to address:**
-Phase implementing the `clone` command. The auto-context-regeneration must be a stated requirement in the plan, not an afterthought.
+Phase 1 (stall detection logic). The compound detection condition (DB + tmux session check + message age) must be the stated detection algorithm.
 
 ---
 
-### Pitfall 4: Metrics Data Is Stale the Moment squad-orchestrator.md Is Written
+### Pitfall 4: Duplicate Alert Spam — Watchdog Fires Every Poll Cycle After Stall Detected
 
 **What goes wrong:**
-The orchestrator intelligence feature computes task-role alignment scores, busy time, and messages-per-agent counts and embeds them as a static table in `squad-orchestrator.md`. By the time the orchestrator reads this file — potentially minutes or many tasks later — the data is stale. The orchestrator makes routing decisions ("agent A is overloaded, send to agent B") based on past state, causing misrouting in the opposite direction (avoiding an agent that has since become idle).
+Once a stall is detected, every subsequent poll cycle continues to observe the same condition (no busy agents, pending messages) and fires another alert. The orchestrator's tmux pane receives one stall injection every N seconds indefinitely. The Telegram chat receives a flood of identical messages until the stall is manually resolved. The user mutes notifications or stops trusting them.
 
 **Why it happens:**
-`squad-station context` is a stateless snapshot command by design (the decision to make it read-only was explicit in v1.0). There is no push mechanism, no daemon, no file watcher. The orchestrator loads the playbook once. Static metrics in a once-loaded document are definitionally stale.
+The watchdog is stateless between poll cycles if implemented naively. It has no memory of whether an alert has already been sent for the current stall event. Each cycle independently evaluates the condition and independently decides to alert.
 
 **How to avoid:**
-Do not embed pre-computed metric values in `squad-orchestrator.md`. Instead, embed **CLI commands** the orchestrator must run to get live data:
+The watchdog must be stateful across poll cycles for alert deduplication:
+1. Track a `stall_alerted_at: Option<Instant>` field in the watchdog's in-memory state.
+2. When a stall is first detected (after debounce), fire the alert and set `stall_alerted_at = Some(Instant::now())`.
+3. Do not fire another alert unless either: (a) the stall was resolved (condition cleared) and a new stall begins, OR (b) a configurable re-alert interval has elapsed (e.g., 30 minutes) for persistent stalls.
+4. When the stall resolves (all pending messages completed or an agent becomes busy), clear `stall_alerted_at`.
 
-```
-## Workload Check (run before routing a task)
-\`\`\`bash
-squad-station status --json
-squad-station agents
-\`\`\`
-```
-
-If a static snapshot is valuable (e.g., at session initialization), include it with a clearly labeled timestamp and an advisory TTL:
-
-```
-<!-- Snapshot generated: 2026-03-19T10:00:00Z — refresh by running `squad-station context` -->
-```
-
-The orchestrator is an AI with tool access. Give it commands to run, not data to memorize.
+This is the standard alert deduplication pattern used by Prometheus Alertmanager and Datadog Watchdog.
 
 **Warning signs:**
-- `squad-orchestrator.md` contains a table of metrics with no timestamp
-- `squad-orchestrator.md` contains no CLI command to re-query current workload
-- Orchestrator systematically avoids idle agents because the stale metrics label them busy
+- Watchdog state struct has no `last_alerted_at` or `stall_start` field
+- Alert dispatch is called directly from the condition check with no cooldown guard
+- Telegram chat shows identical stall messages arriving every N seconds
+- No "stall resolved" state transition in the detection loop
 
 **Phase to address:**
-Phase implementing orchestrator intelligence data. This is a UX design decision — the generated playbook text must be drafted carefully before any metric computation code is written.
+Phase 1 (watchdog core implementation). Alert deduplication state must be designed alongside the detection logic, not added later as a patch.
 
 ---
 
-### Pitfall 5: busy_time Metric Resets on Re-Init — Looks Like Zero for All Agents
+### Pitfall 5: Telegram MCP Plugin Unavailability Crashes the Watchdog
 
 **What goes wrong:**
-Computing "busy time" uses `status_updated_at` timestamps from the `agents` table. When a user runs re-init with overwrite, `delete_all_agents()` clears the table and `insert_agent()` re-inserts all agents with fresh `status_updated_at = now`. All agents show 0 busy time immediately after re-init, even if they have been running for hours. The metrics report an agent fleet that looks freshly started, regardless of actual runtime.
-
-More subtly: `insert_agent` uses `ON CONFLICT(name) DO UPDATE SET tool = excluded.tool, role = excluded.role, model = excluded.model, description = excluded.description`. It does NOT reset `status_updated_at`. But the overwrite re-init path calls `delete_all_agents()` followed by fresh inserts — so `status_updated_at` is reset to the re-init timestamp.
+The watchdog is specified to "notify via Telegram MCP plugin (if available)." If the Telegram alert path is implemented as a blocking call with no error isolation, a network timeout, MCP server restart, or Telegram API 429 rate-limit response causes the entire watchdog process to crash or hang, stopping all future stall detection.
 
 **Why it happens:**
-`status_updated_at` was designed to track the most recent status transition, not total accumulated busy time. Using it as a busy-time proxy works for "how long has this agent been in its current state" but is unreliable across re-inits and status updates triggered by duplicate signals.
+External API calls (HTTP, MCP inter-process) can fail or hang. Without a timeout and fallback, the Rust async runtime's `await` on a Telegram send can block indefinitely if the underlying TCP connection stalls. Additionally, the Telegram Bot API returns HTTP 429 with a `retry_after` field when rate-limited; treating 429 as a generic error and retrying immediately produces a retry storm that gets the bot banned.
 
 **How to avoid:**
-Define busy_time explicitly as "elapsed time since `status_updated_at` if current status is `busy`." Document clearly in the generated playbook that this metric represents "time in current state since last transition," not "total busy time since deployment." Do NOT attempt to compute historical busy time from existing schema — it is not available. For v1.8, this simple metric is sufficient and honest. Defer trend analytics (total busy time over 24h) to a future milestone that would require an `agent_events` table.
+1. Wrap every Telegram alert call in a `tokio::time::timeout(Duration::from_secs(10), telegram_send(...))`. If it times out, log a warning and continue — the watchdog must not stop monitoring because Telegram is slow.
+2. Check Telegram availability with a capability guard: only attempt Telegram alerts if the MCP plugin responds to a health check at startup. If unavailable, log once and skip silently on subsequent poll cycles.
+3. For 429 responses: read the `retry_after` header, store the retry timestamp in watchdog state, and skip Telegram alerts until that timestamp passes.
+4. The tmux injection alert path and Telegram alert path are independent. A Telegram failure must never prevent the tmux injection.
 
 **Warning signs:**
-- All agents show 0 busy time immediately after a re-init
-- An agent that has been idle for 3 hours shows 0 busy time after a status update from a duplicate signal
-- Metrics claim an agent is "newly idle" when it has been idle since deployment
+- `telegram_alert()` call has no surrounding `tokio::time::timeout()`
+- A single `?` propagates Telegram errors up to the watchdog's main loop
+- No capability guard — watchdog attempts Telegram on every cycle without checking availability
+- No `retry_after` handling for 429 responses
 
 **Phase to address:**
-Phase implementing orchestrator intelligence data. The metric definition and its limitations must be documented in the generated playbook to prevent orchestrator misinterpretation.
+Phase implementing Telegram integration. Error isolation must be a stated requirement before the Telegram call site is written.
 
 ---
 
-### Pitfall 6: Agent Template Suggests Model Not in Validation Allowlist
+### Pitfall 6: tmux Injection Alert Into Orchestrator Fires When Orchestrator Session Is Dead
 
 **What goes wrong:**
-Agent role templates embed suggested model identifiers (e.g., for an "Architect" role, suggest `claude-opus`). When the wizard pre-fills the model field from the template and the user proceeds, the model string flows through `generate_squad_yml` into the YAML and then through `config::validate()` at init time. If the template embeds a model string not in `VALID_PROVIDERS` / `valid_models_for()` — for example `"claude-opus-4"` instead of the valid alias `"opus"` — validation rejects it. The user selected a template that Squad Station itself offered and immediately gets a cryptic validation error.
-
-This is especially insidious because the templates are compiled into the binary. A mismatch between template model strings and the validation allowlist cannot be caught at runtime — only by tests.
+The stall alert injects a notification into the orchestrator's tmux pane via `send_keys`. If the orchestrator session is dead (the user closed it, or the AI provider crashed), `tmux send-keys -t <session-name>` fails silently (exit 1, no output) or returns an error. The alert was "sent" from the watchdog's perspective, but the orchestrator never saw it. The watchdog marks the alert as delivered and stops retrying. The stall goes unnoticed.
 
 **Why it happens:**
-The model validation allowlist in `src/config.rs` is maintained separately from the template definitions in the wizard. If a new model alias is added to the allowlist (e.g., `"claude-sonnet-4-7"`) but existing templates still reference an old format, or vice versa, the two diverge silently until a user hits the validation error.
+The existing pattern in `signal.rs` and `send.rs` calls `tmux send-keys` without checking whether the target session is alive first (the liveness check is done by `reconcile_agents`, a separate step). The watchdog, running as a background process, does not have a synchronous reconciliation step before alert injection.
 
 **How to avoid:**
-Templates must reference model aliases drawn from the same `valid_models_for()` function used in `validate_agent_config`. The simplest approach: templates do not specify a model at all — they set role and description, and leave the model field empty for the user to choose from the radio selector (which is already bound to the allowlist). If templates do suggest models, embed a test that calls `validate_agent_config` on each template's generated agent config and asserts it passes. This test runs in CI and catches drift before release.
+Before injecting the stall alert into the orchestrator's tmux pane:
+1. Call `tmux::session_exists(orchestrator_name)` (wraps `tmux has-session`). If false, skip the tmux injection and log a warning.
+2. Escalate to Telegram only if the tmux injection fails. This inverts the typical priority: tmux is the primary channel; Telegram is the escalation when tmux is unreachable.
+3. Log the alert attempt outcome (`ALERT sent to tmux: OK`, `ALERT tmux unavailable: escalated to Telegram`) for post-mortem visibility.
 
 **Warning signs:**
-- No test validates template-generated configs against `validate_agent_config`
-- Template embeds a string literal for a model (e.g., `"claude-opus"`) rather than referencing the allowlist constant
-- A template passes wizard smoke tests but fails when `init` writes squad.yml and re-validates
+- No `session_exists` check before `send_keys` in the alert dispatch
+- Watchdog logs "alert sent" even when the orchestrator session is not visible in `tmux ls`
+- No escalation logic — Telegram and tmux alerts are always fired independently, not as fallback chain
 
 **Phase to address:**
-Phase implementing agent role templates in wizard. Template validation against the allowlist must be a test requirement, not an afterthought.
+Phase 1 (tmux alert dispatch). The session-alive check must precede the `send_keys` call. The fallback chain (tmux → Telegram) must be an explicit design decision.
 
 ---
 
-### Pitfall 7: Cloning the Orchestrator Creates a Routing Loop
+### Pitfall 7: WAL Checkpoint Starvation From Continuous Read-Only Pool
 
 **What goes wrong:**
-If the `clone` command does not explicitly reject orchestrator agents, a user (or a confused orchestrator) can run `squad-station clone <orchestrator-name>`. The clone is registered with `role = "orchestrator"`. Now there are two orchestrators in the DB. GUARD 4 in `signal.rs` checks `agent_record.role == "orchestrator"` and silently exits for both. Neither orchestrator receives task completion signals. More dangerously: `get_orchestrator` in `db/agents.rs` returns the most recent non-dead orchestrator. The original orchestrator may stop receiving signals if the cloned orchestrator appears "more recent." The routing chain silently breaks.
+A watchdog holding a long-lived `connect_readonly()` pool with 5 connections polling every second maintains at least one open read transaction continuously. SQLite WAL checkpoint cannot reset the WAL file while any reader holds an open read transaction. If the watchdog's polling loop never closes its read transaction between ticks, the WAL file grows indefinitely: every write from `send`, `signal`, and other CLI commands appends to the WAL without the WAL ever being checkpointed back to the main DB file. Over hours of watchdog operation, WAL file size grows to hundreds of MB, read performance degrades quadratically, and eventually SQLite begins returning `SQLITE_BUSY` even from readers.
 
 **Why it happens:**
-The `clone` command will copy the source agent's `role` field from the DB. The DB does not enforce any uniqueness constraint on `role = "orchestrator"`. There is no guard at the DB level or in the signal chain to detect duplicate orchestrators at routing time.
+The `connect_readonly()` pool is designed for concurrent reading (the browser server uses it for WebSocket push). In the browser server, the read pool is used for short bursts during client-initiated snapshots. In a watchdog polling every second, the read pool is under continuous load with no idle periods. SQLite autocommit mode opens and closes transactions per query, but connection pooling with `max_connections > 1` can keep connections alive with open shared-cache read locks between queries.
 
 **How to avoid:**
-The `clone` command must explicitly reject agents with `role == "orchestrator"` with a clear error message: "Cannot clone the orchestrator agent. Only worker agents can be cloned." This is a one-line guard at the top of the clone handler, before any DB writes.
+Apply the same connect-per-refresh pattern confirmed correct for the TUI (`monitor.rs`):
+1. Do not hold a `connect_readonly()` pool across poll ticks.
+2. Open a fresh `connect_readonly()` connection at the start of each poll cycle, run the queries, then drop it before sleeping until the next tick.
+3. Alternatively: hold one `connect_readonly()` pool with `max_connections(1)` and use short timeouts to ensure the connection is released between ticks.
+4. Set a watchdog poll interval no faster than 5 seconds — this provides natural reader gaps for WAL checkpointing.
 
 **Warning signs:**
-- `squad-station agents` shows two agents with `role = "orchestrator"`
-- `squad-station signal <worker>` succeeds (rows > 0) but no notification reaches the orchestrator
-- `get_orchestrator` query is returning the wrong agent (cloned orchestrator shadows the original)
+- `connect_readonly()` called once at watchdog startup, pool held across the entire process lifetime
+- WAL file size growing while watchdog runs: `ls -lh .squad/station.db-wal`
+- CLI commands (`send`, `signal`) becoming progressively slower while watchdog runs
+- Poll interval set to sub-second values
 
 **Phase to address:**
-Phase implementing the `clone` command. The orchestrator rejection guard must be the first guard in the clone handler.
+Phase 1 (watchdog core implementation). Connection lifecycle and poll interval must be specified as explicit constraints before any polling code is written.
+
+---
+
+### Pitfall 8: Watchdog Cannot Be Stopped Cleanly — Orphaned Process on Ctrl+C
+
+**What goes wrong:**
+The watchdog is the first long-lived background command in Squad Station. If it ignores `SIGTERM`/`SIGINT` or does not implement graceful shutdown, Ctrl+C terminates it abruptly mid-poll. If the watchdog holds any file handles (log files, WAL/SHM), the abrupt exit can leave the DB in a state that triggers WAL recovery on next connect (the existing `try_wal_recovery` path in `db/mod.rs` handles this, but it requires `lsof` and is slower than a clean shutdown). If the watchdog is run in the background via `squad-station watchdog &`, there is no established `squad-station watchdog stop` command — the user must `kill` the PID manually, which is poor UX.
+
+**Why it happens:**
+Rust's default process termination on SIGINT closes file descriptors, but any in-flight async operations (pending DB write, pending tmux send) are abandoned without rollback. The existing binary is stateless — every command exits cleanly because it runs one operation then exits. A long-lived process requires explicit signal handling that the codebase has no precedent for (the `browser` command uses `tokio::signal` for graceful shutdown, but only for SIGINT/SIGTERM, not for the watchdog's specific cleanup needs).
+
+**How to avoid:**
+1. Use `tokio::signal::ctrl_c()` and `tokio::signal::unix::signal(SignalKind::terminate())` in a `tokio::select!` against the poll loop, identical to the pattern in `browser.rs`'s graceful shutdown handler.
+2. On shutdown signal: finish the current poll tick, close all DB pools explicitly with `.close().await`, flush any pending log writes, then exit.
+3. Write a PID file to `.squad/watchdog.pid` at startup; remove it on clean shutdown. This enables `squad-station watchdog stop` to send SIGTERM to the recorded PID.
+4. Log shutdown event: `"watchdog: received SIGTERM, shutting down after current tick"`.
+
+**Warning signs:**
+- No `tokio::select!` combining the poll loop with a shutdown signal in `watchdog::run()`
+- No `.close().await` on DB pools before process exit
+- No PID file written on startup
+- `browser.rs` graceful shutdown code not used as a reference for the same pattern
+
+**Phase to address:**
+Phase 1 (watchdog process lifecycle). Graceful shutdown is not optional — it is the minimum viable implementation for a long-lived process.
+
+---
+
+### Pitfall 9: Stall Detection Triggers on Legitimate Idle Periods
+
+**What goes wrong:**
+A valid workflow state is: orchestrator sent all tasks, all agents completed, orchestrator is deciding next steps. During this thinking period, the DB shows no `processing` messages and no busy agents. This is not a stall — it is normal orchestrator cognition. However, if the orchestrator takes longer than the watchdog's stall threshold (e.g., 5 minutes of thinking on a complex architecture decision), the watchdog fires a false alert and injects a "stall detected" message into the orchestrator's pane, interrupting its reasoning mid-thought.
+
+**Why it happens:**
+The stall condition "no busy agents AND pending/processing messages exist" is necessary but not sufficient to distinguish a real deadlock from an intentional idle. An idle orchestrator with no pending messages dispatched yet looks identical to a post-deadlock state from the DB's perspective.
+
+**How to avoid:**
+Refine the stall condition to only trigger when `processing` (not just `pending`) messages exist with no busy agents. `pending` messages may not yet have been dispatched by the orchestrator and do not constitute a stall by themselves. Only `processing` messages assigned to an agent that has been idle for longer than a configurable threshold constitute a stall. Recommended default: 10 minutes for `processing` message age before stall alert.
+
+Additionally: if no messages are in `processing` state at all, do not alert regardless of `pending` count. The orchestrator is thinking, not stuck.
+
+**Warning signs:**
+- Stall detection query checks `status IN ('pending', 'processing')` without distinguishing between the two
+- No minimum age on `processing` messages before alerting
+- Alert fires during normal inter-task orchestrator pause periods (< 10 minutes)
+- No configurable threshold for stall sensitivity
+
+**Phase to address:**
+Phase 1 (stall detection logic). The exact SQL condition and age threshold must be specified as explicit acceptance criteria.
 
 ---
 
@@ -183,30 +245,33 @@ Shortcuts that seem reasonable but create long-term problems.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Auto-increment clone names by scanning DB only | Simple implementation | Diverges from tmux reality after re-init; causes collision bugs | Never — always check tmux too |
-| Launch tmux session before DB registration in clone | Fewer rollback cases | Orphaned sessions if DB write fails; signal chain breaks silently | Never — DB first, always |
-| Skip context regeneration after clone | Simpler clone command | Orchestrator never learns about new clones; cloning has no effect on routing | Never — regeneration is mandatory |
-| Embed static metric tables in squad-orchestrator.md | Easier to read at a glance | Stale by the time the orchestrator reads it; causes misrouting | Never — embed CLI commands, not values |
-| Templates hard-code model strings as string literals | Fast to write | Drift from validation allowlist; user sees validation errors on their own selections | Never — reference the allowlist or omit the model |
-| Use status_updated_at as proxy for total busy time | No new schema needed | Resets on re-init; not historical; misleads on long-running squads | Acceptable for v1.8 with documented caveats in the playbook |
-| Allow cloning any agent including orchestrators | No special-case code | Two orchestrators break the signal routing chain silently | Never — orchestrator clone must be explicitly rejected |
+| Hold a write pool for the watchdog's process lifetime | Simpler code (no per-tick connect) | Starves all CLI commands from writing; squad becomes unusable during watchdog run | Never |
+| Fire alert on first detection, no debounce | Simpler detection loop | False positive spam on transient signal/status update windows | Never |
+| Alert every poll cycle after stall detected | Always notifies | Floods orchestrator tmux pane and Telegram with identical messages; alert fatigue | Never |
+| No timeout on Telegram API call | Simpler async code | One Telegram network stall hangs the watchdog indefinitely; monitoring stops | Never |
+| Treat 429 from Telegram as generic error, sleep 5s | Easy to implement | Over-sleeping in light load, potentially banned at peak | Never — read `retry_after` |
+| Alert only via Telegram, not tmux injection | Single channel simpler | User must check phone; if Telegram is down, alerts are lost entirely | Never — tmux is the primary channel |
+| Long-lived `connect_readonly()` pool held continuously | Fewer connection open/close calls | WAL grows indefinitely; CLI commands slow over hours | Never |
+| No graceful shutdown | Zero extra code | Abrupt exit may leave WAL in recovery state; PID tracking impossible | Never for a production watchdog |
+| Check DB status only, not tmux session liveness | No tmux subprocess overhead | False positives for agents running long tasks not yet reflected in DB | Acceptable only with a long age threshold (>10 min) as compensation |
 
 ---
 
 ## Integration Gotchas
 
-Common mistakes when connecting new features to the existing system.
+Common mistakes when connecting the watchdog to existing systems.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| clone command → signal chain | Launch tmux session before DB registration | Register in DB first; roll back DB record if tmux launch fails |
-| clone command → orchestrator context | Assume orchestrator will reload `/squad-orchestrator` manually | Auto-regenerate squad-orchestrator.md inside the clone command as the last step |
-| metrics → context command | Compute metric values and embed as static table | Embed CLI commands for live re-query; timestamp any static snapshot |
-| templates → config validation | Template suggests model not in `valid_models_for()` allowlist | Templates omit model field, or reference the allowlist constant; CI test validates |
-| clone → name resolution | Check DB only for name collision | Check both `get_agent(pool, candidate)` and `tmux::session_exists(candidate)` |
-| clone → orchestrator role | Allow cloning any agent | Reject `role == "orchestrator"` with clear error before any DB writes |
-| clone → TUI live update | TUI must poll at a different cadence for new agents | TUI already polls DB every 3s via connect-per-refresh; clone registers in DB; TUI picks it up automatically within one cycle |
-| busy_time metric → re-init | Assume status_updated_at persists across re-inits | Document the reset behavior; define metric as "time in current state" not "total runtime" |
+| Watchdog → SQLite write pool | Open `db::connect()` once and hold it | Use connect-per-refresh: open, use, `.close().await`, drop — same as `monitor.rs` |
+| Watchdog → SQLite read pool | Hold `connect_readonly()` across all ticks | Drop read pool between ticks, or use `max_connections(1)` with short idle timeout |
+| Watchdog → stall detection | Check `status = 'processing'` only | Also check message `updated_at` age AND tmux session liveness before alerting |
+| Watchdog → tmux injection | Call `send_keys` without checking session alive | Call `session_exists()` first; if dead, skip tmux and escalate to Telegram |
+| Watchdog → Telegram MCP | Await Telegram send directly in poll loop | Wrap in `tokio::time::timeout(10s, ...)`; errors must not stop the poll loop |
+| Watchdog → Telegram 429 | Treat 429 as generic error, retry immediately | Read `retry_after`, store next-allowed-send timestamp, skip until it passes |
+| Watchdog → alert deduplication | Fire alert in every cycle that matches condition | Track `stall_alerted_at` in watchdog state; deduplicate within configurable cooldown window |
+| Watchdog → graceful shutdown | No SIGTERM/SIGINT handling | Use `tokio::select!` with `tokio::signal` same as `browser.rs`; write/remove PID file |
+| Watchdog → `browser` server coexistence | Both hold `connect_readonly()` pools long-lived | Both must use short-lived connections; two concurrent long-lived read pools magnify WAL starvation |
 
 ---
 
@@ -216,10 +281,11 @@ Patterns that work at small scale but fail as usage grows.
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| `tmux has-session` called once per agent during reconciliation (pre-existing issue) | `agents`, `status`, `context` commands slow with many agents | Use `list_live_session_names()` once + HashSet lookup (flagged in CONCERNS.md) | 10+ agents |
-| Context regeneration called once per clone in a rapid clone loop | Slow if user clones 5 agents sequentially | Each clone triggers one `build_orchestrator_md` call; cost is proportional to agent count (already O(N)) | Not a concern at v1.8 agent counts (<10) |
-| Metrics query runs a full table scan per `context` call | `context` slow for large agent fleets | Metrics are derived from existing `list_agents` result — no extra query needed if implementation shares the data | Not a trap if implementation reuses the existing query |
-| Clone creates many agents that all signal orchestrator simultaneously | Rapid-fire `send_keys_literal` calls overlap in the orchestrator session | Each `send_keys_literal` call includes a 2s sleep (built into `tmux.rs`); naturally serialized by single-writer pool | 5+ agents completing simultaneously |
+| Sub-second poll interval (e.g., 500ms) | WAL never checkpoints; WAL file grows unbounded; DB reads slow | Minimum 5-second poll interval for watchdog; leave reader gaps for checkpointing | Hours of runtime with any write activity |
+| Watchdog + browser server both polling at high frequency | WAL starvation doubled; `squad-station send` begins timing out | Coordinate poll intervals; ensure both use connect-per-refresh | Immediately if both run simultaneously with <5s intervals |
+| Telegram call inside the poll tick (blocking the loop) | Poll tick extends to the Telegram API round-trip time | Fire Telegram alerts in a detached `tokio::spawn` task; poll loop does not await the result | Every time Telegram is slow (frequent in practice) |
+| tmux `capture-pane` called for all agents during stall check | O(N) subprocess spawns per tick | Stall detection should not use `capture-pane`; use DB + `list_live_session_names()` (single subprocess) | 5+ agents |
+| Accumulating stall event history in memory | Memory grows if watchdog runs for days | Keep only last alert timestamp; no unbounded event history | Days of continuous operation |
 
 ---
 
@@ -229,10 +295,10 @@ Domain-specific security issues.
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Clone name derived from user input without sanitization | Spaces or tmux-unsafe chars in the derived name break session targeting | Apply `config::sanitize_session_name()` to any derived clone name before passing to `tmux::launch_agent` |
-| Template description field contains markdown or backticks | Markdown injection could confuse orchestrator's parsing of squad-orchestrator.md | Template descriptions are plain text only; no markdown formatting, no backtick blocks |
-| Clone command allows cloning the orchestrator | Two orchestrators break signal routing silently | Reject `role == "orchestrator"` at the start of the clone handler |
-| Metrics expose internal agent state to squad-orchestrator.md | Low risk (same file already contains agent names/descriptions) | No new exposure beyond what the existing `context` command generates |
+| Watchdog injects arbitrary alert text into orchestrator tmux pane without sanitization | If the stall message is constructed from DB content (agent names, task bodies), malicious task body content could inject shell commands via tmux | Alert message must be a static string (e.g., "WATCHDOG: stall detected — N messages processing, no busy agents") with no DB content interpolated into the tmux injection |
+| Telegram bot token stored in plaintext in squad.yml or watchdog config | Token leaked in repo history if squad.yml is committed | Read token from environment variable only (`SQUAD_TELEGRAM_TOKEN`); never from config file |
+| Watchdog PID file writable by other users on shared system | Malicious process writes fake PID, `watchdog stop` sends SIGTERM to wrong process | PID file permissions: 0600; verify PID belongs to a `squad-station` process before sending SIGTERM |
+| Alert message truncation if task body is very long | Message content truncation causes confusing alerts | Truncate task body in alert to 80 chars with `...` suffix; never send the full task body |
 
 ---
 
@@ -242,11 +308,11 @@ Common user experience mistakes in this domain.
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Template list has no guidance on when to use each role | User picks "Architect" for a 2-agent squad that doesn't need one | Each template includes a one-line "Use when:" hint in the wizard list item |
-| Clone succeeds but orchestrator routing is unchanged | User expects load balancing; nothing changes | Print explicit confirmation: "Clone registered. Playbook updated. Reload `/squad-orchestrator` in your orchestrator session." |
-| Metrics in playbook presented as routing rules, not hints | Orchestrator over-trusts stale data; refuses to route to an idle agent | Frame as "run this command to check current load" not "this agent is busy" |
-| TUI shows clone agents indistinguishable from originals | User cannot identify which agents are clones | Derive clone status from naming convention (suffix `-2`, `-3`); or add a "clone of X" note in the role/description field |
-| No confirmation prompt before creating a clone | User accidentally clones the wrong agent | Print what will be cloned and prompt for confirmation, or at minimum print "Created clone: <name>" with rollback instructions |
+| Watchdog floods orchestrator pane with multi-line alert injection | Interrupts orchestrator mid-reasoning with a wall of text | Inject a single-line alert: `[WATCHDOG] Stall detected: N messages stuck (age: Xm). Run squad-station status` |
+| Watchdog has no way to be stopped gracefully | User must `kill $(cat .squad/watchdog.pid)` manually | Implement `squad-station watchdog stop` that reads `.squad/watchdog.pid` and sends SIGTERM |
+| Watchdog provides no status indication while running | User cannot tell if watchdog is healthy or has silently failed | Write periodic heartbeat to `.squad/watchdog.heartbeat` (timestamp); `watchdog status` reads it and reports |
+| Watchdog alerts for stalls that the user intentionally created (paused workflow) | False alerts on paused projects | Implement `squad-station watchdog pause [N minutes]` that temporarily suppresses alerts |
+| Telegram alert contains no actionable information | User sees "stall detected" but does not know which agent or message | Include: number of stuck messages, oldest stuck message age, list of agent names and their DB status |
 
 ---
 
@@ -254,17 +320,17 @@ Common user experience mistakes in this domain.
 
 Things that appear complete but are missing critical pieces.
 
-- [ ] **Clone command — name resolution:** Does the implementation check `tmux::session_exists(candidate)` in addition to querying the DB? Verify with a test where a tmux session exists but no DB record for that name.
-- [ ] **Clone command — DB-first ordering:** Is the DB `insert_agent` call made BEFORE `tmux::launch_agent`? Verify by code review of the implementation order.
-- [ ] **Clone command — rollback:** If `tmux::launch_agent` fails after DB registration, is the DB record removed? Verify with a unit test that simulates tmux failure.
-- [ ] **Clone command — orchestrator rejection:** Does `clone <orchestrator-name>` return a non-zero exit and clear error message? Verify with an integration test.
-- [ ] **Clone command — context regeneration:** Is `squad-orchestrator.md` updated after a successful clone? Verify by reading the file after a clone and confirming the clone's name appears.
-- [ ] **Agent templates — allowlist compliance:** Does every template's suggested model pass `validate_agent_config()`? Verify with a CI test that runs each template through config validation.
-- [ ] **Orchestrator intelligence — no static values:** Does the generated `squad-orchestrator.md` contain CLI commands for live queries, not just a static metric table? Read the generated file and confirm.
-- [ ] **Orchestrator intelligence — timestamp:** If any static metric snapshot is included, does it have a generated-at timestamp? Verify by reading the generated file.
-- [ ] **TUI live update:** After a clone, does the TUI show the new agent within one refresh cycle (3 seconds)? The TUI polls DB; the clone registers in DB; this should work automatically. Verify by inspection.
-- [ ] **busy_time caveats:** Does the generated playbook include a note explaining that busy_time resets on re-init and represents "time in current state," not "total runtime"? Verify by reading the generated playbook text.
-- [ ] **Signal roundtrip for clone:** After a clone completes a task, does the orchestrator receive a `[SQUAD SIGNAL]`? Full roundtrip: DB registration → hook fires → `signal` finds DB record → `get_orchestrator` succeeds → `send_keys_literal` to orchestrator.
+- [ ] **Connection lifecycle:** Is there a `db::connect()` call at watchdog startup that is never closed? Verify the poll loop does connect-per-refresh, not a long-held pool.
+- [ ] **Debounce:** Is there a consecutive-cycle counter before the first alert fires? Verify that a single-cycle stall observation does not trigger an alert.
+- [ ] **Message age threshold:** Is there a minimum age check on `processing` messages? Verify that a message 30 seconds old does not trigger a stall alert.
+- [ ] **Alert deduplication:** Is there a `stall_alerted_at` field in watchdog state? Verify that a persisting stall does not produce a new alert on every poll cycle.
+- [ ] **Telegram timeout:** Is every Telegram API call wrapped in `tokio::time::timeout()`? Verify that a Telegram network failure does not hang the poll loop.
+- [ ] **tmux session check:** Is `session_exists()` called before `send_keys` alert injection? Verify with a test where the orchestrator session is stopped mid-watchdog-run.
+- [ ] **Graceful shutdown:** Does Ctrl+C produce clean log output and exit 0? Verify that DB pools are closed before process exit.
+- [ ] **PID file:** Is `.squad/watchdog.pid` created on startup and removed on clean shutdown? Verify the file does not persist after the process exits.
+- [ ] **Stall vs. idle distinction:** Does the detection only flag `processing` messages (not `pending`)? Verify that a queue of pending messages with no dispatched tasks does not trigger a stall alert.
+- [ ] **Telegram 429 handling:** Is the `retry_after` value read and respected? Verify that a simulated 429 response does not trigger a retry storm.
+- [ ] **WAL health:** After 30+ minutes of watchdog running alongside active `send`/`signal` calls, does `.squad/station.db-wal` remain a reasonable size (< 10 MB)? If growing unbounded, the connection pattern needs fixing.
 
 ---
 
@@ -274,12 +340,13 @@ When pitfalls occur despite prevention, how to recover.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Clone name collision with orphaned tmux session | LOW | `tmux kill-session -t <name>` then re-run `squad-station clone` |
-| Ghost DB record (clone in DB, no tmux session) | LOW | Runs `squad-station agents` — reconciliation marks it dead; optionally run `squad-station clean` or `reset` to purge dead agents |
-| Orchestrator has stale playbook (no clone in routing) | LOW | Run `squad-station context` manually; orchestrator reloads `/squad-orchestrator` |
-| Two orchestrators in DB (orchestrator was cloned) | HIGH | Kill clone session (`tmux kill-session -t <clone>`); no CLI command to delete a single agent record — requires direct SQLite or a future `squad-station remove` command; run `squad-station context` to rebuild playbook |
-| Template validation error at init time | LOW | Edit the template's model field in squad.yml manually to a valid alias; re-run `init` without `--tui` to re-validate |
-| Metrics mislead orchestrator (stale data misrouting) | MEDIUM | Run `squad-station status` to get current state; manually inform orchestrator via a direct send; adjust playbook text to instruct live re-query |
+| Watchdog blocking CLI commands (write pool held) | HIGH | Kill watchdog PID; `squad-station send` unblocks immediately; re-deploy watchdog with fixed connection lifecycle |
+| Alert spam (no deduplication) | MEDIUM | Kill watchdog; inform orchestrator the alerts were false; re-deploy with deduplication state |
+| Telegram bot banned (429 retry storm) | MEDIUM | Wait for Telegram's ban window to expire (usually 1–24 hours); re-deploy with proper `retry_after` handling |
+| WAL file grown unbounded | MEDIUM | Stop watchdog; run `sqlite3 .squad/station.db "PRAGMA wal_checkpoint(TRUNCATE);"` to force checkpoint; re-deploy with corrected connection pattern |
+| Watchdog stuck (Telegram hung, no shutdown possible) | LOW | `kill -9 $(cat .squad/watchdog.pid)` or `pkill squad-station`; WAL recovery handles the abrupt exit via existing `try_wal_recovery` path |
+| False positive alert injected into orchestrator | LOW | Send a follow-up message to orchestrator: "Previous WATCHDOG alert was a false positive — ignore"; the orchestrator's AI will adapt |
+| Stall never detected (debounce too conservative) | LOW | Reduce debounce threshold; re-deploy |
 
 ---
 
@@ -289,30 +356,39 @@ How roadmap phases should address these pitfalls.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Clone name collision (DB vs. tmux) | Phase: `clone` command | Integration test: create orphaned tmux session, run `clone`, verify name skipped |
-| Partial clone success (tmux without DB, or DB without tmux) | Phase: `clone` command | Unit test: simulate tmux failure after DB write; verify DB record removed |
-| Missing context regeneration after clone | Phase: `clone` command | Integration test: run `clone`, read `squad-orchestrator.md`, verify clone name present |
-| Cloning the orchestrator | Phase: `clone` command | Unit test: `clone <orchestrator-name>` returns error, no DB write |
-| Stale metrics in orchestrator playbook | Phase: orchestrator intelligence data | Manual review: generated file contains CLI commands for live re-query, not static values |
-| busy_time misleads after re-init | Phase: orchestrator intelligence data | Generated playbook includes caveats; no test needed |
-| Template model drift from validation allowlist | Phase: agent role templates | CI test: each template's agent config passes `validate_agent_config()` |
-| Clone agent invisible to TUI | Phase: TUI live update | Integration test: register clone in DB, wait one TUI refresh cycle, verify agent appears |
-| Signal lost from clone (unregistered agent) | Phase: `clone` command | E2E or integration test: full roundtrip from clone registration to signal notification |
+| Long-held write pool starves CLI commands | Phase 1: watchdog core | Integration test: run `squad-station send` while watchdog is running; verify < 1s completion |
+| False positive from transient signal window | Phase 1: stall detection | Unit test: DB shows processing + idle but message is 10s old; verify no alert fires |
+| False positive from stale agent DB status | Phase 1: stall detection | Unit test: `processing` message, agent idle in DB, but live tmux session; verify no alert fires |
+| Duplicate alert spam | Phase 1: watchdog state | Unit test: condition persists for 5 cycles; verify alert fires only once |
+| Telegram failure crashes watchdog | Phase 2: Telegram integration | Unit test: mock Telegram endpoint returns 500; verify watchdog continues polling |
+| Telegram 429 retry storm | Phase 2: Telegram integration | Unit test: mock returns 429 with `retry_after: 60`; verify no retry for 60 seconds |
+| tmux injection to dead orchestrator | Phase 1: tmux alert dispatch | Unit test: orchestrator session does not exist; verify tmux send skipped, Telegram escalation triggered |
+| WAL checkpoint starvation | Phase 1: watchdog core | Manual: run watchdog 30 min + active sends; verify WAL file stays < 5 MB |
+| No graceful shutdown | Phase 1: process lifecycle | Manual: Ctrl+C during poll; verify clean log output, DB pools closed, PID file removed |
+| Stall alert during intentional idle | Phase 1: stall detection | Unit test: all messages `pending` (not `processing`), all agents idle; verify no alert fires |
 
 ---
 
 ## Sources
 
-- `src/commands/signal.rs` — GUARD 3 (missing agent = silent exit) and GUARD 4 (orchestrator self-signal) document the exact silent-failure modes for unregistered agents and duplicate orchestrators
-- `src/db/agents.rs` — `insert_agent` upsert semantics (ON CONFLICT DO UPDATE); `delete_all_agents` for re-init; `status_updated_at` behavior; `get_orchestrator` role-based lookup (shows dual-orchestrator risk)
-- `src/tmux.rs` — `launch_agent` ordering; `session_exists` availability; `list_live_session_names` for bulk session detection
-- `src/config.rs` — `VALID_PROVIDERS`, `valid_models_for()`, `sanitize_session_name()` — defines validation and naming constraints templates must conform to
-- `src/commands/context.rs` — `build_orchestrator_md` is a `pub fn` (callable from clone command); stateless snapshot design (no auto-refresh mechanism)
-- `src/commands/ui.rs` — connect-per-refresh pattern (3s interval, DB-only); TUI auto-picks up new DB records without special handling
-- `.planning/codebase/CONCERNS.md` — Pre-existing audit: reconciliation loop duplication, tmux/DB sync risks, single-writer pool limits, `status_updated_at` clock fragility, agent-name-as-FK risk
-- `.planning/PROJECT.md` — "agent name = tmux session name" key decision; stateless CLI constraint; `context` is read-only (reconciliation removed to reduce side effects); `delete_all_agents` on overwrite re-init
+- `src/db/mod.rs` — single-writer pool design (`max_connections(1)`), `connect_readonly()` pattern, `try_wal_recovery` path, timeout layering (BUSY_TIMEOUT 3s, ACQUIRE_TIMEOUT 5s, CONNECT_TIMEOUT 8s)
+- `src/commands/monitor.rs` — connect-per-refresh pattern: `db::connect()` called inside refresh loop, pool dropped after each use — the established correct pattern for long-lived polling
+- `src/commands/browser.rs` lines 376–411 — write pool opened, used, `.close().await`, dropped every 2 seconds in the reconcile tick; read pool held for polling (correct for browser's use case)
+- `src/db/agents.rs` — `status_updated_at` semantics, `get_orchestrator` lookup, agent status values (`busy`/`idle`/`dead`/`frozen`)
+- `src/db/messages.rs` — message status values (`processing`/`completed`), `updated_at` timestamp available for age checks
+- `src/commands/signal.rs` — GUARD 3 (missing agent = silent exit), signal write sequence (message status update + agent status update = two sequential writes, not a single transaction)
+- `src/tmux.rs` — `send_keys_args` uses `-l` (literal), `list_live_session_names()` for bulk session detection
+- [SQLite WAL — Write-Ahead Logging](https://sqlite.org/wal.html) — checkpoint starvation: WAL cannot reset while any reader holds a read transaction; reader gaps required
+- [SQLite Forum: Checkpoint Starvation](https://sqlite.org/forum/info/7da967e0141c7a1466755f8659f7cb5e38ddbdb9aec8c78df5cb0fea22f75cf6) — concrete strategies: short transactions, reader gaps, RESTART/TRUNCATE checkpoint modes
+- [Tokio Graceful Shutdown](https://tokio.rs/tokio/topics/shutdown) — CancellationToken pattern, `tokio::signal::ctrl_c()`, `tokio::signal::unix::signal(SignalKind::terminate())`
+- [GramIO: Telegram Rate Limits](https://gramio.dev/rate-limits) — `retry_after` field in 429 response, token-bucket algorithm, per-chat limits
+- [Telegram Bot API Rate Limits Explained](https://hfeu-telegram.com/news/telegram-bot-api-rate-limits-explained-856782827/) — 1 msg/sec/chat soft limit, 20 msg/min in groups, adaptive throttling
+- [Fixing 429 Errors: Practical Retry Policies](https://telegramhpc.com/news/574/) — retry storm prevention, exponential backoff, `retry_after` compliance
+- [Prometheus Alertmanager Issue #2429](https://github.com/prometheus/alertmanager/issues/2429) — alert deduplication and suppress-repeat patterns
+- [tmux send-keys race condition — claude-code Issue #23513](https://github.com/anthropics/claude-code/issues/23513) — real-world evidence of tmux injection timing issues in agent workflows
+- `.planning/PROJECT.md` — "stateless CLI" constraint, connect-per-refresh TUI pattern decision, `max_connections(1)` write pool rationale, browser server architecture
 
 ---
 
-*Pitfalls research for: Squad Station v1.8 — agent templates, orchestrator intelligence metrics, dynamic agent cloning*
-*Researched: 2026-03-19*
+*Pitfalls research for: Squad Station v2.0 — workflow watchdog with stall detection and multi-channel alerting*
+*Researched: 2026-03-24*

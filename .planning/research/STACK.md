@@ -1,234 +1,231 @@
-# Stack Research: v1.8 Smart Agent Management
+# Stack Research: v2.0 Workflow Watchdog
 
-**Domain:** Rust CLI — agent role templates, orchestrator intelligence metrics, dynamic agent cloning
-**Researched:** 2026-03-19
+**Domain:** Rust CLI — background polling watchdog, stall detection, Telegram alerting, tmux pane injection
+**Researched:** 2026-03-24
 **Confidence:** HIGH
 
-> **Scope:** This document covers only what is NEW or CHANGED for v1.8 Smart Agent Management.
+> **Scope:** This document covers ONLY what is NEW or CHANGED for v2.0 Workflow Watchdog.
 > The existing validated stack (ratatui 0.30, crossterm 0.29, tui-big-text 0.8, clap 4.5,
 > tokio 1.37, sqlx 0.8, serde/serde_json 1.0, serde-saphyr, owo-colors 3, uuid 1.8, chrono 0.4,
-> anyhow 1.0, libc 0.2) is NOT re-researched here. All findings below assume this baseline.
+> anyhow 1.0, libc 0.2, axum 0.7 [browser feature], rust-embed 8, futures 0.3) is NOT
+> re-researched here. All findings below assume this baseline.
 
 ---
 
 ## Executive Summary
 
-Zero new Rust crates are required for v1.8 Smart Agent Management. All three feature areas —
-role templates in the wizard, orchestrator intelligence metrics, and dynamic agent cloning —
-are implementable with the existing dependency set plus Rust stdlib. The only schema addition
-is one new column (`busy_since`) on the `agents` table to enable accurate busy-time tracking;
-this is a lightweight `ALTER TABLE ADD COLUMN` migration consistent with the existing pattern.
+Two new crates are needed for v2.0: `reqwest` (HTTP client for Telegram Bot API) and
+`tokio-util` (CancellationToken for graceful shutdown of the long-lived watchdog loop).
+Both integrate directly into the existing tokio async runtime — no new runtime, no daemon
+framework, no new DB dependencies.
 
-The npm package and curl installer require no changes for these features.
+The Telegram integration is intentionally thin: a direct POST to
+`https://api.telegram.org/bot{token}/sendMessage` with a JSON body. No Telegram framework
+(teloxide, frankenstein) is needed or wanted — squad-station sends alerts, it does not receive
+messages or manage a bot lifecycle.
+
+The watchdog polling loop follows the exact pattern established in `browser.rs`: a
+`tokio::time::interval` tick driving DB reads, with `tokio::select!` for shutdown. The only
+architectural addition is `tokio_util::sync::CancellationToken` to allow clean shutdown
+from Ctrl+C without duplicating the signal handler.
+
+The `tmux.rs` pane injection path already exists (`send_keys`). The watchdog reuses it
+directly — the only new logic is choosing which pane to inject (orchestrator agent name
+from DB) and constructing the alert message string.
 
 ---
 
 ## Recommended Stack
 
-### Core Technologies — No Version Changes
+### New Crates to Add
 
-| Technology | Locked Version | Purpose | v1.8 Smart Agent Mgmt Status |
-|------------|---------------|---------|------------------------------|
-| clap 4 | 4.5.x | CLI subcommand dispatch | Add `Clone` variant to `Commands` enum — no version change |
-| sqlx 0.8 | 0.8.x | SQLite queries + migrations | One new migration (busy_since column); all query patterns already established |
-| chrono 0.4 | 0.4.x | Timestamp arithmetic | `Utc::now() - DateTime::parse_from_rfc3339(busy_since)` for busy-time metrics — already imported |
-| ratatui 0.30 | 0.30.x | TUI rendering | Cloned agents appear in existing `ui.rs` agent list on next poll tick — no change |
-| tokio 1 | 1.37 | Async runtime | No new async primitives needed |
-| serde + serde_json | 1.0 | Serialization | Metrics output via `serde_json::json!` in JSON mode — already used in every command |
-| uuid 1.8 | 1.8 | ID generation | `Uuid::new_v4()` already used in `insert_agent` — no change |
-| std (stdlib) | stable | String ops, env, path | Role template matching, auto-increment naming, all via stdlib string ops |
+| Crate | Version | Purpose | Why |
+|-------|---------|---------|-----|
+| `reqwest` | 0.12.x | Async HTTP client for Telegram Bot API POST | 0.12.x uses `http 1.0` + `hyper 1` — same underlying crates as `axum 0.7`. No duplicate `http` version in the binary. 0.13 switched TLS defaults to aws-lc (heavier), offers no benefit for a single outbound endpoint. |
+| `tokio-util` | 0.7.x | `CancellationToken` for graceful watchdog shutdown | Ships with tokio-rs ecosystem; already likely a transitive dep via sqlx/axum. `CancellationToken` is the idiomatic cancellation primitive — cleaner than `tokio::sync::watch` channels for this use case. |
 
-### Supporting Libraries — No Additions Required
+### Existing Crates Serving New Features
 
-| Library | Version | Purpose | v1.8 Relevance |
-|---------|---------|---------|----------------|
-| anyhow 1.0 | 1.0 | Error propagation | `clone.rs` follows same `anyhow::Result<()>` pattern as all other commands |
-| owo-colors 3 | 3.x | Colored output | Clone confirmation banner reuses existing color helpers |
+| Crate | Current Version | New Role in v2.0 |
+|-------|----------------|-----------------|
+| `tokio` | 1.37 | `tokio::time::interval` for polling loop; `tokio::select!` for shutdown; `tokio::signal` for Ctrl+C — all already used in `browser.rs` |
+| `serde_json` | 1.0 | Build Telegram request body via `serde_json::json!` — same pattern used throughout codebase |
+| `sqlx` | 0.8 | Read-only DB queries for stall detection (agent statuses + pending message counts) |
+| `chrono` | 0.4 | `Utc::now()` for stall duration calculation — already imported |
+| `anyhow` | 1.0 | Error propagation in `watchdog.rs` — same `anyhow::Result<()>` pattern as every other command |
 
 ---
 
 ## Feature-by-Feature Stack Analysis
 
-### Feature 1: Agent Role Templates in Wizard
+### Feature 1: Long-Lived Background Polling Loop
 
-**What it needs:**
-- A static list of `RoleTemplate` structs embedded in `wizard.rs` (or a new `templates.rs` module)
-- A new wizard page: role-selector (radio list) that pre-fills tool, model, and description fields
-- A "Custom" option that leaves all fields blank (existing behavior)
-- Optional "Suggest for me" path that picks a template based on prior selections
-
-**Implementation uses only stdlib + existing crates:**
+**Pattern source:** `browser.rs` already implements this correctly. The watchdog copies it exactly.
 
 ```rust
-// src/templates.rs — new file, zero additional deps
-pub struct RoleTemplate {
-    pub name: &'static str,        // "Backend Engineer"
-    pub role: &'static str,        // "backend"
-    pub model_hint: &'static str,  // "sonnet"
-    pub description: &'static str, // pre-filled description shown in wizard
-    pub routing_hint: &'static str,// appended to orchestrator routing section
-}
+// src/commands/watchdog.rs
+pub async fn run(db_path: PathBuf, poll_interval_secs: u64) -> anyhow::Result<()> {
+    let pool = db::connect_readonly(&db_path).await?;
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let cancel_clone = cancel.clone();
 
-pub const ROLE_TEMPLATES: &[RoleTemplate] = &[
-    RoleTemplate {
-        name: "Backend Engineer",
-        role: "backend",
-        model_hint: "sonnet",
-        description: "Implements APIs, services, and database logic.",
-        routing_hint: "API design, database, server-side logic",
-    },
-    // ... more templates
-    RoleTemplate {
-        name: "Custom",
-        role: "",
-        model_hint: "",
-        description: "",
-        routing_hint: "",
-    },
-];
-```
+    // Spawn signal handler that cancels the token
+    tokio::spawn(async move {
+        shutdown_signal().await;  // reuse browser.rs shutdown_signal() or inline
+        cancel_clone.cancel();
+    });
 
-**Why not TOML/JSON for templates:** `toml` crate would add a dependency and a file-read code
-path for data that never changes at runtime. Static Rust structs compile to read-only memory,
-are zero-cost at startup, and are validated at compile time. `include_str!` with a data file
-adds complexity without benefit for a fixed 8-12 template list.
+    let mut interval = tokio::time::interval(
+        std::time::Duration::from_secs(poll_interval_secs)
+    );
 
-**Wizard integration:** The existing `ratatui` `List` widget (already used for Provider and
-Model radio selectors in `wizard.rs`) handles the template selector without any new widget type.
-The existing `KeyCode::Up/Down` navigation pattern applies directly.
-
-**`context.rs` integration:** Templates have a `routing_hint` field. `build_orchestrator_md`
-reads `agents[].description` from the DB (already stored). Templates write the description
-at init time — no schema change, no new DB field. Routing hints can be embedded in
-the description string itself or added as a separate optional DB column if finer control is needed.
-
----
-
-### Feature 2: Orchestrator Intelligence Data in `squad-orchestrator.md`
-
-**What it needs:**
-- A new DB query in `db/agents.rs` or `db/messages.rs` for per-agent metrics
-- A new migration adding `busy_since TEXT DEFAULT NULL` to `agents`
-- `chrono` arithmetic for busy-time duration (already imported)
-- Extended `build_orchestrator_md` in `context.rs` to emit a metrics section
-
-**Schema addition — one new column (migration 0005):**
-
-```sql
--- 0005_v18_metrics.sql
-ALTER TABLE agents ADD COLUMN busy_since TEXT DEFAULT NULL;
-```
-
-`busy_since` is set to `Utc::now().to_rfc3339()` when an agent transitions to `busy`
-status, and cleared to `NULL` on `idle`/`dead`. This avoids computing busy time from
-`status_updated_at`, which is overwritten on every status change.
-
-`UPDATE agents SET busy_since = ? WHERE name = ?` is added alongside the existing
-`update_agent_status` call in `signal.rs` and `send.rs` — both already touch agent status.
-
-**Metrics query — pure SQL, no new crate:**
-
-```sql
--- Per-agent stats
-SELECT
-    a.name,
-    a.role,
-    a.status,
-    a.busy_since,
-    COUNT(m.id) AS total_messages,
-    SUM(CASE WHEN m.status = 'processing' THEN 1 ELSE 0 END) AS pending_count,
-    SUM(CASE WHEN m.status = 'completed' THEN 1 ELSE 0 END) AS completed_count
-FROM agents a
-LEFT JOIN messages m ON m.to_agent = a.name
-WHERE a.role != 'orchestrator'
-GROUP BY a.name
-```
-
-**chrono for busy duration — already in scope:**
-
-```rust
-// Already available: chrono::Utc, chrono::DateTime, chrono::Duration
-let busy_duration = agent.busy_since.as_deref()
-    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-    .map(|start| chrono::Utc::now().signed_duration_since(start));
-```
-
-**Output in `squad-orchestrator.md`:**
-The metrics section is appended by `build_orchestrator_md` as a markdown table. No new
-serialization format — plain string building already used throughout `context.rs`.
-
-**What NOT to add:** Do not add `prometheus`, `metrics`, or any observability crate. The
-orchestrator reads a markdown file, not a metrics endpoint. String-formatted markdown is
-the correct output format.
-
----
-
-### Feature 3: Dynamic Agent Cloning (`squad-station clone <agent>`)
-
-**What it needs:**
-- A new `Commands::Clone { name: String }` variant in `cli.rs`
-- A new `src/commands/clone.rs` handler
-- Auto-increment naming logic using stdlib string ops
-- `insert_agent` (existing in `db/agents.rs`)
-- tmux session launch (existing `launch_session` in `tmux.rs`)
-
-**Auto-increment naming — pure stdlib:**
-
-```rust
-// Given agent name "myproj-claude-backend", produce "myproj-claude-backend-2"
-// If "myproj-claude-backend-2" exists, produce "myproj-claude-backend-3", etc.
-fn next_clone_name(base: &str, existing_names: &[String]) -> String {
-    // Strip existing "-N" suffix if present to find the canonical base
-    let root = if let Some(pos) = base.rfind('-') {
-        let suffix = &base[pos+1..];
-        if suffix.chars().all(|c| c.is_ascii_digit()) {
-            &base[..pos]
-        } else {
-            base
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                break;
+            }
+            _ = interval.tick() => {
+                check_for_stall(&pool).await?;
+            }
         }
-    } else {
-        base
-    };
-    // Find highest existing clone number
-    let max = existing_names.iter()
-        .filter_map(|n| {
-            n.strip_prefix(root)
-                .and_then(|s| s.strip_prefix('-'))
-                .and_then(|s| s.parse::<u32>().ok())
-        })
-        .max()
-        .unwrap_or(1);
-    format!("{}-{}", root, max + 1)
+    }
+
+    Ok(())
 }
 ```
 
-**tmux session launch:** `tmux.rs` already has `launch_session(name, command)`. The clone
-command reads the source agent's `tool` and `model` from DB, derives the session command
-using the same logic as `init.rs`, and calls `launch_session`. No new tmux primitives needed.
+**Why this works with existing stack:**
+- `tokio::time::interval` is part of `tokio` (already at 1.37 with `full` features)
+- `tokio::select!` is a built-in macro
+- `db::connect_readonly` is the same read-only pool pattern from `browser.rs` — prevents WAL contention
 
-**TUI live update:** `ui.rs` already re-fetches all agents from DB on each refresh tick
-(connect-per-refresh pattern from v1.4 decision). A newly cloned agent registered in DB
-appears on the dashboard within one tick interval. No changes to `ui.rs` needed.
+**Why NOT to add a scheduler crate (tokio-cron-scheduler, clokwerk):** The watchdog runs
+continuously at a fixed interval (e.g., every 30 seconds). A scheduler crate adds hundreds
+of KB and cron expression parsing for a single fixed-interval loop. `tokio::time::interval`
+is exactly the right primitive.
 
 ---
 
-## Schema Changes Summary
+### Feature 2: Stall Detection Logic
 
-| Migration | File | Change | Reason |
-|-----------|------|--------|--------|
-| 0005 | `0005_v18_metrics.sql` | `ALTER TABLE agents ADD COLUMN busy_since TEXT DEFAULT NULL` | Enables accurate busy-time duration without rewriting status_updated_at |
+**No new crates needed.** Detection is pure DB query + conditional logic.
 
-No other schema changes. The `messages` table already contains enough data for
-task-count and completion-rate metrics via the existing `status` and `to_agent` columns.
+Stall condition: `pending_count > 0 OR processing_count > 0` AND `busy_agent_count == 0`.
+
+```sql
+-- One query — both conditions in a single round trip
+SELECT
+    COUNT(CASE WHEN m.status IN ('pending', 'processing') THEN 1 END) AS stuck_messages,
+    COUNT(CASE WHEN a.status = 'busy' THEN 1 END) AS busy_agents
+FROM messages m
+CROSS JOIN agents a
+WHERE a.role != 'orchestrator'
+```
+
+If `stuck_messages > 0 AND busy_agents == 0`: stall detected.
+
+Add a `stall_since: Option<DateTime<Utc>>` in watchdog state (in-memory, not DB) to avoid
+re-alerting every poll tick. Alert fires once when stall is first detected; a cooldown of
+N minutes (configurable via CLI flag) prevents alert spam.
+
+**Why NOT to add a `routing_hints` column or new schema:** Stall detection reads only
+existing `messages.status` and `agents.status` columns — no schema migration needed.
+
+---
+
+### Feature 3: Telegram Alerting
+
+**New crate: `reqwest` 0.12.x**
+
+Use the Telegram Bot API directly. No bot framework.
+
+```toml
+# Cargo.toml addition — NOT feature-gated (watchdog always needs HTTP)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+```
+
+**Why `default-features = false`:**
+- Eliminates native-tls, blocking, cookies, form, gzip, brotli, deflate — none needed
+- `json` enables `.json(&payload)` on `RequestBuilder`
+- `rustls-tls` provides TLS without system OpenSSL dependency — consistent with existing
+  `sqlx` which uses `runtime-tokio-rustls`
+
+**Why version 0.12.x, not 0.13.x:**
+- `axum 0.7` depends on `http 1.0` and `hyper 1`
+- `reqwest 0.12` also depends on `http 1.0` and `hyper 1` — **same version, no duplication**
+- `reqwest 0.13` switched TLS defaults to `aws-lc` (heavier crypto, FIPS-focused) and changed
+  feature flags (`query`/`form` disabled by default). No benefit for a single outbound POST.
+- Binary size impact: reqwest 0.12 + rustls ~= 300KB added. Acceptable.
+
+**Telegram send pattern:**
+
+```rust
+async fn send_telegram_alert(
+    token: &str,
+    chat_id: &str,
+    message: &str,
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::new();
+    let url = format!("https://api.telegram.org/bot{token}/sendMessage");
+    let payload = serde_json::json!({
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "HTML",
+        "disable_notification": false,
+    });
+    let resp = client.post(&url).json(&payload).send().await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("Telegram API error: {}", resp.status());
+    }
+    Ok(())
+}
+```
+
+**Configuration via CLI flags and env vars** (no new config file format needed):
+- `--telegram-token <TOKEN>` or `SQUAD_TELEGRAM_TOKEN` env var
+- `--telegram-chat-id <CHAT_ID>` or `SQUAD_TELEGRAM_CHAT_ID` env var
+- Absent config = Telegram alerting silently disabled; tmux injection still fires
+
+**Why NOT teloxide or frankenstein:**
+- Both are bot frameworks for receiving and dispatching incoming Telegram messages
+- Squad-station is an alert sender, not a bot server — no polling for updates, no handlers,
+  no middleware, no webhook setup
+- `frankenstein` alone pulls in `ureq` or `reqwest` anyway; we'd be wrapping a wrapper
+- Direct POST to `sendMessage` is 10 lines of code with `reqwest` + `serde_json` (both
+  already in scope or being added)
+
+---
+
+### Feature 4: Orchestrator tmux Pane Injection
+
+**No new crates needed.** `tmux.rs` already has `send_keys(session_name, text)`.
+
+The watchdog needs to:
+1. Query the DB for the orchestrator agent name (`SELECT name FROM agents WHERE role = 'orchestrator' LIMIT 1`)
+2. Call `tmux::send_keys(orchestrator_name, alert_text)` — existing function
+
+The only new code is constructing the alert text string. Standard `format!` macro.
+
+**Why NOT to add a new tmux primitive:** The existing `send_keys` function in `tmux.rs` uses
+`tmux send-keys -l` (literal mode, injection-safe) — exactly what alert injection needs.
+No modification to `tmux.rs` required; the watchdog calls the public function directly.
 
 ---
 
 ## Cargo.toml Changes
 
-**None.** All three features use the existing dependency set.
+```toml
+# Add to [dependencies] section:
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+```
 
-The `version` field bump (e.g., `0.5.4` → `0.6.0`) is a project management step, not a
-stack change.
+`tokio-util` needs the `rt` feature for `CancellationToken`. If already a transitive dep,
+this pin is still explicit — good practice.
+
+**Feature gate decision:** The watchdog command does NOT need a feature gate. Unlike the
+`browser` feature (which embeds an entire React SPA), the watchdog adds ~300KB (reqwest)
+and is a core CLI command. Feature gates add complexity without benefit here.
 
 ---
 
@@ -236,13 +233,16 @@ stack change.
 
 | Recommended | Alternative | Why Not |
 |-------------|-------------|---------|
-| Static `&[RoleTemplate]` Rust array | TOML file + `toml` crate | New dep, file-read code path, no compile-time validation — all overhead for data that never changes at runtime |
-| Static `&[RoleTemplate]` Rust array | JSON via `include_str!` + `serde_json` | `serde_json` already present but `from_str` adds fallible parse at startup; static structs have zero startup cost |
-| `busy_since` column for metrics | Derive from `status_updated_at` | `status_updated_at` is overwritten on every status change; not reliable for busy-time duration |
-| SQL aggregation for message counts | Rust-side counting after `list_agents` + `list_messages` | SQL aggregation is one query vs N+1 fetches; more efficient and idiomatic with sqlx |
-| stdlib string ops for clone naming | `regex` crate | Suffix detection (`rfind('-')` + `parse::<u32>()`) is 6 lines; regex would be massive overkill |
-| Extend existing `tmux::launch_session` | New tmux wrapper | `launch_session` already handles new session creation cleanly; clone just passes different args |
-| `ratatui` existing `List` widget for template selector | New custom widget | List with radio-style rendering is already used for Provider and Model selectors — identical pattern |
+| `reqwest 0.12` (no default features, json + rustls-tls) | `reqwest 0.13` | 0.13 defaults to aws-lc TLS (heavier). No benefit for single-endpoint sender. |
+| `reqwest 0.12` | `hyper 1` directly | hyper requires manual HTTP/1.1 request construction. reqwest is the correct abstraction for a single outbound API call. |
+| `reqwest 0.12` | `ureq` (sync) | ureq is synchronous. Tokio async runtime is mandatory — mixing sync HTTP inside async tasks causes thread blocking. |
+| `reqwest 0.12` | `curl` via `std::process::Command` | Command-based curl loses structured error handling and adds process-spawn overhead per alert. |
+| Direct `sendMessage` POST | `teloxide` framework | Teloxide is for building bots that receive messages. squad-station only sends — no incoming message handling needed. Framework is overkill by 10x. |
+| Direct `sendMessage` POST | `frankenstein` crate | Thin wrapper that adds a layer over reqwest we're already using. Net LOC difference is ~5 lines. No justification. |
+| `tokio_util::sync::CancellationToken` | `tokio::sync::watch` channel | watch requires sender + receiver setup and explicit channel threading. CancellationToken is purpose-built for this pattern, cleaner API. |
+| `tokio_util::sync::CancellationToken` | `tokio::sync::oneshot` | oneshot fires exactly once but doesn't compose well with cloning for multi-task cancel. CancellationToken supports N clones. |
+| `tokio::time::interval` for polling | `tokio-cron-scheduler` | Fixed interval requires no cron expression. Scheduler crate adds parsing overhead for a single loop. |
+| In-memory `stall_since` state in watchdog | New DB column for stall state | DB column requires migration and write-per-poll. Stall state is ephemeral — it resets when the watchdog process restarts, which is correct behavior. |
 
 ---
 
@@ -250,12 +250,13 @@ stack change.
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| `toml` crate | Role templates are static compile-time data, not user-editable config | Static Rust `const` structs in `src/templates.rs` |
-| `prometheus` / `metrics` crates | Orchestrator reads markdown, not a metrics endpoint | Plain string formatting in `build_orchestrator_md` |
-| `regex` crate | Clone name auto-increment is simple suffix arithmetic | `str::rfind`, `str::parse::<u32>()`, `format!` |
-| `reqwest` | No HTTP calls needed for any v1.8 feature | N/A — not applicable |
-| New tmux primitives | `launch_session` in `tmux.rs` handles all session creation | Pass cloned agent config to existing function |
-| Daemon / background process | Stateless CLI constraint; clone command exits after registering | TUI polls DB on its own tick interval |
+| `teloxide` | Bot framework for message receiving — squad-station sends only | Direct `reqwest` POST to `sendMessage` endpoint |
+| `frankenstein` | Thin wrapper over reqwest with no net benefit | Direct `reqwest` + `serde_json::json!` (10 lines) |
+| `tokio-cron-scheduler` | Cron complexity for a fixed-interval loop | `tokio::time::interval` (already in tokio) |
+| `tokio-graceful-shutdown` | Full supervisor framework for a single loop | `CancellationToken` from `tokio-util` is sufficient |
+| Any daemon framework (`daemonize`, `service`) | Stateless CLI constraint — watchdog is a long-lived foreground process, not a system daemon | Run in tmux window or background shell session; user manages process lifecycle |
+| New DB tables or columns | Stall detection reads existing `messages.status` + `agents.status`; alert state is in-memory | No migration needed |
+| `native-tls` feature in reqwest | Adds system OpenSSL dependency; breaks musl static binary cross-compilation | `rustls-tls` feature in reqwest |
 
 ---
 
@@ -263,42 +264,37 @@ stack change.
 
 | New Code | Integrates With | Integration Notes |
 |----------|----------------|-------------------|
-| `src/templates.rs` | `src/commands/wizard.rs` | Import `ROLE_TEMPLATES`; new wizard page pre-fills `AgentInput` fields |
-| `src/templates.rs` | `src/commands/context.rs` | `routing_hint` from template description written at init time; `build_orchestrator_md` reads `agent.description` unchanged |
-| `0005_v18_metrics.sql` | `src/db/agents.rs` | `update_agent_status` gains `busy_since` update; metrics query added as `get_agent_metrics()` |
-| `src/commands/clone.rs` | `src/cli.rs` | `Commands::Clone { name }` variant; `match` arm in `main.rs` |
-| `src/commands/clone.rs` | `src/db/agents.rs` | Read source agent → compute clone name → `insert_agent` |
-| `src/commands/clone.rs` | `src/tmux.rs` | Call `launch_session` with clone agent's name and tool command |
-| `src/commands/context.rs` | `src/db/agents.rs` | New `get_agent_metrics()` query feeds metrics section in `build_orchestrator_md` |
+| `src/commands/watchdog.rs` | `src/cli.rs` | New `Commands::Watchdog { ... }` variant; match arm in `main.rs` |
+| `src/commands/watchdog.rs` | `src/db/` | Read-only pool via `db::connect_readonly()` — same pattern as `browser.rs` |
+| `src/commands/watchdog.rs` | `src/tmux.rs` | Calls `send_keys(orchestrator_name, alert_text)` — existing public function, no changes |
+| `send_telegram_alert()` | `reqwest::Client` | Created once at watchdog startup, reused across alert calls (`Client` is `Clone` + connection pool) |
+| `CancellationToken` | `tokio::signal` | Signal handler calls `token.cancel()`; loop exits on `token.cancelled()` — same pattern as `browser.rs` `shutdown_signal()` |
 
 ---
 
 ## Version Compatibility
 
-All existing crate versions are fully compatible. No version bumps needed.
-
-| Package | Locked Version | Compatibility Note |
-|---------|---------------|-------------------|
-| sqlx 0.8 | 0.8.x | `ALTER TABLE ADD COLUMN` migration follows existing 0003/0004 patterns exactly |
-| chrono 0.4 | 0.4.x | `signed_duration_since` and `parse_from_rfc3339` are stable chrono API, used elsewhere in codebase |
-| clap 4.5 | 4.5.x | New `Clone` subcommand is a trivial derive addition — same pattern as all other subcommands |
-| ratatui 0.30 | 0.30.x | Template selector uses existing `List` widget + `ListState` — no new widget API |
+| Package | Version | Compatibility Note |
+|---------|---------|-------------------|
+| `reqwest 0.12` | 0.12.x | Uses `http 1.0` + `hyper 1` — same as `axum 0.7`. No duplicate `http` crate version in binary. `rustls-tls` feature uses same `rustls` version as `sqlx`'s `runtime-tokio-rustls`. |
+| `tokio-util 0.7` | 0.7.x | Maintained alongside `tokio 1.x` — same version series. `tokio-util 0.7` is compatible with `tokio 1.37`. |
+| `reqwest 0.12` + `axum 0.7` | both use `http 1.0` | No type mismatches when used in same binary — they share the `http` crate, just don't share types across handler boundaries (which watchdog doesn't do). |
 
 ---
 
 ## Sources
 
-- `Cargo.toml` (local) — confirmed locked versions; zero deps to add
-- `src/db/agents.rs` — confirmed `update_agent_status` signature; `busy_since` update slots in alongside existing `status` update
-- `src/db/migrations/0003_v11.sql` — confirmed `ALTER TABLE ADD COLUMN` pattern for schema extension
-- `src/commands/wizard.rs` — confirmed `List` widget + `KeyCode::Up/Down` radio selector pattern used for Provider and Model pages
-- `src/commands/context.rs` — confirmed `build_orchestrator_md` string-building pattern; metrics section slots in as additional `push_str` block
-- `src/tmux.rs` — confirmed `launch_session` function signature; clone command reuses directly
-- `src/commands/register.rs` — confirmed `insert_agent` call pattern for new agent registration
-- Rust stdlib (stable) — `str::rfind`, `str::parse::<u32>()`, `format!` — all needed for clone naming logic
-- chrono 0.4 docs — `signed_duration_since`, `parse_from_rfc3339` confirmed stable API
+- `Cargo.toml` (local) — confirmed existing dependency set; identified axum 0.7 uses http 1.0
+- `src/commands/browser.rs` (local) — confirmed `connect_readonly`, `tokio::time::interval`, `tokio::select!`, `tokio::signal` patterns to reuse
+- `src/tmux.rs` (local) — confirmed `send_keys` function is public and injection-safe
+- [reqwest 0.13.2 on docs.rs](https://docs.rs/crate/reqwest/latest) — current version 0.13.2 (2026-02-06); verified feature flags; confirmed 0.12 still maintained (HIGH confidence)
+- [reqwest GitHub CHANGELOG](https://github.com/seanmonstar/reqwest/blob/master/CHANGELOG.md) — confirmed 0.12 → 0.13 TLS backend change (rustls + aws-lc default in 0.13) (HIGH confidence)
+- [reqwest + axum 0.7 compatibility discussion](https://users.rust-lang.org/t/a-proxy-with-axum-0-7-and-reqwest-0-12-based-on-http-1/112489) — confirmed reqwest 0.12 shares http 1.0 with axum 0.7 (MEDIUM confidence)
+- [CancellationToken in tokio-util 0.7.18](https://docs.rs/tokio-util/latest/tokio_util/sync/struct.CancellationToken.html) — current version 0.7.18; CancellationToken confirmed present (HIGH confidence)
+- [Telegram Bot API 9.5](https://core.telegram.org/bots/api) — current API version; `sendMessage` URL format and parameters confirmed (HIGH confidence)
+- [Tokio graceful shutdown docs](https://tokio.rs/tokio/topics/shutdown) — CancellationToken pattern for multi-task shutdown confirmed idiomatic (HIGH confidence)
 
 ---
 
-*Stack research for: squad-station v1.8 Smart Agent Management — role templates, orchestrator metrics, dynamic cloning*
-*Researched: 2026-03-19*
+*Stack research for: squad-station v2.0 Workflow Watchdog — background polling, stall detection, Telegram alerting, tmux injection*
+*Researched: 2026-03-24*

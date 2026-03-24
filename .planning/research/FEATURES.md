@@ -1,20 +1,21 @@
 # Feature Research
 
-**Domain:** Rust CLI — AI agent fleet management (squad-station v1.8 Smart Agent Management)
-**Researched:** 2026-03-19
-**Confidence:** HIGH (milestone features are explicitly defined in PROJECT.md; ecosystem patterns verified against CrewAI, AutoGen, LangGraph, Microsoft multi-agent patterns, and the existing squad-station codebase)
+**Domain:** Rust CLI — AI agent fleet watchdog / stall detection (squad-station v2.0)
+**Researched:** 2026-03-24
+**Confidence:** HIGH (milestone features defined in PROJECT.md; watch.rs and cli.rs already partially implemented; watchdog domain patterns verified against watchdogd, systemd watchdog, Overstory agent supervisor, tmux-notify, and Batty tmux agent supervisor)
 
 ---
 
-## Context: What v1.8 Smart Agent Management Adds
+## Context: What v2.0 Workflow Watchdog Adds
 
-This milestone adds three capabilities on top of the existing v1.7 + v1.8-pre foundation (which already ships: init wizard with `--tui` flag, TUI dashboard, welcome TUI, npm + curl install, agent lifecycle detection, hook-driven completion signals, orchestrator context generation).
+This milestone adds a long-lived background watchdog command on top of the existing v1.9 foundation (which already ships: agent lifecycle detection, message queue, TUI dashboard, browser visualization with WebSocket, fleet metrics in orchestrator context, clone/templates).
 
-The three v1.8 Smart Agent Management features:
+The v2.0 features are already partially implemented:
 
-1. **Agent role templates in init wizard** — pre-built packages (role string, model suggestion, description, routing hints) selectable from a list during worker configuration; includes a custom option and a mechanism for system-suggested roles.
-2. **Orchestrator intelligence data** — CLI provides task-role alignment metrics, messages-per-agent counts, and busy-time tracking surfaced in `squad-orchestrator.md` so the orchestrator AI can detect overload and misrouting without external tooling.
-3. **Dynamic agent cloning** — `squad-station clone <agent-name>` creates a duplicate agent (same role/model/description, auto-incremented name, new tmux session); orchestrator decides when and how many to spawn; cloned agents appear immediately in the TUI dashboard.
+- `watch.rs` — core watchdog loop exists with: PID file, daemon fork, SIGTERM/SIGINT handler, 3-pass tick (reconcile, global stall detection, prolonged-busy detection), nudge state with cooldown + max-nudges, structured logging to `.squad/log/watch.log`
+- `cli.rs` — `Watch` subcommand wired with `--interval`, `--stall-threshold`, `--daemon`, `--stop` flags
+
+**What remains for v2.0:** Multi-channel alerting (Telegram MCP plugin), stall detection refinement (deadlock vs. prolonged-busy distinction), and verifying the `watch` command is complete and tested end-to-end.
 
 ---
 
@@ -22,119 +23,126 @@ The three v1.8 Smart Agent Management features:
 
 ### Table Stakes (Users Expect These)
 
-Features users assume exist in agent management tooling. Missing these makes the product feel unfinished relative to comparable systems (CrewAI, AutoGen, LangGraph multi-agent setups).
+Features users expect from any background monitoring/watchdog tool. Missing these makes the watchdog feel broken or untrusted.
 
 | Feature | Why Expected | Complexity | Dependencies on Existing |
 |---------|--------------|------------|--------------------------|
-| Predefined role menu in wizard | Every multi-agent framework (CrewAI, MetaGPT, AutoGen) provides role templates. Users setting up a software team expect to select "frontend engineer" or "QA" rather than type free-form strings. Typing a role from scratch for every agent is friction that degrades the wizard experience. | LOW | `wizard.rs` WorkerPage already has a radio-selector component (used for Provider and Model). Role templates are a new data structure + a new radio/list input on the same page. No new crate. |
-| Custom role option in wizard | Any templating system must offer escape hatch. Users with unusual team structures (data engineer, security auditor, technical writer) need to define their own role. Forcing templates removes legitimate use cases. | LOW | Custom option is an additional list item that activates a free-text input field — pattern already exists in wizard.rs for model input. |
-| Template includes model suggestion | When a user selects "backend engineer," they expect a sensible default model pre-filled (e.g., claude-code/sonnet). Having to separately select a model that is already implied by the role is unnecessary friction. | LOW | Template data structure carries `default_model` field; wizard pre-fills the model radio selector when template is chosen. User can override. |
-| Template includes routing hints | Orchestrator needs to know which agent to route tasks to. Without routing hints embedded in `squad-orchestrator.md`, the orchestrator has no signal about specialization beyond a free-text description. CrewAI and MetaGPT both embed role goals/descriptions into their orchestration context. | LOW | `context.rs` `build_orchestrator_md()` already writes a "Session Routing" section iterating agents. Templates add structured `routing_hints` to the description field written there. |
-| `squad-station clone <agent>` command | Dynamic scaling is a core expectation in any workload-aware multi-agent system. Microsoft's multi-agent patterns and the "master-clone" architecture both identify runtime agent duplication as a first-class operation. Without a CLI command for it, the orchestrator cannot scale the team. | MEDIUM | Requires: new `Commands::Clone` in `cli.rs`, new `src/commands/clone.rs`, existing `tmux.rs` session launch, existing `db::agents::insert_agent()` with auto-incremented name, existing TUI refresh loop (picks up new agents automatically via DB poll). No schema changes needed. |
-| Cloned agent appears in TUI dashboard immediately | The TUI polls DB for agents on every refresh (existing behavior). A newly cloned agent registered in DB is visible on the next poll cycle with no additional work. Users expect the monitoring view to reflect fleet state without manual refresh. | LOW | Zero new code: existing `ui.rs` polling loop already does `list_agents()` on every interval. Clone command writes to DB; TUI reads on next poll. |
-| Message-per-agent count in orchestrator context | The orchestrator needs to know how many tasks each agent has received to detect overload. Standard observability practice: track request count per service. Without this, the orchestrator must guess at agent load. | LOW | `messages.rs` already has `list_messages()` with agent filter. New aggregate query: `SELECT to_agent, COUNT(*) FROM messages WHERE status = 'processing' GROUP BY to_agent`. Appended to `squad-orchestrator.md` in a new "Fleet Metrics" section. |
-| Busy-time tracking | When an agent has been in "busy" status for an unusually long time, the orchestrator should know. Without a `status_updated_at` field, this is impossible. The field already exists in the `agents` DB schema (`status_updated_at` column). | LOW | `status_updated_at` is already in `agents` table and set on every `update_agent_status()` call. No schema migration needed. Context command reads it and derives busy duration. |
+| Configurable poll interval | Every watchdog tool (watchdog Linux daemon, systemd, watchdogd) exposes an interval flag. Users running small teams need faster detection; large teams with slower agents need longer intervals to avoid false positives. Without it, users cannot tune the watchdog for their workflow. | LOW | Already implemented: `--interval` flag in `Watch` CLI variant; passed to `watch::run()`. Zero work needed. |
+| Configurable stall threshold | Users expect to set "how long before I'm alerted." Default 5 minutes may be too short for large tasks (e.g., full codebase refactor). Without a configurable threshold, the watchdog generates noise for normal long-running work. | LOW | Already implemented: `--stall-threshold` flag in CLI. Default is 5 minutes. Zero work needed. |
+| Daemon mode (fork to background) | Running `watch` in foreground blocks the terminal. Users expect to be able to detach it and continue working. Industry standard: watchdogd, supervisord all support daemon/fork modes. | MEDIUM | Already implemented: `--daemon` flag forks process, writes PID to `.squad/watch.pid`. Verified in watch.rs. |
+| Single-instance enforcement | Starting two watchdogs simultaneously creates duplicate alerts, log corruption, and confusing behavior. Users expect "already running" error with clear message. | LOW | Already implemented: PID file check + `libc::kill(pid, 0)` liveness check before starting. Zero work needed. |
+| Stop daemon command | Users need to stop the background daemon cleanly (no orphaned processes). `--stop` with PID file is the POSIX standard approach. | LOW | Already implemented: `--stop` reads `.squad/watch.pid`, sends SIGTERM. Cleanup on graceful exit. Zero work needed. |
+| Orchestrator notification on stall | When a workflow stalls (all agents idle, messages stuck), inject an alert message into the orchestrator's tmux pane. This is the primary recovery path — the orchestrator AI reads the alert and dispatches work. | MEDIUM | Already implemented: `tmux::send_keys_literal` called on orchestrator pane with `[SQUAD WATCHDOG]` prefixed message. Nudge escalation (3 nudges, 10-minute cooldown) already implemented. |
+| Structured log file | Operators need post-mortem audit trail. Every production watchdog (watchdogd, systemd watchdog) writes structured logs. `.squad/log/watch.log` is the obvious location, consistent with the `.squad/` directory convention. | LOW | Already implemented: `log_watch()` in watch.rs writes `TIMESTAMP LEVEL MESSAGE` to `.squad/log/watch.log`. Zero work needed. |
+| Prolonged-busy detection | An agent stuck in "busy" for 30+ minutes likely has a hung process. Different from a global stall (where all agents are idle). Needs its own alert path so the orchestrator can investigate specific agents. | MEDIUM | Already implemented: Pass 3 in tick() checks `status_updated_at` for agents busy > 30 minutes, logs `WARN` level. Tmux pane notification NOT yet wired for prolonged-busy — only logs. Gap: needs orchestrator tmux injection for individual prolonged-busy agent. |
+| Stall vs. prolonged-busy distinction | These are different failure modes: global stall = deadlock (all idle, messages stuck); prolonged busy = hung agent (one agent stuck, others may continue). Users must be able to distinguish them from alerts to know the correct recovery action. | LOW | Partially implemented: log messages differ ("NUDGE" vs "WARN" level). Alert messages injected into orchestrator need distinct wording for each case. |
+| Agent reconciliation on each tick | The watchdog should continuously reconcile stuck-busy agents (DB says busy, tmux is idle) as part of each poll cycle, not just when a global stall occurs. This is routine maintenance that prevents queue backlog. | LOW | Already implemented: Pass 1 in tick() calls `reconcile::reconcile_agents(pool, false)` on every cycle. Reconcile actions logged at "RECONCILE" level. Zero work needed. |
 
 ### Differentiators (Competitive Advantage)
 
-Features that distinguish squad-station from generic multi-agent frameworks. Competitors handle these poorly or not at all in a CLI-native, tmux-based model.
+Features that distinguish squad-station watchdog from generic process monitors (watchdogd, systemd watchdog) or AI observability tools (LangSmith, AgentOps).
 
 | Feature | Value Proposition | Complexity | Dependencies on Existing |
 |---------|-------------------|------------|--------------------------|
-| Task-role alignment hints in orchestrator context | Most orchestration frameworks provide routing only at setup time. Squad-station can surface "agent X has received 8 tasks, 3 of which appear misrouted based on role description mismatch." This is qualitative intelligence the orchestrator AI can act on — not just counters. Implementing even a lightweight version (role keyword vs. task body keyword overlap) gives the orchestrator a signal no competing tool provides in a file-based context. | MEDIUM | Requires lightweight text matching in context.rs: compare recent task bodies against agent role/description keywords. Pure Rust string ops, no NLP crate. Output as bullet list in `squad-orchestrator.md`. |
-| Orchestrator-controlled cloning (not auto-scaling) | Unlike Kubernetes-style auto-scaling based on CPU metrics, squad-station deliberately keeps the scaling decision with the orchestrator AI. The CLI provides the mechanism (`clone`); the AI decides when. This is the correct abstraction: AI orchestrators reason about task semantics, not resource metrics. No competing tool surfaces this distinction cleanly. | LOW | Design decision enforced by API surface: `clone` takes an agent name and returns the new name. No threshold config, no auto-trigger. The orchestrator calls `clone` when it decides to, based on workload data from `squad-orchestrator.md`. |
-| Auto-incremented clone naming with project prefix | `<project>-<tool>-<role>-2`, `-3`, etc. Names are deterministic, unique per project, and follow the existing `<project>-<tool>-<role>` convention. The orchestrator can parse clone names without additional metadata. Most frameworks use UUIDs or timestamps, which are opaque to the AI. | LOW | Name generation: query DB for agents matching `<project>-<tool>-<role>-*`, find max suffix, increment. Pure string/integer logic. Existing naming convention from v1.1 already in init.rs. |
-| System-suggested roles based on project context | When the wizard detects an SDD workflow (bmad, gsd, superpower) from the first wizard page, it can suggest role templates appropriate to that workflow. This is proactive guidance that competitors do not offer in a setup wizard. | MEDIUM | SDD workflow value (`WizardResult.sdd`) is already set on page 1 of the wizard. Role template list shown on the WorkerPage can filter or reorder based on `sdd` value. No new state needed. |
-| Fleet metrics without daemon | Other tools require a running daemon to collect metrics. Squad-station derives metrics on-demand from SQLite at `context` generation time. Stateless, zero overhead, instant for any project size at team scale (tens of agents). | LOW | Pure DB aggregate queries in a single `context` command invocation. No background process, no metric store, no time-series DB. Correct for the stateless CLI design constraint. |
+| Telegram multi-channel alerting | Most developer tools (Grafana, Netdata, Sematext) support Telegram as an alert channel. For solo developers running AI agent fleets overnight, a mobile push notification is the only reliable way to know a workflow stalled. tmux injection reaches the orchestrator AI, but the human operator may not be watching. Telegram MCP plugin (already in the squad-station ecosystem) provides the channel. | HIGH | Requires: configuration in `squad.yml` or `.squad/telegram.toml` (bot token + chat ID); new alert dispatch function in watch.rs; `teloxide` crate or direct HTTPS POST to Telegram Bot API. Depends on no existing DB feature — pure HTTP call. |
+| Escalating nudge sequence (warn → escalate → final) | Generic watchdogs send a single alert and stop. Squad-station escalates: first nudge is informational, second is urgent, third is final with instruction to do manual review. This mirrors the tiered watchdog approach in Overstory (Tier 0 mechanical, Tier 1 AI-assisted). The escalation sequence reduces alert fatigue while ensuring critical stalls are communicated. | LOW | Already implemented: NudgeState in watch.rs produces distinct messages for nudge count 0, 1, 2+. Cooldown (10 min) and max-nudges (3) already hardcoded. Gap: values should be configurable. |
+| Activity-based nudge reset | Most watchdogs reset only on explicit configuration reload. Squad-station resets the nudge counter when new message activity is detected (`total_count` changes). This means a stall that self-resolves (orchestrator dispatched work) automatically clears the alert state without manual intervention. | LOW | Already implemented: `last_msg_count` tracking + `nudge_state.reset()` on count change. Zero work needed. |
+| Antigravity-aware alerting | When the orchestrator uses `antigravity` tool (IDE-only, no tmux session), tmux injection is skipped. Without this guard, the watchdog would attempt to inject into a non-existent session on every tick. Squad-station already has this pattern from the `signal` command. | LOW | Already implemented: watch.rs checks `orch.tool != "antigravity"` before calling `send_keys_literal`. Zero work needed. |
+| No-daemon, stateless fallback | Overstory and Batty both require long-lived daemon processes. Squad-station supports foreground mode (`watch` without `--daemon`) where the user controls lifetime via terminal. This is valuable during debugging — developer sees log output directly in the terminal while testing a workflow. | LOW | Already implemented: foreground mode is the default; `--daemon` is opt-in. Log written to file in both modes. |
+| Fleet reconciliation integrated into watchdog | Other tools (systemd watchdog, watchdogd) are process-level monitors unaware of task state. Squad-station's watchdog simultaneously: detects global stalls, detects prolonged-busy individual agents, AND reconciles stuck agents on every tick. This is 3-in-1 fleet health management in a single background command. | LOW | Already implemented: all three passes in tick(). The value is that users get reconciliation "for free" when running the watchdog — no separate `reconcile` cron job needed. |
+| PID-file based daemon management without systemd | Cross-platform (darwin + linux) daemon management without requiring systemd, launchd, or any service manager. Users can start/stop the watchdog with simple CLI flags regardless of OS or init system. Appropriate for developer tools used on macOS where systemd is unavailable. | LOW | Already implemented: `watch.pid` approach. Note: daemon fork uses `Command::spawn()` which leaves stdout/stderr as null. Log file is the only output for daemon mode. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Auto-scaling: clone agents automatically when queue depth exceeds threshold | Sounds powerful — fewer manual decisions. Some orchestration platforms (Kubernetes, Ray) do this. | Squad-station is a stateless CLI. Auto-scaling requires a persistent observer process polling queue depth and firing `clone` commands. That is a daemon — explicitly out of scope. Additionally, task queue depth is a poor proxy for whether cloning is the right action (the orchestrator may be intentionally serializing work). | Surface queue depth in `squad-orchestrator.md`. Let the orchestrator AI decide. This keeps decision-making with the entity that understands task semantics. |
-| Agent-to-agent communication routing through the CLI | Users want workers to communicate directly: agent A sends a message to agent B. Makes sense in theory. | Squad-station's design has all communication routed through the orchestrator. Direct agent-to-agent messaging creates untracked state, breaks the orchestrator's situational awareness, and requires a message routing layer the CLI does not have. This is explicitly called out as out-of-scope in PROJECT.md. | Orchestrator receives signal from agent A, evaluates output, forwards relevant context to agent B in the next task. This keeps routing centralized and auditable. |
-| Role-based access control (which agent can receive which task type) | Users want to enforce that QA agents can only receive test tasks. Sounds like guardrails. | RBAC enforcement at the CLI layer adds complexity, breaks the send command's simplicity, and moves task-semantics decisions from the AI to the CLI tool. The AI is better positioned to enforce routing via its own reasoning. | Role templates + routing hints in `squad-orchestrator.md` guide the orchestrator AI to route correctly. The AI can self-enforce. CLI does not police content. |
-| Template marketplace / community role registry | Users want to download community-curated role templates. Seems like a feature win. | Requires a network call, a registry service, versioning, and trust verification — all for what amounts to a few strings (role name, description, model suggestion). Network dependency in a stateless CLI that currently has zero runtime dependencies is a regression. | Embed a curated set of 8–12 role templates directly in the binary (compile-time constants). Small teams cover 90% of use cases. Custom option covers the rest. |
-| Cloning with modified configuration (different model or description) | User wants `clone --model opus` to clone but upgrade the model. More power, more control. | Creates divergence from the source agent. The orchestrator's mental model of "this agent is a clone of that agent" breaks. Fleet coordination relies on clones being identical workers. Divergent clones must be treated as distinct agents — better served by `init --tui` add-agents flow or `register`. | Clone = identical copy. For a different configuration, use `squad-station register` (existing command) to create a fully new agent. |
-| Task-role alignment scoring with ML embeddings | For richer misrouting detection, vector similarity between task body and role description. | Binary size would increase dramatically with embedding models. Adds inference latency to the `context` command. Correctness depends on embedding quality. Overkill for team-scale multi-agent coordination where the orchestrator AI already has full semantic understanding. | Keyword overlap heuristic (pure Rust string ops): extract nouns from task body, check against role/description keywords. Sufficient signal for orchestrator guidance. Flag tasks where no keyword overlap exists. |
+| Auto-recovery: automatically relaunch dead agents | Sounds powerful — zero-downtime agent fleet. | Squad-station's design is explicit: the orchestrator AI decides when to relaunch agents. Auto-relaunch can create infinite restart loops if an agent crashes due to a code bug or config problem. The watchdog should observe and alert, not act autonomously on the fleet. | Log `WARN` entries for dead agents; alert orchestrator; let the orchestrator call `squad-station clone` or re-init. |
+| Slack/Discord/email alerting | More channels = more coverage. Users with existing Slack teams expect Slack integration. | Multiple channel integrations require separate secrets management, different HTTP APIs, and ongoing maintenance for each provider's breaking changes. Binary size grows with HTTP client dependencies for each provider. Telegram MCP plugin is already in the squad-station ecosystem — adding N more channels before Telegram is validated is premature. | Implement Telegram first. Post-v2.0, a generic webhook URL configuration could cover Slack (via Slack Incoming Webhooks) and Discord with a single implementation. |
+| Configurable alert messages | Users want to customize the text of watchdog notifications. | Alert message templates add configuration surface area with little value — the messages are short, functional, and self-explanatory. Customization creates support burden ("my custom template broke on special characters") with no functional benefit. | Hardcode functional messages; escalation sequence provides variation. |
+| Auto-scaling on stall detection | If the watchdog detects a stall, automatically clone agents to increase capacity. | Stalls are not caused by capacity problems — they are caused by deadlocked workflow logic, crashed agents, or the orchestrator failing to dispatch. Adding agents to a deadlocked system wastes resources and does not resolve the deadlock. | Nudge orchestrator with stall context; let the orchestrator AI diagnose and decide whether to clone. |
+| Prometheus/OpenTelemetry metrics export | Power users want to integrate squad-station metrics into existing observability stacks. | Single-binary, zero-runtime-dependency design principle. OTEL SDK adds ~10MB to binary size and requires a running collector. Appropriate for enterprise fleet management, not developer-local AI agent coordination. | Structured log file (`.squad/log/watch.log`) provides machine-parseable audit trail that can be ingested by external tools without coupling the binary to a telemetry framework. |
+| Daemon auto-start on system boot (launchd/systemd unit file) | Users want the watchdog to persist across reboots. | Squad-station is project-scoped (DB per CWD). A systemd unit file with hardcoded CWD is fragile. Users with multiple projects would need multiple unit files. Not appropriate for the current single-developer use case. | Document manual invocation with `--daemon` in the project README. If systemd integration is needed, it can be an externally-maintained shell script. |
+| Watchdog monitoring the watchdog (nested supervision) | Advanced reliability: supervisor-of-supervisor pattern. | Squad-station's watchdog is a developer tool, not a production-critical service. Nested supervision adds complexity (who supervises the supervisor?) for negligible reliability benefit in the target use case. | If the watchdog dies, the user starts it again. PID file cleanup on exit prevents stale state. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Role templates in wizard]
-    └──requires──> [template data structure: role, description, default_model, routing_hints]
-    └──feeds──> [wizard.rs WorkerPage: radio/list template selector]
-    └──feeds──> [wizard.rs WorkerPage: model pre-fill from template.default_model]
-    └──feeds──> [init.rs generate_squad_yml(): description field from template]
-    └──feeds──> [context.rs build_orchestrator_md(): routing hints in Session Routing section]
-    └──optional: SDD-aware template filtering]
-        └──depends on──> [WizardResult.sdd from page 1 of wizard] (already exists)
+[squad-station watch --daemon]
+    └──requires──> [PID file at .squad/watch.pid]
+        └──depends on──> [.squad/ directory] (already exists from DB path)
+    └──requires──> [SIGTERM/SIGINT handler via libc]
+        └──depends on──> [unix target cfg] (already in watch.rs)
 
-[Orchestrator intelligence data in squad-orchestrator.md]
-    └──requires──> [DB aggregate query: pending message count per agent]
-        └──depends on──> [messages table with status='processing' and to_agent column] (already exists)
-    └──requires──> [busy-time derivation from status_updated_at]
-        └──depends on──> [agents table, status + status_updated_at columns] (already exists)
-    └──optional: task-role alignment keyword check]
-        └──depends on──> [recent completed messages per agent] (already in messages table)
-        └──depends on──> [agent description field] (already in agents table)
-    └──feeds──> [context.rs build_orchestrator_md(): new "Fleet Metrics" section]
-    └──requires no DB schema changes
+[Stall detection (Pass 2)]
+    └──requires──> [db::agents::list_agents()] (already exists)
+    └──requires──> [db::messages::count_processing_all()] (already exists)
+    └──requires──> [db::messages::last_activity_timestamp()] (already exists)
+    └──requires──> [db::agents::get_orchestrator()] (already exists)
+    └──requires──> [tmux::send_keys_literal()] (already exists)
 
-[Dynamic agent cloning: squad-station clone <agent-name>]
-    └──requires──> [new Commands::Clone { agent: String } in cli.rs]
-    └──requires──> [new src/commands/clone.rs]
-        └──reads──> [db::agents::get_agent(name)] (already exists)
-        └──writes──> [db::agents::insert_agent(new_name, ...)] (already exists)
-        └──calls──> [tmux::launch_session(new_name)] (existing tmux session launch)
-        └──derives──> [auto-incremented name: query DB for existing clones, max suffix + 1]
-    └──feeds──> [TUI dashboard: picks up new agent on next poll cycle automatically]
-        └──depends on──> [ui.rs existing list_agents() poll loop] (already exists)
+[Activity-based nudge reset]
+    └──requires──> [db::messages::total_count()] (already exists)
+    └──feeds──> [NudgeState::reset()] (already in watch.rs)
 
-[Role templates] ──independent of──> [orchestrator intelligence data]
-[Role templates] ──independent of──> [dynamic cloning]
-[Orchestrator intelligence data] ──independent of──> [dynamic cloning]
+[Prolonged-busy detection (Pass 3)]
+    └──requires──> [agents.status_updated_at field] (already in DB schema)
+    └──currently──> writes WARN log only
+    └──MISSING──> orchestrator tmux injection for individual agent prolonged-busy alert
 
-[Cloned agent] ──appears in──> [TUI dashboard] (zero new code: existing poll loop)
-[Orchestrator intelligence data] ──informs──> [orchestrator decision to clone]
-[Clone command] ──called by──> [orchestrator AI based on fleet metrics]
+[Agent reconciliation (Pass 1)]
+    └──requires──> [reconcile::reconcile_agents()] (already in reconcile.rs)
+
+[Telegram alerting]
+    └──requires──> [bot token + chat ID from config]
+        └──OPTION A: squad.yml telegram section (requires config.rs extension)
+        └──OPTION B: .squad/telegram.toml sidecar file (no squad.yml change)
+    └──requires──> [HTTP POST to api.telegram.org/bot{token}/sendMessage]
+        └──OPTION A: reqwest crate (async HTTP client — adds ~500KB to binary)
+        └──OPTION B: std::process::Command curl (zero binary size increase, requires curl on PATH)
+    └──feeds into──> [watch.rs tick() — called alongside tmux injection after stall detected]
+    └──does NOT require DB schema changes
+
+[watch --daemon] ──enables--> [background monitoring without blocking terminal]
+[Stall detection] ──triggers--> [Orchestrator tmux injection] (already wired)
+[Stall detection] ──should also trigger--> [Telegram alert] (MISSING — v2.0 goal)
+[Prolonged-busy detection] ──should trigger--> [Orchestrator tmux injection for specific agent] (MISSING)
 ```
 
 ### Dependency Notes
 
-- **Role templates require no new DB columns:** Template selection in the wizard sets the existing `role`, `description`, and `model` fields. The template data structure lives only in Rust source (compile-time constants). Zero schema migration.
-- **Orchestrator intelligence data requires no DB schema migration:** `status_updated_at` and `to_agent` already exist. The only addition is aggregate SELECT queries in `context.rs` and a new section appended to the generated markdown.
-- **Clone command requires one new subcommand file:** `src/commands/clone.rs` is the only new file. It reuses `get_agent`, `insert_agent`, and tmux session launch — all existing functions. Name auto-increment logic is a DB query + integer arithmetic, no new crate.
-- **TUI live update for cloned agents is free:** The existing `ui.rs` poll loop calls `list_agents()` on every refresh interval. A clone registered in DB appears on the next cycle. No TUI changes needed for the "agents appear immediately" requirement.
-- **All three features are independent:** No feature blocks another. They can be developed in parallel or in any sequential order.
+- **Telegram alerting has no DB dependency:** It is purely a side-channel notification dispatched from watch.rs on stall detection. The only new dependency is an HTTP mechanism (reqwest or curl subprocess).
+- **Prolonged-busy orchestrator injection is missing:** Pass 3 currently only logs. Wiring `tmux::send_keys_literal` for the prolonged-busy case requires adding a `get_orchestrator()` call in Pass 3 (already done in Pass 2, can be shared by passing `orch` into tick).
+- **Config for Telegram:** The cleanest approach per existing patterns is a `[telegram]` section in `squad.yml` (token + chat_id). Sidecar `.squad/telegram.toml` avoids modifying squad.yml schema but splits config across two files.
+- **All three passes are independent:** Reconcile, stall detection, and prolonged-busy can each fail independently without failing the others. Current implementation reflects this with per-pass error logging.
 
 ---
 
 ## MVP Definition
 
-### This Milestone (v1.8 Smart Agent Management)
+### This Milestone (v2.0 Workflow Watchdog)
 
-Minimum set to ship v1.8 as a coherent release. All five items from PROJECT.md active requirements.
+The `watch` command core loop is already functional. v2.0 MVP requires closing the gaps and adding multi-channel alerting.
 
-- [ ] Role template data structure — Rust const array of `RoleTemplate { role, description, default_model, routing_hints }` structs, compiled into binary. Minimum 8 templates covering: orchestrator, frontend-engineer, backend-engineer, fullstack-engineer, qa-engineer, devops-engineer, architect, code-reviewer. Plus `custom` option.
-- [ ] Template selector in wizard WorkerPage — radio/list UI, populates role + description + model fields on selection. Custom option activates free-text role input.
-- [ ] SDD-aware template ordering — when SDD workflow is known, show most-relevant templates first (not strict filter — all templates remain accessible). Ordering only.
-- [ ] Fleet metrics in `squad-orchestrator.md` — new "Fleet Metrics" section: pending message count per agent, agent busy-time duration. Generated by `context` command on each invocation. No daemon, no schema change.
-- [ ] `squad-station clone <agent-name>` command — reads source agent config, generates auto-incremented name, registers in DB, launches tmux session with same tool/role/model/description. Prints new agent name to stdout. Exits non-zero if source agent not found.
+- [ ] Orchestrator tmux injection for prolonged-busy agents (individual agent alert, not just global stall) — currently only logged, not injected. Requires 4 lines in Pass 3 of tick().
+- [ ] Telegram alerting on stall detection — bot token + chat ID config, HTTP dispatch alongside tmux injection. The distinguishing feature of v2.0.
+- [ ] `squad-station watch --status` command — report whether watchdog daemon is running (PID, uptime, last alert time). Users need a way to verify the watchdog is alive without reading the PID file manually.
+- [ ] Configurable nudge cooldown and max-nudges via CLI flags or squad.yml — currently hardcoded at 10-minute cooldown, 3 max nudges. Power users need to tune these.
+- [ ] End-to-end test coverage for watch.rs tick() logic — existing unit tests cover NudgeState but not the full tick with a real DB.
 
-### Add After Validation (post-v1.8)
+### Add After Validation (post-v2.0)
 
-- [ ] Task-role alignment hint in `squad-orchestrator.md` — lightweight keyword overlap check between recent task bodies and role/description keywords. Add when orchestrators report misrouting confusion in practice. Trigger: user feedback on misrouting.
-- [ ] Clone count limit guardrail — `clone` warns (does not error) when more than N agents with same role exist. N configurable in squad.yml or hardcoded default of 5. Add when teams hit resource/terminal real estate limits.
-- [ ] `squad-station clone --n 3 <agent-name>` — batch clone shorthand. Add after single clone is validated. Reduces manual invocation for scale-up scenarios.
+- [ ] `--alert-webhook` flag as generic alert channel — single URL, POST JSON payload, covers Slack Incoming Webhooks and Discord without per-channel implementation. Trigger: user requests non-Telegram alerting.
+- [ ] Stall context in Telegram alert — include which agents are idle, how many messages are stuck, last activity timestamp. Richer context enables the user to diagnose without opening a terminal. Trigger: user feedback that bare "system stalled" messages are not actionable.
+- [ ] Log rotation for `.squad/log/watch.log` — unbounded log growth is a problem for long-running watchdog sessions. Trigger: user reports disk usage issue.
+- [ ] `watch --tail` flag — print log lines to stdout in real time (like `tail -f`) without entering TUI. Useful for debugging watchdog behavior. Trigger: user struggles to debug watchdog without real-time log output.
 
-### Future Consideration (v2+)
+### Future Consideration (v3+)
 
-- [ ] Template versioning — as squad-station evolves, embedded templates will need updates without breaking existing squad.yml files. Only relevant at larger user scale.
-- [ ] User-defined template registry — local file (e.g., `.squad/templates.toml`) that augments built-in templates. Addresses power users with recurring custom roles.
-- [ ] Metrics history — persist fleet metrics snapshots in SQLite for trend analysis over a session. Only relevant if orchestrators need to see degradation over time, not just current state.
+- [ ] Per-agent stall thresholds — some agents work on longer tasks by nature (e.g., architect vs. QA). A single global threshold generates false positives for slow-but-correct agents. Only needed when teams report threshold-tuning friction.
+- [ ] Webhook for external orchestration (n8n, Zapier) — structured JSON payload on stall events enables integrating squad-station into larger automation pipelines. Deferred until enterprise/team users emerge.
+- [ ] Time-series stall history in SQLite — persist stall events with timestamps for trend analysis. Only relevant if orchestrators need to understand recurring failure patterns over sessions.
 
 ---
 
@@ -142,55 +150,80 @@ Minimum set to ship v1.8 as a coherent release. All five items from PROJECT.md a
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Role templates (data structure + compile-time constants) | HIGH — eliminates free-form role entry for 90% of users; reduces wizard friction immediately | LOW — Rust const array, no DB change, no new crate | P1 |
-| Template selector UI in wizard WorkerPage | HIGH — required for templates to be usable; without UI, templates are dead code | LOW — extends existing radio-selector pattern in wizard.rs | P1 |
-| Model pre-fill from template | HIGH — removes a manual step for common role/model pairings | LOW — set `model_input` default when template selected | P1 |
-| Pending message count per agent in `squad-orchestrator.md` | HIGH — fundamental signal for overload detection; orchestrator cannot reason about queue depth without it | LOW — one aggregate SQL query, one new section in build_orchestrator_md() | P1 |
-| Busy-time in `squad-orchestrator.md` | HIGH — detects stuck agents; `status_updated_at` already exists | LOW — timestamp diff, string formatting, appended to fleet metrics section | P1 |
-| `squad-station clone <agent-name>` | HIGH — enables dynamic scale-up; orchestrator has no mechanism to expand fleet otherwise | MEDIUM — new subcommand file, name auto-increment query, tmux session launch | P1 |
-| SDD-aware template ordering in wizard | MEDIUM — quality-of-life for SDD workflow users; all templates remain accessible regardless | LOW — sort/reorder template list based on WizardResult.sdd, no new state | P2 |
-| Routing hints from templates in `squad-orchestrator.md` | MEDIUM — richer orchestrator guidance; depends on templates being selected in wizard | LOW — template routing_hints field appended to agent description in context generation | P2 |
-| Task-role alignment hint | MEDIUM — high value when misrouting occurs; low value before misrouting is observed | MEDIUM — keyword extraction, overlap check across messages + agent descriptions | P3 |
+| Prolonged-busy orchestrator tmux injection | HIGH — closes the "agent stuck" alert gap; operators have no visibility otherwise | LOW — 4–6 lines added to Pass 3; `get_orchestrator()` already called in Pass 2 | P1 |
+| Telegram alerting on stall | HIGH — mobile push when human is not watching terminal; differentiator vs. generic monitors | HIGH — new config section, HTTP client choice, error handling, tests | P1 |
+| `watch --status` subcommand | MEDIUM — verifying the daemon is alive is basic operational hygiene; PID file read + process liveness check | LOW — 20 lines, reads `.squad/watch.pid`, checks PID liveness, prints uptime | P1 |
+| Configurable nudge cooldown/max-nudges | MEDIUM — teams running long multi-hour tasks will hit false positives with 5-minute default threshold | LOW — add `--nudge-cooldown` and `--max-nudges` flags to Watch CLI variant; pass to NudgeState::new() | P2 |
+| End-to-end tick() test coverage | MEDIUM — watch.rs has unit tests for NudgeState but not integration-level tick flow | MEDIUM — requires test DB setup with message/agent state; existing `setup_test_db()` helper usable | P2 |
+| Stall context in Telegram alert | MEDIUM — richer alert reduces time to diagnosis | LOW — query DB at alert time; format agent list + pending count into message | P3 |
+| Log rotation | LOW — current use case (developer local, sessions measured in hours) rarely hits disk limits | MEDIUM — manual rotation or tracing-appender crate | P3 |
+
+**Priority key:**
+- P1: Must have for v2.0 launch
+- P2: Should have, add when core is working
+- P3: Nice to have, future consideration
 
 ---
 
 ## Ecosystem Patterns Observed
 
-### Role Templates in Multi-Agent Frameworks (HIGH confidence — CrewAI docs + MetaGPT patterns)
+### Stall Detection Heuristics (HIGH confidence — watch.rs code + watchdog domain patterns)
 
-CrewAI defines agents with `role`, `goal`, and `backstory` fields. Common software team roles: Engineering Lead, Senior Software Engineer, QA Engineer, Backend Engineer, Frontend Engineer, Test Engineer. MetaGPT encodes roles like Product Manager, Architect, Engineer, QA. The consistent pattern across frameworks: 6–12 predefined roles covering a standard software development team, plus a mechanism to override with custom definitions.
+Two distinct stall patterns require different alert messages and recovery actions:
 
-For squad-station, the equivalent is a `RoleTemplate` struct with `role` (stored in DB), `description` (stored in DB as agent description), `default_model` (pre-fills wizard model selector), and `routing_hints` (appended to agent description for orchestrator context). This maps cleanly to existing DB fields — no schema change.
+1. **Global deadlock stall:** All non-dead agents are idle AND processing message count > 0. This means messages are stuck in the queue with no agent processing them. Root cause: agent crashed without signaling, or orchestrator sent a task to a dead agent. Recovery: orchestrator investigates and re-dispatches.
 
-### Dynamic Agent Cloning (MEDIUM confidence — Microsoft multi-agent patterns, frontiersin.org DRTAG research)
+2. **Prolonged-busy stall:** One or more agents have been in "busy" status for > threshold minutes (current default: 30m). The agent may be working correctly on a complex task, or its process may be hung. Recovery: orchestrator checks the specific agent's pane output and decides whether to cancel/retry.
 
-The "master-clone" architecture in Microsoft's multi-agent patterns describes a single orchestrator spinning off copies of a worker agent for parallel subtasks. DRTAG (Dynamic Real-Time Agent Generation) research confirms this as a viable pattern for scaling without human intervention. The consistent behavior: clone inherits the source agent's full configuration (role, model, context), gets a unique name, operates identically to the source.
+The current watch.rs implementation correctly distinguishes these as Pass 2 and Pass 3 respectively. The gap is that Pass 3 only logs — it does not inject into the orchestrator pane. This is a low-effort completion item.
 
-For squad-station, the natural implementation: `clone` reads source agent record from DB, generates name `<source-name>-2` (or `-N` for the next available suffix), registers in DB, launches a new tmux session. The orchestrator AI receives the new agent name via stdout and can route tasks to it immediately.
+### Watchdog Daemon Patterns (HIGH confidence — Linux watchdog, systemd watchdog, watchdogd)
 
-### Workload Metrics for Orchestrator Intelligence (MEDIUM confidence — multi-agent observability papers, IBM agent orchestration docs)
+Standard daemon conventions already implemented in watch.rs:
+- PID file at predictable location (`.squad/watch.pid`)
+- `kill -0 pid` for process liveness check (not `-0` sending signal, just checking existence)
+- SIGTERM handler for graceful shutdown
+- PID file cleanup on exit
+- Stale PID file removal on startup
 
-Multi-agent observability research identifies these key metrics for orchestrator decision-making: (1) pending task queue depth per agent, (2) agent utilization (busy vs. idle ratio over time), (3) task completion time. Squad-station can surface (1) directly from the messages table and (2) from `status_updated_at` duration. Task completion time requires completed_at minus created_at — also available in the existing schema.
+The one omission: stdout/stderr are sent to `/dev/null` in daemon mode (correct), but the startup confirmation message ("Watchdog daemon started (PID X)") prints to the parent process before forking. This is correct UX.
 
-The correct delivery mechanism for squad-station: append to `squad-orchestrator.md` at each `context` command invocation. The orchestrator AI reads this file as part of its pre-flight and has current metrics without polling. No daemon, no push notification — consistent with the stateless CLI design.
+### Telegram Alerting Pattern (MEDIUM confidence — WebSearch; Netdata, Sematext, Grafana community patterns)
 
-### Auto-Increment Naming (HIGH confidence — existing squad-station convention)
+Standard Telegram bot alert setup:
+1. Create bot via BotFather, obtain token
+2. Get chat ID (user or group chat)
+3. POST `https://api.telegram.org/bot{TOKEN}/sendMessage` with JSON `{"chat_id": "...", "text": "...", "parse_mode": "Markdown"}`
 
-The `<project>-<tool>-<role>` naming convention is already established (v1.1). For clones, the natural extension is `<project>-<tool>-<role>-2`, `...-3`, etc. The original agent has no numeric suffix (not `-1`). This mirrors standard replica naming in systems like Kubernetes (pod-xxxx suffixes) but uses sequential integers for human readability. The orchestrator AI can parse this pattern to understand the team structure.
+For squad-station, two implementation choices:
+
+**Option A — reqwest crate:** Async HTTP client, idiomatic Rust, adds ~500KB to binary. Enables retry logic and timeout configuration. Best approach if Telegram is the only HTTP call needed for v2.0.
+
+**Option B — curl subprocess:** `std::process::Command::new("curl")` with args. Zero binary size increase. Requires `curl` on PATH (available on macOS and most Linux by default). Simpler to implement, harder to test. Acceptable for a secondary alert channel.
+
+**Recommendation:** Use `reqwest` (tokio feature). It is the correct Rust async HTTP client for a tokio runtime. Binary size increase is acceptable. The existing browser feature already added `axum` (which transitively uses hyper/tokio) — the tokio runtime overhead is already paid.
+
+### Nudge Escalation (MEDIUM confidence — Overstory agent supervisor patterns)
+
+The Overstory project implements a tiered watchdog: Tier 0 mechanical check, Tier 1 AI-assisted triage, Tier 2 monitor agent patrol. Squad-station's equivalent is the 3-nudge escalation sequence (informational → urgent → final/manual). The pattern is: each nudge is more forceful than the last, and after the final nudge, the watchdog stops nudging (to avoid infinite noise) but continues logging the stall.
+
+The current cooldown hardcoded at 10 minutes is appropriate for the default 5-minute stall threshold. If the stall threshold is increased (e.g., to 30 minutes for long-running workflows), the cooldown should scale proportionally. Making both configurable via CLI flags resolves this.
 
 ---
 
 ## Sources
 
-- [CrewAI Agents Documentation](https://docs.crewai.com/en/concepts/agents) — role, goal, backstory field patterns; software team role examples (HIGH confidence)
-- [Microsoft ISE Blog: Patterns for Building a Scalable Multi-Agent System](https://devblogs.microsoft.com/ise/multi-agent-systems-at-scale/) — dynamic agent spawning patterns, orchestrator coordination (MEDIUM confidence)
-- [Frontiers in AI: Auto-scaling LLM-based multi-agent systems through dynamic integration](https://www.frontiersin.org/journals/artificial-intelligence/articles/10.3389/frai.2025.1638227/full) — DRTAG pattern, dynamic agent generation (MEDIUM confidence)
-- [IBM: AI Agent Orchestration](https://www.ibm.com/think/topics/ai-agent-orchestration) — orchestrator metrics, workload balancing (MEDIUM confidence)
-- [Microsoft Azure: AI Agent Design Patterns](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) — multi-agent architecture patterns (MEDIUM confidence)
-- [Agentic AI Systems Guide: Scaling Multi-Agent AI Systems](https://agenticaiguide.ai/ch_8/sec_8-3.html) — elastic scaling, stateless cloning patterns (MEDIUM confidence)
-- Codebase (verified directly): `src/commands/wizard.rs`, `src/commands/context.rs`, `src/db/agents.rs`, `src/db/messages.rs`, `src/cli.rs`, `src/tmux.rs`, `src/commands/register.rs` — existing structure for all dependency claims (HIGH confidence)
+- Codebase (verified directly): `src/commands/watch.rs`, `src/cli.rs`, `src/commands/reconcile.rs`, `src/db/messages.rs`, `src/db/agents.rs`, `src/tmux.rs` — all dependency and implementation claims (HIGH confidence)
+- [Linux watchdog daemon man page](https://linux.die.net/man/8/watchdog) — PID file, daemon patterns, signal handling conventions (HIGH confidence)
+- [watchdogd — Advanced system monitor for Linux](https://github.com/troglobit/watchdogd) — multi-pass monitoring, configurable thresholds, structured logging (HIGH confidence)
+- [Overstory: tiered watchdog system](https://github.com/jayminwest/overstory) — Tier 0/1/2 watchdog for AI agent fleets, tmux liveness checks (MEDIUM confidence)
+- [Batty: Rust tmux agent supervisor](https://dev.to/battyterm/building-a-tmux-native-agent-supervisor-in-rust-5hek) — send-keys injection for agent alerts, dead pane detection (MEDIUM confidence)
+- [Telegram Bot API documentation](https://core.telegram.org/bots) — sendMessage endpoint, bot token setup (HIGH confidence)
+- [Netdata Telegram notifications](https://learn.netdata.cloud/docs/alerts-&-notifications/notifications/agent-dispatched-notifications/telegram) — HTTP POST pattern for Telegram alerting from CLI tools (MEDIUM confidence)
+- [Sematext Telegram alerts integration](https://sematext.com/docs/integration/alerts-telegram-integration/) — bot token + chat ID configuration pattern (MEDIUM confidence)
+- [Feature request: Escalating stall recovery for sub-agents](https://github.com/openclaw/openclaw/issues/39305) — nudge → kill escalation pattern in AI agent frameworks (MEDIUM confidence)
 
 ---
 
-*Feature research for: squad-station v1.8 Smart Agent Management — Role templates, orchestrator intelligence data, dynamic agent cloning*
-*Researched: 2026-03-19*
+*Feature research for: squad-station v2.0 Workflow Watchdog — stall detection, background daemon, multi-channel alerting*
+*Researched: 2026-03-24*

@@ -1,197 +1,199 @@
 # Project Research Summary
 
-**Project:** Squad Station v1.8 — Smart Agent Management
-**Domain:** Rust CLI — stateless binary with embedded SQLite, ratatui TUI, tmux integration
-**Researched:** 2026-03-19
+**Project:** Squad Station v2.0 — Workflow Watchdog
+**Domain:** Rust CLI — stateless binary, embedded SQLite WAL, tmux integration, long-lived background watchdog process
+**Researched:** 2026-03-24
 **Confidence:** HIGH
 
 ## Executive Summary
 
-Squad Station v1.8 adds three capabilities to an already-solid v1.7 foundation: agent role templates embedded in the init wizard, orchestrator intelligence data surfaced in `squad-orchestrator.md`, and a new `clone` subcommand for dynamic agent duplication. All three features are implementable with zero new Rust crates — the existing dependency set (clap 4.5, sqlx 0.8, chrono 0.4, ratatui 0.30, tokio 1, serde/serde_json 1.0) covers every requirement. The only schema addition is a single `ALTER TABLE ADD COLUMN` migration for `busy_since` to enable accurate busy-time tracking. Architecture research confirms each feature maps cleanly to established patterns in the codebase without requiring new cross-cutting concerns.
+Squad Station v2.0 adds a long-lived background watchdog command to an existing, well-validated Rust CLI foundation (v1.9). The core of the watchdog (`watch.rs`) is already substantially implemented: it has a three-pass tick loop (reconcile, global stall detection, prolonged-busy detection), a daemon mode with PID file management, SIGTERM/SIGINT handling, structured logging, orchestrator tmux injection with escalating nudge sequences, and an activity-based reset. The v2.0 work is narrower than a greenfield implementation — it closes three specific gaps: adding deadlock detection (tasks stuck in `processing` with no busy agents), wiring orchestrator tmux injection for prolonged-busy agents (currently log-only), and adding Telegram alerting as a secondary alert channel.
 
-The recommended implementation order, grounded in dependency analysis, is: (1) orchestrator intelligence data first — it gives the orchestrator the signal it needs to decide when to clone; (2) dynamic agent cloning second — a clean command-per-file addition that reuses existing DB CRUD and tmux session launch; (3) agent role templates in the wizard last — entirely self-contained to `wizard.rs` and independent of runtime orchestration behavior. This ordering keeps each phase focused, avoids refactoring pressure, and delivers immediate orchestrator value before the UX polish.
+The recommended implementation approach is minimal and non-disruptive to the existing architecture. The Telegram integration should use `tokio::process::Command` to shell out to `curl` (matching the established tmux shell-out pattern throughout the codebase), or optionally `reqwest 0.12` with `default-features = false, features = ["json", "rustls-tls"]` if native Rust HTTP is preferred. No new DB schema migration is required. The delta is two files: a new `src/commands/alert.rs` module (Telegram dispatch, ~30 lines) and modifications to `src/commands/watch.rs` (deadlock detection branch, second NudgeState instance, Telegram call sites). File count delta is 1 new, 1 modified.
 
-The most critical risks are concentrated in the clone command: name collision between DB state and orphaned tmux sessions after re-init, partial success (tmux launched but DB write failed or vice versa), missing context regeneration after a successful clone, and accidental orchestrator cloning breaking the signal routing chain. All are preventable with explicitly specified guards and tests. The orchestrator intelligence feature carries one significant design risk: embedding static metric values in a snapshot file creates stale-data misrouting — the correct pattern is embedding CLI commands for live re-query rather than pre-computed tables.
+The primary risks are all in connection lifecycle and stall detection correctness. A watchdog that holds a write pool across poll ticks will starve all other CLI commands — this is the highest-severity pitfall and must be prevented from the first line of code. Stall detection has multiple false-positive vectors (transient signal windows, stale DB agent status, intentional idle periods) that require debounce, message age thresholds, and a strict condition that only `processing` (not `pending`) messages trigger alerts. Alert deduplication state and a timeout wrapper around the Telegram API call are required for the v2.0 launch to be production-quality.
+
+---
 
 ## Key Findings
 
 ### Recommended Stack
 
-No new Rust crates are required for any v1.8 feature. All three capabilities use the existing dependency set. The only infrastructure change is one SQL migration file adding `busy_since TEXT DEFAULT NULL` to the `agents` table, following the established `ALTER TABLE ADD COLUMN` pattern from migrations 0003 and 0004. Role templates are compile-time Rust constants (`&[RoleTemplate]`) — static structs are zero-cost at startup, compile-time validated, and require no file-read code path. Template data must not be stored in TOML or JSON files, as that would add a new dependency and a fallible parse path for data that never changes at runtime.
+The existing v1.9 stack (tokio 1.37, sqlx 0.8, ratatui, clap 4.5, serde/serde_json, chrono, anyhow, axum 0.7, libc 0.2) requires no changes to the core runtime for v2.0. Two new crates are candidates, though one can be avoided entirely.
 
-**Core technologies — no version changes:**
-- **clap 4.5**: CLI dispatch — add `Clone` variant to `Commands` enum, same derive pattern as all other subcommands
-- **sqlx 0.8**: SQLite queries + migrations — one new migration (`0005_v18_metrics.sql`); all query patterns already established
-- **chrono 0.4**: Timestamp arithmetic — `signed_duration_since` + `parse_from_rfc3339` for busy-time duration; already imported
-- **ratatui 0.30**: TUI rendering — template selector reuses existing `List` widget + `ListState` pattern from Provider/Model selectors; no new widget types
-- **serde_json 1.0**: JSON output — `serde_json::json!` already used in every command; clone output follows same pattern
-- **Rust stdlib**: Clone name auto-increment — `str::rfind`, `str::parse::<u32>()`, `format!`; no regex crate needed
+For Telegram alerting, there are two valid options: `reqwest 0.12` (async HTTP, ~300KB binary increase, uses `http 1.0` + `hyper 1` shared with axum 0.7, no `http` crate version duplication) or `tokio::process::Command` shelling out to `curl` (zero binary size increase, matches the existing tmux shell-out pattern, requires `curl` on PATH which is present on all target platforms). The architecture research recommends the `curl` shell-out approach as more consistent with the existing codebase convention. STACK.md recommends `reqwest 0.12` as more idiomatic Rust. Both are correct — the decision should be made explicit in Phase 2 planning.
+
+`tokio-util 0.7` with `CancellationToken` is an optional clean alternative for graceful shutdown, but the watchdog already uses `AtomicBool` + `libc::signal()` which works correctly for daemon mode. No change to the shutdown mechanism is required.
+
+**Core technologies for v2.0 additions:**
+- `tokio::process::Command` (curl shell-out): Telegram dispatch — zero new dependency, matches established shell-out convention for all external tools
+- OR `reqwest 0.12` (no default features, json + rustls-tls): Telegram dispatch — idiomatic async Rust, ~300KB overhead, shares `http 1.0` with axum 0.7, no version duplication
+- `tokio::time::interval` + `AtomicBool`: polling loop and shutdown — already in `watch.rs`, no change needed
+- `serde_json::json!`: Telegram request body construction — already used throughout codebase
 
 ### Expected Features
 
-Research confirmed the feature set against CrewAI, AutoGen, LangGraph, MetaGPT, and Microsoft multi-agent pattern documentation. All five PROJECT.md active requirements are validated as correct scope for v1.8.
+**Must have (P1, required for v2.0 launch):**
+- Deadlock detection (processing messages + zero busy agents) — the failure mode most likely to leave a fleet silently broken; currently missing from `watch.rs` Pass 2
+- Orchestrator tmux injection for prolonged-busy agents — Pass 3 currently only logs; wiring the injection is 4–6 lines
+- Telegram alerting on stall and deadlock — the distinguishing v2.0 feature; mobile push when the human operator is not watching the terminal
+- `watch --status` subcommand — verifying daemon liveness is basic operational hygiene; reads `.squad/watch.pid`, checks PID liveness, prints uptime (~20 lines)
+- End-to-end test coverage for `tick()` logic — unit tests exist for NudgeState but not the full tick flow with a real DB
 
-**Must have (table stakes):**
-- Predefined role menu in wizard (8+ templates: orchestrator, frontend-engineer, backend-engineer, fullstack-engineer, qa-engineer, devops-engineer, architect, code-reviewer, custom) — every multi-agent framework ships these; absence makes setup feel unfinished
-- Custom role escape hatch in wizard — templating systems without a custom option exclude legitimate use cases
-- Model pre-fill from template selection — implied by role; requiring manual model selection after template pick is unnecessary friction
-- Routing hints from templates embedded in `squad-orchestrator.md` — CrewAI and MetaGPT both encode role goals into orchestration context; without this the orchestrator has no specialization signal
-- `squad-station clone <agent>` command — dynamic scaling is a core expectation in workload-aware multi-agent systems; without it the orchestrator cannot expand the fleet
-- Pending message count per agent in orchestrator context — fundamental overload detection signal; orchestrator cannot reason about queue depth without it
-- Busy-time tracking in orchestrator context — detects stuck agents; `status_updated_at` already exists in the schema
+**Should have (P2, add after core is working):**
+- Configurable nudge cooldown and max-nudges via CLI flags — currently hardcoded at 10-minute cooldown, 3 max nudges
+- Stall context in Telegram alert — include stuck message count, agent states, oldest message age for actionable notifications
 
-**Should have (differentiators):**
-- Task-role alignment hints in `squad-orchestrator.md` — lightweight keyword overlap between recent task bodies and role/description; unique signal no competing tool provides in a file-based context model
-- Orchestrator-controlled cloning (not auto-scaling) — deliberately keeps scaling decisions with the AI; CLI provides mechanism, AI decides when; correct abstraction for semantic workload reasoning
-- Auto-incremented clone naming with project prefix — deterministic, human-readable, parseable by the orchestrator without additional metadata (unlike UUIDs)
-- SDD-aware template ordering in wizard — reorders (not filters) template list based on detected workflow; proactive guidance competitors lack
+**Defer (post-v2.0 / v3+):**
+- `--alert-webhook` generic webhook flag (covers Slack, Discord via single implementation)
+- Log rotation for `.squad/log/watch.log`
+- `watch --tail` flag for real-time log tailing without entering TUI
+- Per-agent stall thresholds
+- Time-series stall history in SQLite
 
-**Defer to v2+:**
-- `clone --n 3 <agent>` batch clone shorthand — add after single clone is validated
-- Clone count limit guardrail — warn when more than N agents with same role exist; add when teams hit terminal real-estate limits
-- Task-role alignment scoring with ML embeddings — binary size and inference latency are prohibitive at team scale
-- Template versioning and user-defined local template registry — relevant only at larger user scale
-- Metrics history (snapshots over time) — requires an `agent_events` table; defer until orchestrators need trend data
+**Anti-features to avoid:**
+- Auto-recovery (auto-relaunching dead agents) — creates infinite restart loops; the orchestrator AI must decide
+- Prometheus/OTEL metrics export — violates single-binary zero-runtime-dependency design principle
+- Multiple alert channels at launch — validate Telegram first before adding N more providers
 
 ### Architecture Approach
 
-The v1.8 features integrate as additive changes to the existing layered architecture: CLI dispatch → command handlers → DB layer → SQLite (WAL). No new layers, no new cross-cutting infrastructure. Each feature follows a named pattern already in use in the codebase: `clone.rs` follows command-per-file; `agent_metrics()` follows DB-as-thin-CRUD; `busy_duration_seconds()` follows pure-fn for testability; template data follows compile-time constants. The connect-per-refresh pattern in `ui.rs` means cloned agents appear in the TUI dashboard within one 3-second poll cycle with zero TUI code changes.
+The v2.0 architecture is additive with minimal surface area change. One new module (`alert.rs`) is introduced as an isolated Telegram dispatch function. `watch.rs` is modified to add a second stall condition branch (deadlock) and wire Telegram calls alongside the existing tmux injection paths. No new DB functions are needed — all required queries already exist (`list_agents`, `get_orchestrator`, `count_processing_all`, `total_count`, `last_activity_timestamp`). The daemon lifecycle pattern (PID file, `--daemon` fork, `--stop`) is already fully implemented.
 
-**Major components changed:**
-1. `src/commands/wizard.rs` — add `RoleTemplate` struct, `ROLE_TEMPLATES` const, `TemplatePickerPageState` in `WizardState`, pre-fill logic, new render branch, hint text
-2. `src/db/messages.rs` + `src/db/agents.rs` — add `AgentMetrics` struct, `agent_metrics()` async query, `busy_duration_seconds()` pure fn
-3. `src/commands/context.rs` — update `build_orchestrator_md()` signature, add Fleet Status section
-4. `src/commands/clone.rs` (NEW) + `src/cli.rs` + `src/commands/mod.rs` + `src/main.rs` — full clone subcommand
-5. `src/db/migrations/0005_v18_metrics.sql` (NEW) — single `ALTER TABLE ADD COLUMN` for `busy_since`
+**Major components and their v2.0 responsibilities:**
+1. `src/commands/watch.rs` (MODIFY) — three-pass tick loop; add deadlock detection (Pass 2b) with a separate NudgeState; call `alert::send_telegram()` from both stall nudge paths; wire tmux injection for prolonged-busy in Pass 3
+2. `src/commands/alert.rs` (NEW) — `pub async fn send_telegram(message: &str) -> bool`; reads `SQUAD_TELEGRAM_TOKEN` + `SQUAD_TELEGRAM_CHAT_ID` env vars; shells out to `curl` (or uses reqwest); returns `false` silently when unconfigured or on failure
+3. `src/commands/mod.rs` (MODIFY) — add `pub mod alert;`
+4. All DB, tmux, and reconcile modules: NO CHANGE
 
-**Critical architectural constraints to preserve:**
-- `build_orchestrator_md()` must remain a pure `fn` — fetch `Vec<AgentMetrics>` in `context::run()` and pass as a parameter; never make DB calls inside the function
-- Clones are DB-only entries; never write clones to `squad.yml` (same as `register` behavior)
-- Routing hints live in compile-time `ROLE_TEMPLATES` constants, not in a DB column
+**Key architectural patterns to follow:**
+- Shell-out pattern (`tokio::process::Command`) for external tools — consistent with entire tmux integration layer
+- Two separate `NudgeState` instances for idle-inactivity vs. deadlock — merging them suppresses deadlock alerts after inactivity nudges fire
+- "If available" graceful degradation — `let _ = alert::send_telegram(msg).await;` — Telegram failures log to `watch.log` but never stop the poll loop
+- Alert dispatch priority: tmux injection is primary (always attempted with `session_exists()` check first), Telegram is secondary (parallel or fallback)
 
 ### Critical Pitfalls
 
-1. **Clone name collision (DB vs. tmux reality)** — After re-init, orphaned tmux sessions exist that the DB no longer knows about. Auto-increment scanning only the DB produces a name that tmux rejects with "session already exists." Prevention: `generate_clone_name()` must check both `get_agent(pool, candidate)` AND `tmux::session_exists(candidate)` before committing to a name.
+1. **Long-held write pool starves all CLI commands** — `db::connect()` at watchdog startup and never closed means every `send`/`signal`/`register` call blocks for 5 seconds then errors. Use connect-per-refresh for write operations; use `connect_readonly()` per tick for reads, and ensure it does not hold open read transactions between ticks. This is the single highest-severity pitfall and cannot be patched after the fact.
 
-2. **Partial clone success — tmux launched before DB write** — If the tmux session is launched before DB registration, a DB write failure leaves an orphaned session invisible to the signal chain. Prevention: always DB-first; if `tmux::launch_agent()` fails after DB write, immediately call compensating `delete_agent_by_name()`.
+2. **False positive stall alerts from transient signal windows** — when an agent completes a task, there is a brief window where the message is still `processing` but the agent is already `idle` in DB. A watchdog polling at that instant fires a false alert. Prevention: debounce with N consecutive poll cycles before alerting; only flag `processing` messages older than a configurable minimum age (recommended: 5–10 minutes).
 
-3. **Context not regenerated after clone** — The orchestrator never learns about the clone because `squad-orchestrator.md` is only updated when `context` is explicitly invoked. Prevention: `clone::run()` must call `build_orchestrator_md()` directly as its final step and print explicit user instructions to reload `/squad-orchestrator` in the orchestrator session.
+3. **Alert deduplication absent — flood on persistent stall** — once a stall is detected, every subsequent poll cycle fires another alert. The orchestrator pane and Telegram chat receive identical messages every N seconds. Prevention: track `stall_alerted_at: Option<Instant>` in watchdog state; fire once on detection, then only re-alert after a configurable cooldown.
 
-4. **Stale metrics in orchestrator playbook** — Embedding pre-computed metric values creates stale-data misrouting. Prevention: embed CLI commands for live re-query (`squad-station status --json`, `squad-station agents`) rather than static tables; any static snapshot must include a generated-at timestamp.
+4. **Telegram API failure hangs or crashes the watchdog** — a network timeout, 429 rate-limit, or MCP unavailability must not stop the monitoring loop. Prevention: wrap every Telegram call in `tokio::time::timeout(Duration::from_secs(10), ...)`. Treat all Telegram failures as non-fatal. Read `retry_after` on 429 responses; never retry immediately.
 
-5. **Cloning the orchestrator creates a routing loop** — Two `role == "orchestrator"` agents break the signal routing chain silently (`get_orchestrator` returns the wrong record). Prevention: reject `role == "orchestrator"` with a clear error as the first guard in `clone::run()`, before any DB writes.
+5. **WAL checkpoint starvation from long-lived read pool** — a watchdog holding `connect_readonly()` continuously prevents WAL checkpointing. WAL grows unbounded over hours; DB reads degrade quadratically. Prevention: drop read connection between ticks; minimum 5-second poll interval to allow reader gaps.
 
-6. **Template model strings drift from validation allowlist** — Templates compiled into the binary reference model aliases independently of `valid_models_for()` in `config.rs`. Drift causes validation errors on wizard-offered selections. Prevention: templates omit model strings entirely, or a CI test validates each template's generated config against `validate_agent_config()`.
+---
 
 ## Implications for Roadmap
 
-Based on the combined research, four phases are recommended. The first three are required for v1.8; the fourth is optional polish.
+Based on combined research, three phases are recommended for v2.0, ordered by dependency and risk.
 
-### Phase 1: Orchestrator Intelligence Data
+### Phase 1: Watchdog Core Correctness
 
-**Rationale:** Pure additive DB + context changes with no side effects. Landing this first gives the orchestrator the workload signal it needs to make informed clone decisions — making the clone command immediately useful upon delivery. The `build_orchestrator_md()` signature change requires updating existing tests (pass `&[]` for metrics), which is a mechanical fix best completed before any other feature builds on top of context generation.
+**Rationale:** The daemon infrastructure and basic loop exist, but the foundation needs hardening before adding new features. Alert deduplication, debounce, connection lifecycle, and graceful shutdown are structural concerns that cannot be patched after the fact. Five of nine critical pitfalls from PITFALLS.md are Phase 1 concerns — getting connection lifecycle and stall detection correctness wrong at this stage means all subsequent work is built on a broken foundation.
 
-**Delivers:** Live fleet metrics in `squad-orchestrator.md` — pending message count per agent, busy-time duration, and routing guidance with clone hints embedded as CLI commands (not static values).
+**Delivers:** A production-quality watchdog daemon that runs cleanly alongside active fleet operations, detects real stalls without false positives, shuts down gracefully, and reports its daemon status.
 
-**Addresses:** "Message-per-agent count in orchestrator context" (P1) and "Busy-time in orchestrator context" (P1) from FEATURES.md.
+**Addresses (from FEATURES.md P1):** Deadlock detection gap (Pass 2b in tick), prolonged-busy tmux injection gap (Pass 3 wiring), `watch --status` subcommand, configurable nudge cooldown and max-nudges
 
-**Avoids:** Stale metrics pitfall — embed CLI commands for live re-query, not pre-computed tables. Document `busy_time` limitations (resets on re-init; represents "time in current state," not "total runtime").
+**Avoids (from PITFALLS.md):** Long-held write pool (Pitfall 1), false positives from transient windows (Pitfall 2), stale DB agent status (Pitfall 3), alert deduplication (Pitfall 4), WAL starvation (Pitfall 7), no graceful shutdown (Pitfall 8), stall-on-idle-pending (Pitfall 9)
 
-**Files:** `src/db/messages.rs`, `src/db/agents.rs`, `src/commands/context.rs`, `src/db/migrations/0005_v18_metrics.sql`
+**Build order within phase (per ARCHITECTURE.md):**
+- Step 1: `src/commands/alert.rs` — new file, isolated, no dependencies on other v2.0 changes; write and test first
+- Step 2: Deadlock detection in `watch.rs` tick() — second NudgeState instance, Pass 2b branch
+- Step 3: Wire Telegram calls at both alert sites — depends on Steps 1 and 2
+- Step 4 (optional): Update `squad-orchestrator.md` context with watchdog instructions in `context.rs`
 
-### Phase 2: Dynamic Agent Cloning
+### Phase 2: Telegram Integration and Error Handling
 
-**Rationale:** The orchestrator now has workload data from Phase 1 and can act on it immediately via `clone`. This is the highest-value runtime feature. Building it second keeps the new command file isolated and avoids any entanglement with wizard changes.
+**Rationale:** Telegram alerting is the named differentiating feature of v2.0 but depends on debounce, deduplication, and timeout infrastructure from Phase 1. Implementing Telegram before the core is hardened means the mobile alert channel fires false positives and spams the user. Sequencing it second allows Phase 1 to validate detection correctness before adding an external channel.
 
-**Delivers:** `squad-station clone <agent>` command — reads source config, auto-increments name (checking both DB and tmux), registers in DB, launches tmux session, regenerates `squad-orchestrator.md` as a final step.
+**Delivers:** Mobile push notifications to a Telegram chat when a genuine stall or deadlock is detected; graceful degradation when Telegram is not configured; 429 rate-limit handling; 10-second timeout guard.
 
-**Addresses:** "Dynamic agent cloning" (P1) and "Orchestrator-controlled cloning" (differentiator) from FEATURES.md.
+**Implements (from ARCHITECTURE.md):** `send_telegram()` in `alert.rs`; env var config (`SQUAD_TELEGRAM_TOKEN`, `SQUAD_TELEGRAM_CHAT_ID`); `tokio::time::timeout` wrapper; `retry_after` state for 429 responses; logging of Telegram send outcomes to `watch.log`
 
-**Avoids:** All clone-specific pitfalls — name collision (check DB + tmux), partial success (DB-first with compensating rollback), missing context regeneration (auto-call in clone handler), orchestrator cloning (reject `role == "orchestrator"` first), session name sanitization (apply `config::sanitize_session_name()` to derived names).
+**Avoids (from PITFALLS.md):** Telegram failure crashes watchdog (Pitfall 5), tmux injection to dead orchestrator (Pitfall 6), 429 retry storm
 
-**Files:** `src/commands/clone.rs` (NEW), `src/cli.rs`, `src/commands/mod.rs`, `src/main.rs`
+**Key decision to make at phase kickoff:** `curl` shell-out (zero dependency, matches tmux pattern) vs. `reqwest 0.12` (idiomatic Rust, configurable timeout, slightly larger binary). Both are valid; choose and document.
 
-### Phase 3: Agent Role Templates in Wizard
+### Phase 3: End-to-End Test Coverage
 
-**Rationale:** Entirely self-contained to `wizard.rs`. Does not affect clone, metrics, or DB at all. Improves onboarding for the v1.8 release but does not block any orchestrator runtime functionality. Building last keeps wizard changes separate and avoids merge conflicts with Phases 1 and 2.
+**Rationale:** The two previous phases produce working code, but `watch.rs` tick() logic requires integration-level tests to verify debounce, deduplication, and condition evaluation work correctly together under realistic DB state. The existing `setup_test_db()` helper is the scaffold; the tests verify acceptance criteria that are otherwise only manually verifiable.
 
-**Delivers:** Role template selector page in the init wizard — 8+ predefined templates with role, description, model pre-fill, and routing hints. Custom option preserves existing free-text behavior. SDD-aware template ordering when workflow is detected.
+**Delivers:** Test coverage for the full tick loop: deadlock condition triggers correctly, idle-pending condition does not trigger, debounce holds for N cycles before first alert, alert fires only once per stall event, Telegram alert function returns false cleanly when env vars are absent.
 
-**Addresses:** "Predefined role menu in wizard" (P1), "Template includes model suggestion" (P1), "Template includes routing hints" (P2), "SDD-aware template ordering" (P2) from FEATURES.md.
-
-**Avoids:** Template model drift pitfall — CI test validates each template's generated config against `validate_agent_config()`. Model field in templates either omitted or references allowlist aliases only.
-
-**Files:** `src/commands/wizard.rs`
-
-### Phase 4: TUI Live Update Polish (Optional)
-
-**Rationale:** The connect-per-refresh pattern already picks up cloned agents within one 3-second poll cycle — this phase is cosmetic only. Include if time permits before v1.8 release; skip if not without affecting any v1.8 functional requirement.
-
-**Delivers:** Visual highlight for newly-appeared agents in the TUI agent list for one refresh cycle. Optional identification of clone agents by naming convention suffix in the display.
-
-**Files:** `src/commands/ui.rs` (optional `seen_agents: HashSet<String>` addition)
+**Implements:** Integration tests in `tests/` using `setup_test_db()` for all stall detection paths; unit test for `alert::send_telegram()` with absent env vars (no subprocess spawned).
 
 ### Phase Ordering Rationale
 
-- Phase 1 before Phase 2: The context file is the coordination mechanism. Cloning without updated orchestrator context produces agents the orchestrator never routes to (Pitfall 3). Phase 1 also establishes the `build_orchestrator_md()` signature change that Phase 2 must call.
-- Phase 2 before Phase 3: Runtime orchestration features (metrics + cloning) deliver higher impact than onboarding UX. Phase 3 is independent and carries no dependencies on Phases 1 or 2.
-- Phase 4 last: Optional and purely cosmetic. The live update already works; the phase only adds optional highlighting.
-- All three features are confirmed independent by the FEATURES.md dependency graph — parallel development is feasible if resources allow, but the sequential order above minimizes integration risk.
+- Phase 1 before Phase 2: All Telegram-specific pitfalls (Pitfall 5, 6) require the alert deduplication and timeout infrastructure from Phase 1. Adding Telegram before fixing deduplication guarantees a spam flood on first stall.
+- Phase 2 before Phase 3: End-to-end tests must validate the full stack including the Telegram mock path; testing an incomplete implementation produces tests that need to be rewritten.
+- The minimal file delta (1 new file, 1 modified file) means the entire v2.0 feature can ship as two or three focused PRs with no DB migration and no CLI surface change beyond `--status`.
 
 ### Research Flags
 
-Phases requiring deeper attention during planning:
-- **Phase 2 (Clone command):** The five critical pitfalls each require explicit acceptance criteria before coding begins. The implementation plan must enumerate: double-check for name collision (DB + tmux), DB-first ordering with compensating rollback, auto-context-regeneration, orchestrator rejection guard, and session name sanitization. None of these are standard patterns — each requires a specific test.
-- **Phase 1 (Playbook text design):** The exact wording of the Fleet Status section and routing guidance in `squad-orchestrator.md` is a UX design decision with correctness implications. Draft and review the generated markdown template before writing any query code.
+Phases with standard patterns (skip `/gsd:research-phase`):
 
-Phases with standard patterns (skip research-phase):
-- **Phase 3 (Templates):** Wizard integration follows the established `List` widget + `ListState` radio-selector pattern visible in the current `wizard.rs` for Provider and Model selectors. No research needed; the implementation pattern is directly observable in the existing code.
-- **Phase 4 (TUI polish):** Adding a `HashSet<String>` to `App` state is a trivial additive change. No research needed.
+- **Phase 1:** `watch.rs` already exists and is inspectable. All DB functions, tmux functions, and daemon patterns are confirmed in codebase source. NudgeState cooldown logic is implemented and readable. No new research needed — this is completion work, not discovery work.
+
+- **Phase 2:** Telegram Bot API `sendMessage` endpoint is stable, well-documented, and HIGH confidence from multiple sources. The `curl` shell-out implementation is ~10 lines. The `reqwest 0.12` implementation is ~15 lines. No research needed beyond the decision between these two options.
+
+- **Phase 3:** `setup_test_db()` helper and async test pattern are confirmed in existing `tests/helpers.rs`. No new research needed.
+
+---
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Verified directly against `Cargo.toml` and all relevant source files. Zero new crates confirmed by inspecting every feature requirement against existing imports. |
-| Features | HIGH | PROJECT.md requirements cross-validated against CrewAI docs, Microsoft multi-agent patterns, DRTAG research, and IBM orchestration guidance. Ecosystem patterns confirmed for role templates (8-12 roles standard), dynamic cloning (master-clone architecture), and workload metrics (pending count + busy time). |
-| Architecture | HIGH | All findings from direct source inspection of the v1.7 codebase. Integration points verified against actual function signatures in `wizard.rs`, `context.rs`, `db/agents.rs`, `db/messages.rs`, `tmux.rs`, `cli.rs`, `main.rs`. No inferred behavior. |
-| Pitfalls | HIGH | All pitfalls grounded in direct codebase inspection (`signal.rs` GUARDs, `config.rs` allowlist, `db/agents.rs` upsert semantics) and the existing CONCERNS.md audit. Recovery strategies verified against available CLI commands. |
+| Stack | HIGH | Findings grounded in direct `Cargo.toml` and `src/` source inspection. reqwest 0.12 / curl shell-out decision is validated against axum 0.7 compatibility constraints. One implementation choice remains open (reqwest vs. curl) — both options are fully researched with no unknowns. |
+| Features | HIGH | Feature completeness verified directly against `watch.rs` and `cli.rs` source code. MVP gap list (deadlock detection, prolonged-busy injection, `--status`, Telegram) is confirmed missing from current code by direct inspection, not inference. |
+| Architecture | HIGH | All findings from direct source inspection of `watch.rs`, `browser.rs`, `monitor.rs`, `tmux.rs`, `db/mod.rs`. No external sources required — this is integration work, not ecosystem discovery. Component boundaries and data flow are confirmed against actual function signatures. |
+| Pitfalls | HIGH | All 9 critical pitfalls grounded in specific codebase code paths (`db/mod.rs` pool semantics, `signal.rs` two-write sequence, `monitor.rs` connect-per-refresh pattern). External sources verify WAL checkpoint starvation mechanics and Telegram 429 handling specifics. |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Exact model aliases for templates:** Templates need model suggestions referencing valid aliases from `valid_models_for()` in `config.rs`. Read the allowlist before writing template constants to avoid the validation drift pitfall. Alternatively, omit model from templates entirely and rely on the wizard radio selector — the safer default.
-- **`busy_since` vs. `status_updated_at` discrepancy:** STACK.md recommends a new `busy_since` column (migration 0005) for accurate busy-time tracking, while ARCHITECTURE.md and FEATURES.md reference the existing `status_updated_at` column. Both approaches work; `busy_since` is more reliable (not overwritten on every status change). The implementation plan must pick one approach and specify it explicitly before Phase 1 work begins.
-- **Playbook text for Fleet Status section:** The exact format of the generated `squad-orchestrator.md` Fleet Status section — column layout, routing guidance wording, CLI command embed vs. static table decision — should be drafted and agreed before `build_orchestrator_md()` is modified. The wording has correctness implications for orchestrator behavior.
+- **reqwest vs. curl implementation decision:** STACK.md and ARCHITECTURE.md give different recommendations, both valid. This is an explicit implementation choice for Phase 2 kickoff. The `curl` shell-out approach is lower-risk for musl cross-compilation targets; `reqwest 0.12` is more idiomatic Rust and enables configurable timeout without subprocess complexity. Neither option has unknowns — just pick one and document the rationale.
+
+- **Stall detection condition precision for `count_processing_all()`:** The PITFALLS.md requires that stall detection flag only `processing` messages (not `pending`). Verify that `db::messages::count_processing_all()` counts `status = 'processing'` only before writing the deadlock detection branch. If it counts `pending` as well, a separate query or `WHERE` clause is needed.
+
+- **Configurable nudge values in Phase 1 vs. Phase 2:** Current `watch.rs` hardcodes 10-minute cooldown and 3 max nudges. FEATURES.md rates configurable nudge cooldown/max-nudges as P2. The roadmap should specify whether Phase 1 uses hardcoded values (simpler) or wires the CLI flags to `NudgeState::new(cooldown, max)` (complete). Adding `--nudge-cooldown` and `--max-nudges` at Phase 1 is low-effort and avoids a later breaking change to `NudgeState`.
+
+---
 
 ## Sources
 
 ### Primary (HIGH confidence)
 
-- `Cargo.toml` (local codebase) — confirmed locked versions; zero new dependencies required
-- `src/commands/wizard.rs` (local codebase) — confirmed `List` widget + `ListState` radio-selector pattern; `AgentInput` struct fields; `WizardState` structure
-- `src/commands/context.rs` (local codebase) — confirmed `build_orchestrator_md()` as `pub fn`; string-building pattern; stateless snapshot design
-- `src/db/agents.rs` (local codebase) — confirmed `insert_agent`, `update_agent_status`, `get_agent`, `get_orchestrator` signatures; `status_updated_at` behavior; `delete_all_agents` re-init path
-- `src/db/messages.rs` (local codebase) — confirmed existing `status` and `to_agent` columns; `list_messages()` query patterns
-- `src/commands/signal.rs` (local codebase) — confirmed GUARD 3 (missing agent = silent exit) and GUARD 4 (orchestrator self-signal) behavior
-- `src/config.rs` (local codebase) — confirmed `VALID_PROVIDERS`, `valid_models_for()`, `sanitize_session_name()` APIs
-- `src/tmux.rs` (local codebase) — confirmed `launch_agent()`, `session_exists()`, `list_live_session_names()` availability
-- `src/db/migrations/` (local codebase) — confirmed `ALTER TABLE ADD COLUMN` pattern from migrations 0003/0004
-- `.planning/codebase/CONCERNS.md` — pre-existing audit covering tmux/DB sync risks, reconciliation duplication, single-writer pool limits
+- `src/commands/watch.rs` (local) — confirmed three-pass tick loop, NudgeState with cooldown/max-nudges, daemon mode, AtomicBool SHUTDOWN signal handling
+- `src/commands/browser.rs` (local) — confirmed connect-per-refresh write pattern, tokio signal graceful shutdown, read pool held for polling
+- `src/commands/monitor.rs` (local) — confirmed connect-per-refresh as the established TUI polling pattern (new pool each 3s tick, pool dropped after use)
+- `src/db/mod.rs` (local) — confirmed `max_connections(1)` single-writer constraint, `connect_readonly()` pattern, WAL recovery path, timeout layering
+- `src/commands/signal.rs` (local) — confirmed two-sequential-write (not single-transaction) status update: message status update + agent status update create the false-positive window
+- `src/tmux.rs` (local) — confirmed `send_keys_literal()` injection-safe via `-l` flag; `session_exists()` is public; `list_live_session_names()` for bulk session detection
+- `src/cli.rs` (local) — confirmed `Watch` variant with `--interval`, `--stall-threshold`, `--daemon`, `--stop` flags already defined
+- [Telegram Bot API 9.5](https://core.telegram.org/bots/api) — `sendMessage` endpoint URL format, parameters, rate limit behavior confirmed
+- [SQLite WAL documentation](https://sqlite.org/wal.html) — checkpoint starvation mechanics: WAL cannot reset while any reader holds an open read transaction
+- [Tokio graceful shutdown docs](https://tokio.rs/tokio/topics/shutdown) — CancellationToken pattern confirmed idiomatic; `tokio::signal` pattern from browser.rs confirmed correct
 
 ### Secondary (MEDIUM confidence)
 
-- [CrewAI Agents Documentation](https://docs.crewai.com/en/concepts/agents) — role, goal, backstory field patterns; software team role set
-- [Microsoft ISE Blog: Patterns for Building a Scalable Multi-Agent System](https://devblogs.microsoft.com/ise/multi-agent-systems-at-scale/) — dynamic agent spawning; master-clone architecture
-- [Frontiers in AI: Auto-scaling LLM-based multi-agent systems](https://www.frontiersin.org/journals/artificial-intelligence/articles/10.3389/frai.2025.1638227/full) — DRTAG pattern; clone-inherits-config pattern
-- [IBM: AI Agent Orchestration](https://www.ibm.com/think/topics/ai-agent-orchestration) — orchestrator metrics for workload balancing; pending task queue depth as primary signal
-- [Microsoft Azure: AI Agent Design Patterns](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) — multi-agent coordination patterns
+- [reqwest GitHub CHANGELOG](https://github.com/seanmonstar/reqwest/blob/master/CHANGELOG.md) — reqwest 0.12 vs 0.13 TLS backend change confirmed; 0.12 still maintained
+- [reqwest + axum 0.7 compatibility](https://users.rust-lang.org/t/a-proxy-with-axum-0-7-and-reqwest-0-12-based-on-http-1/112489) — shared `http 1.0` crate between reqwest 0.12 and axum 0.7 confirmed
+- [watchdogd — Advanced system monitor for Linux](https://github.com/troglobit/watchdogd) — multi-pass monitoring, configurable thresholds, structured logging patterns
+- [Overstory: tiered watchdog for AI agent fleets](https://github.com/jayminwest/overstory) — tiered nudge escalation (Tier 0/1/2 pattern); Tier 0 mechanical check maps to squad-station Pass 1–3 structure
+- [GramIO: Telegram Rate Limits](https://gramio.dev/rate-limits) — `retry_after` field in 429 response; token-bucket algorithm; per-chat limits confirmed
 
 ### Tertiary (LOW confidence)
 
-- [Agentic AI Systems Guide: Scaling Multi-Agent AI Systems](https://agenticaiguide.ai/ch_8/sec_8-3.html) — elastic scaling; stateless cloning patterns (single source, not independently verified)
+- [tmux send-keys race condition issue](https://github.com/anthropics/claude-code/issues/23513) — real-world evidence of tmux injection timing issues in AI agent workflows; supports debounce recommendation for transient window (Pitfall 2)
+- [Prometheus Alertmanager Issue #2429](https://github.com/prometheus/alertmanager/issues/2429) — alert deduplication and suppress-repeat patterns; conceptual support for `stall_alerted_at` design
 
 ---
-*Research completed: 2026-03-19*
+
+*Research completed: 2026-03-24*
 *Ready for roadmap: yes*
