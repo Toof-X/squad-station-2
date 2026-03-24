@@ -18,7 +18,7 @@ Requirements for workflow watchdog milestone. Each maps to roadmap phases.
 
 - [x] **ALERT-01**: Watchdog injects stall notification into orchestrator's tmux pane with actionable message (agent count, pending message count, stall duration)
 - [x] **ALERT-02**: Watchdog deduplicates alerts with configurable cooldown — same stall condition does not repeat until cooldown expires
-- [ ] **ALERT-03**: Watchdog stall alerts injected into the orchestrator's tmux pane include an explicit instruction for the orchestrator to relay the alert to the user via Telegram MCP plugin
+- [x] **ALERT-03**: Watchdog stall alerts injected into the orchestrator's tmux pane include an explicit instruction for the orchestrator to relay the alert to the user via Telegram MCP plugin
 - [x] **ALERT-04**: The orchestrator's Claude Code session is launched with `--channels plugin:telegram` so the Telegram MCP plugin is available for alert relay. The `channels` field in squad.yml configures which MCP channels are enabled per agent.
 
 ### Operations
@@ -61,7 +61,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DETECT-04 | Phase 29 | Complete |
 | ALERT-01 | Phase 29 | Complete |
 | ALERT-02 | Phase 29 | Complete |
-| ALERT-03 | Phase 30 | Pending |
+| ALERT-03 | Phase 30 | Complete |
 | ALERT-04 | Phase 30 | Complete |
 | OPS-01 | Phase 29 | Complete |
 | OPS-02 | Phase 29 | Complete |
