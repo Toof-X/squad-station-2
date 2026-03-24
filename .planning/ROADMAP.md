@@ -169,5 +169,5 @@ Plans:
 | 27. Event-Driven WebSocket Streaming | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 28. React Flow Node Graph | v1.9 | 2/2 | Complete | 2026-03-22 |
 | 29. Watchdog Core Correctness | 3/3 | Complete   | 2026-03-24 | - |
-| 30. Telegram Integration | 2/2 | Complete   | 2026-03-24 | - |
+| 30. Telegram Integration | 2/2 | Complete    | 2026-03-24 | - |
 | 31. End-to-End Test Coverage | v2.0 | 0/TBD | Not started | - |
