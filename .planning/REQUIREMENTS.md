@@ -18,8 +18,8 @@ Requirements for workflow watchdog milestone. Each maps to roadmap phases.
 
 - [x] **ALERT-01**: Watchdog injects stall notification into orchestrator's tmux pane with actionable message (agent count, pending message count, stall duration)
 - [x] **ALERT-02**: Watchdog deduplicates alerts with configurable cooldown — same stall condition does not repeat until cooldown expires
-- [ ] **ALERT-03**: Watchdog sends stall alert to user via Telegram Bot API (bot token + chat ID configuration)
-- [ ] **ALERT-04**: Telegram dispatch is non-blocking and error-isolated — network timeouts, 429 rate limits, and MCP unavailability do not crash or stall the watchdog loop
+- [ ] **ALERT-03**: Watchdog stall alerts injected into the orchestrator's tmux pane include an explicit instruction for the orchestrator to relay the alert to the user via Telegram MCP plugin
+- [ ] **ALERT-04**: The orchestrator's Claude Code session is launched with `--channels plugin:telegram` so the Telegram MCP plugin is available for alert relay. The `channels` field in squad.yml configures which MCP channels are enabled per agent.
 
 ### Operations
 
@@ -47,7 +47,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | Auto-recovery / auto-restart agents | Creates restart loops — orchestrator decides recovery strategy |
 | Slack / Discord integration | Premature multi-channel — Telegram sufficient for v2.0 |
 | Auto-scaling on stall detection | Stalls are not capacity problems — wrong diagnosis |
-| reqwest as feature-gated dependency | Decision deferred to implementation — curl shell-out or reqwest both viable |
+| HTTP client in Rust binary (curl/reqwest) | Architecture delegates Telegram to orchestrator MCP — no HTTP client needed |
 
 ## Traceability
 
