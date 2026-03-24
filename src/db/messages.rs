@@ -144,6 +144,17 @@ pub async fn count_processing_all(pool: &SqlitePool) -> anyhow::Result<i64> {
     Ok(row.0)
 }
 
+/// List all processing messages with their IDs and creation timestamps.
+/// Used by watchdog deadlock detection for alert content and age filtering.
+pub async fn list_processing_messages(pool: &SqlitePool) -> anyhow::Result<Vec<(String, String)>> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT id, created_at FROM messages WHERE status = 'processing' ORDER BY created_at ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 /// Get the ID of the most recently completed message for an agent.
 /// Used by signal.rs FIFO fallback to identify which task was just completed.
 pub async fn last_completed_id(
