@@ -113,9 +113,9 @@ Embedded axum web server with React + React Flow SPA served from binary, live no
   5. Running `watch --dry-run` logs stall detections to watch.log without injecting into any tmux pane
 **Plans**: 3 plans
 Plans:
-- [ ] 29-01-PLAN.md — CLI flags, DB query, main.rs dispatch (foundation)
-- [ ] 29-02-PLAN.md — Deadlock detection, debounce, message age, dry-run, prolonged-busy injection
-- [ ] 29-03-PLAN.md — Status file writing and --status subcommand
+- [x] 29-01-PLAN.md — CLI flags, DB query, main.rs dispatch (foundation)
+- [x] 29-02-PLAN.md — Deadlock detection, debounce, message age, dry-run, prolonged-busy injection
+- [x] 29-03-PLAN.md — Status file writing and --status subcommand
 
 ### Phase 30: Telegram Integration
 **Goal**: When a stall is detected, the user receives a Telegram message on their phone — and a missing or misconfigured Telegram setup never crashes or stalls the watchdog loop
@@ -127,9 +127,9 @@ Plans:
   3. A 429 rate-limit response from the Telegram API does not cause immediate retry; the watchdog respects the `retry_after` value and resumes normal operation
 **Plans**: 3 plans
 Plans:
-- [ ] 29-01-PLAN.md — CLI flags, DB query, main.rs dispatch (foundation)
-- [ ] 29-02-PLAN.md — Deadlock detection, debounce, message age, dry-run, prolonged-busy injection
-- [ ] 29-03-PLAN.md — Status file writing and --status subcommand
+- [x] 29-01-PLAN.md — CLI flags, DB query, main.rs dispatch (foundation)
+- [x] 29-02-PLAN.md — Deadlock detection, debounce, message age, dry-run, prolonged-busy injection
+- [x] 29-03-PLAN.md — Status file writing and --status subcommand
 
 ### Phase 31: End-to-End Test Coverage
 **Goal**: The full tick loop behavior is verified by integration tests that run against a real SQLite DB, so correctness of deadlock detection, debounce, and deduplication is not only manually verifiable
@@ -142,9 +142,9 @@ Plans:
   4. `cargo test` passes with all new tests green alongside the existing 362-test suite
 **Plans**: 3 plans
 Plans:
-- [ ] 29-01-PLAN.md — CLI flags, DB query, main.rs dispatch (foundation)
-- [ ] 29-02-PLAN.md — Deadlock detection, debounce, message age, dry-run, prolonged-busy injection
-- [ ] 29-03-PLAN.md — Status file writing and --status subcommand
+- [x] 29-01-PLAN.md — CLI flags, DB query, main.rs dispatch (foundation)
+- [x] 29-02-PLAN.md — Deadlock detection, debounce, message age, dry-run, prolonged-busy injection
+- [x] 29-03-PLAN.md — Status file writing and --status subcommand
 
 ## Progress
 
