@@ -1,33 +1,34 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.9
-milestone_name: Browser Visualization
-status: completed
+milestone: v2.0
+milestone_name: Workflow Watchdog
+status: defining_requirements
 stopped_at: ""
-last_updated: "2026-03-22"
-last_activity: "2026-03-22 — v1.9 Browser Visualization milestone completed and archived"
+last_updated: "2026-03-24"
+last_activity: "2026-03-24 — Milestone v2.0 started"
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-22)
+See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** Reliable message routing between Orchestrator and agents — stateless CLI, no daemon
-**Current focus:** Planning next milestone
+**Current focus:** v2.0 Workflow Watchdog — stall detection and multi-channel alerting
 
 ## Current Position
 
-Milestone v1.9 Browser Visualization — SHIPPED 2026-03-22
-
-All 10 milestones (v1.0–v1.9) complete. 28 phases, 362 tests.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-24 — Milestone v2.0 started
 
 ## Code Status
 
@@ -52,6 +53,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22
-Stopped at: Milestone v1.9 completed
+Last session: 2026-03-24
+Stopped at: Defining v2.0 requirements
 Resume file: None

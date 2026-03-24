@@ -113,7 +113,15 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ### Active
 
-(No active requirements — planning next milestone)
+## Current Milestone: v2.0 Workflow Watchdog
+
+**Goal:** Detect stalled workflows where no agent is busy but pending/processing messages exist, and alert both the orchestrator (tmux injection) and the user (Telegram plugin).
+
+**Target features:**
+- `squad-station watchdog` long-lived background command that polls agent status and message queue
+- Stall detection: pending/processing messages with zero busy agents = deadlock
+- Orchestrator alert: inject stall notification into orchestrator's tmux pane
+- User alert: notify via Telegram MCP plugin (if available)
 
 ### Out of Scope
 
@@ -127,7 +135,7 @@ Routing messages đáng tin cậy giữa Orchestrator và agents — gửi task 
 
 ## Context
 
-Shipped v1.9 Browser Visualization — live React Flow node graph served from embedded axum server with WebSocket streaming.
+Shipped v1.9 Browser Visualization — live React Flow node graph served from embedded axum server with WebSocket streaming. Starting v2.0 Workflow Watchdog — first long-lived background process for stall detection and multi-channel alerting.
 Tech stack: Rust, SQLite (sqlx 0.8), clap 4, ratatui 0.30, crossterm 0.29, tui-big-text 0.8, serde-saphyr, serde_json, owo-colors 3, uuid, chrono. Browser feature: axum 0.7, rust-embed 8, axum-embed 0.1, tower-http 0.5, open 5, React 19, @xyflow/react 12, @dagrejs/dagre 2, Vite 8, Tailwind CSS 4.
 Distribution: npm package `squad-station-2` downloads pre-built binary from GitHub Releases. Install auto-launches the welcome TUI in interactive terminals.
 CI/CD: GitHub Actions matrix workflow produces 4 musl/darwin binaries on v* tag push.
@@ -232,4 +240,4 @@ Test suite: 362 tests (all green).
 | Graceful shutdown via tokio::signal (Ctrl+C + SIGTERM) | Matches existing `ui` command behavior; `with_graceful_shutdown()` built into axum::serve | ✓ Validated in spike — clean shutdown on Ctrl+C |
 
 ---
-*Last updated: 2026-03-22 after v1.9 milestone*
+*Last updated: 2026-03-24 after starting v2.0 milestone*
