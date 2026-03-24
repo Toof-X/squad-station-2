@@ -437,6 +437,18 @@ pub fn build_orchestrator_md(
         "6. Proceed to next playbook step, or report to user if workflow is complete.\n\n",
     );
 
+    // ── Watchdog Alert Relay — Telegram ─────────────────────────────────
+    out.push_str("## Watchdog Alert Relay — Telegram\n\n");
+    out.push_str("When you see a message from `[SQUAD WATCHDOG]` containing `USE YOUR TELEGRAM MCP PLUGIN`,\n");
+    out.push_str("you MUST immediately use the Telegram MCP reply tool to forward the alert to the user.\n\n");
+    out.push_str("**How to relay:**\n");
+    out.push_str("1. Extract the alert content from the watchdog message\n");
+    out.push_str("2. Use the Telegram MCP `reply` tool to send the alert to the configured chat\n");
+    out.push_str("3. Do NOT wait for user response — continue normal operation after sending\n\n");
+    out.push_str("**If Telegram MCP is unavailable:**\n");
+    out.push_str("- The alert is already visible in your tmux pane — the user can see it via `squad-station ui` or `squad-station browser`\n");
+    out.push_str("- Log a note but do NOT error or halt workflow\n\n");
+
     // ── Agent Roster ─────────────────────────────────────────────────────
     out.push_str("## Agent Roster\n\n");
     out.push_str("| Agent | Model | Role | Description |\n");
