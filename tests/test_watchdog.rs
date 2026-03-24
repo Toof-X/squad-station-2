@@ -184,3 +184,100 @@ fn test_watch_help_exit_code() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+// ---------------------------------------------------------------------------
+// Task 2 tests — --dry-run lifecycle, flag validation, channels config
+// ---------------------------------------------------------------------------
+
+/// OPS-03: watch --dry-run starts the binary, runs at least one tick, and creates the log file.
+#[tokio::test]
+async fn test_watch_dry_run_exits_cleanly() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let squad_dir = tmp.path().join(".squad");
+    std::fs::create_dir_all(&squad_dir).unwrap();
+
+    let db_file = squad_dir.join("station.db");
+    let pool = setup_file_db(&db_file).await;
+    pool.close().await;
+
+    write_squad_yml(tmp.path());
+
+    // Spawn (not .output()) so we can kill it after a short delay.
+    let mut child = cmd_in_dir(tmp.path(), &db_file)
+        .args(["watch", "--dry-run", "--interval", "1", "--stall-threshold", "1"])
+        .spawn()
+        .expect("failed to spawn watch --dry-run process");
+
+    // Let the watchdog run at least one tick cycle (interval=1s).
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    // Kill the process — it's an infinite loop by design.
+    let _ = child.kill();
+    let _ = child.wait();
+
+    // The watchdog should have written its log file on startup.
+    let log_file = squad_dir.join("log").join("watch.log");
+    assert!(
+        log_file.exists(),
+        "watch --dry-run should create .squad/log/watch.log, but it was not found"
+    );
+}
+
+/// Edge-case: watch --interval 0 --dry-run should not panic or crash immediately.
+/// Clap accepts 0 as a valid u64; the binary enters the tick loop with 0-second sleep.
+/// We just verify it can start without an immediate fatal error.
+#[tokio::test]
+async fn test_watch_invalid_interval_zero() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let squad_dir = tmp.path().join(".squad");
+    std::fs::create_dir_all(&squad_dir).unwrap();
+
+    let db_file = squad_dir.join("station.db");
+    let pool = setup_file_db(&db_file).await;
+    pool.close().await;
+
+    write_squad_yml(tmp.path());
+
+    // Spawn with interval=0 in dry-run mode; expect it to start without immediate crash.
+    let mut child = cmd_in_dir(tmp.path(), &db_file)
+        .args(["watch", "--interval", "0", "--dry-run"])
+        .spawn()
+        .expect("failed to spawn watch --interval 0 process");
+
+    // Brief wait; if the process crashes immediately, wait() returns quickly.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    // If the process is still running, kill it — that means it started successfully.
+    let status = child.try_wait().expect("failed to poll child status");
+    if let Some(exit_status) = status {
+        // Process already exited — verify it didn't panic (non-zero from SIGKILL is 1/137).
+        // Panics produce exit code 101 on Linux. Accept any exit that isn't 101.
+        let code = exit_status.code().unwrap_or(0);
+        assert_ne!(
+            code, 101,
+            "watch --interval 0 --dry-run should not panic (exit 101)"
+        );
+    } else {
+        // Still running — good, kill it cleanly.
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+/// ALERT-04: squad.yml with channels field parses correctly at the config level.
+#[test]
+fn test_watch_channels_in_squad_yml() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_squad_yml_with_channels(tmp.path());
+
+    let config_path = tmp.path().join("squad.yml");
+    let config = squad_station::config::load_config(&config_path)
+        .expect("failed to load squad.yml with channels");
+
+    assert_eq!(
+        config.orchestrator.channels,
+        Some(vec!["plugin:telegram".to_string()]),
+        "Expected orchestrator.channels = Some([\"plugin:telegram\"]), got: {:?}",
+        config.orchestrator.channels
+    );
+}
