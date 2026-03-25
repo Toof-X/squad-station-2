@@ -8,7 +8,7 @@ orchestrator:
   provider: claude-code
   role: orchestrator
   model: haiku
-  description: Team leader, monitors and coordinates tasks for agents
+  description: Product Owner, Strategic Advisor & Squad Coordinator — decides priorities, delegates all execution to agents, monitors progress, synthesizes results. Never executes tasks directly.
 
 agents:
   - name: implement

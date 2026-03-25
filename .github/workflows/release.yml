@@ -71,3 +71,36 @@ jobs:
         with:
           files: ${{ matrix.asset_name }}
           generate_release_notes: true
+
+  publish-npm:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Sync version from tag
+        working-directory: npm-package
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          node -e "
+            const pkg = require('./package.json');
+            pkg.version = '${VERSION}';
+            pkg.binaryVersion = '${VERSION}';
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          echo "Publishing squad-station-2@${VERSION}"
+
+      - name: Publish
+        working-directory: npm-package
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
