@@ -204,7 +204,14 @@ async fn test_watch_dry_run_exits_cleanly() {
 
     // Spawn (not .output()) so we can kill it after a short delay.
     let mut child = cmd_in_dir(tmp.path(), &db_file)
-        .args(["watch", "--dry-run", "--interval", "1", "--stall-threshold", "1"])
+        .args([
+            "watch",
+            "--dry-run",
+            "--interval",
+            "1",
+            "--stall-threshold",
+            "1",
+        ])
         .spawn()
         .expect("failed to spawn watch --dry-run process");
 

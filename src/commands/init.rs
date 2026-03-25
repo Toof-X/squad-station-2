@@ -1208,9 +1208,9 @@ fn install_session_start_hook(
 /// Only allows alphanumeric characters, dots, dashes, underscores, and colons.
 fn is_safe_model_value(model: &str) -> bool {
     !model.is_empty()
-        && model
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ':' || c == '@')
+        && model.chars().all(|c| {
+            c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ':' || c == '@'
+        })
 }
 
 /// Build the launch command for a tmux session based on provider and model.
@@ -1779,7 +1779,10 @@ mod tests {
             .channels
             .as_ref()
             .expect("orchestrator must have channels");
-        assert_eq!(channels, &vec!["plugin:telegram@claude-plugins-official".to_string()]);
+        assert_eq!(
+            channels,
+            &vec!["plugin:telegram@claude-plugins-official".to_string()]
+        );
     }
 }
 

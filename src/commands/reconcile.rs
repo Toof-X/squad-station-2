@@ -1,7 +1,10 @@
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
-use crate::{config, db, providers, tmux::{self, TmuxLayer}};
+use crate::{
+    config, db, providers,
+    tmux::{self, TmuxLayer},
+};
 
 pub async fn run(dry_run: bool, json: bool) -> anyhow::Result<()> {
     let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
@@ -117,14 +120,14 @@ pub async fn reconcile_agents_with(
 
                 // Notify orchestrator
                 if let Ok(Some(orch)) = db::agents::get_orchestrator(pool).await {
-                    if orch.tool != "antigravity"
-                        && tmux_layer.session_exists(&orch.name).await
-                    {
+                    if orch.tool != "antigravity" && tmux_layer.session_exists(&orch.name).await {
                         let notification = format!(
                             "[SQUAD RECONCILE] Agent '{}' completed {} task(s) (signal was lost). Run: squad-station status",
                             agent.name, completed_count
                         );
-                        let _ = tmux_layer.send_keys_literal(&orch.name, &notification).await;
+                        let _ = tmux_layer
+                            .send_keys_literal(&orch.name, &notification)
+                            .await;
                     }
                 }
 
@@ -167,7 +170,6 @@ async fn pane_looks_idle_with(
         false // Unknown provider: cannot detect idle (safe default — skip reconcile)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

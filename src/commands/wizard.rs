@@ -38,9 +38,9 @@ fn detect_telegram_mcp() -> bool {
         Err(_) => return false,
     };
     if let Some(plugins) = json.get("enabledPlugins").and_then(|v| v.as_object()) {
-        plugins.iter().any(|(key, val)| {
-            key.starts_with("telegram") && val.as_bool().unwrap_or(false)
-        })
+        plugins
+            .iter()
+            .any(|(key, val)| key.starts_with("telegram") && val.as_bool().unwrap_or(false))
     } else {
         false
     }
@@ -491,7 +491,7 @@ pub struct AgentDraft {
     pub description: TextInputState,
     pub focused_field: AgentField,
     pub routing_hints: Option<Vec<&'static str>>, // set by template selection
-    pub notify_telegram: bool, // enable Telegram channel for orchestrator
+    pub notify_telegram: bool,                    // enable Telegram channel for orchestrator
 }
 
 impl AgentDraft {
@@ -551,7 +551,7 @@ struct WizardState {
     // Existing agents passed in during add-agents flow, shown on review page
     existing_orchestrator: Option<String>, // "name (provider)" label
     existing_workers: Vec<String>,         // "name (provider)" labels
-    telegram_available: bool, // true when Telegram MCP plugin is detected
+    telegram_available: bool,              // true when Telegram MCP plugin is detected
 }
 
 impl WizardState {
@@ -1113,7 +1113,12 @@ fn render_page(frame: &mut Frame, state: &WizardState) {
             render_project_page(frame, chunks[1], state);
         }
         WizardPage::OrchestratorConfig => {
-            render_agent_page(frame, chunks[1], &state.orchestrator, state.telegram_available);
+            render_agent_page(
+                frame,
+                chunks[1],
+                &state.orchestrator,
+                state.telegram_available,
+            );
         }
         WizardPage::WorkerCount => render_text_input(
             frame,
@@ -1141,9 +1146,7 @@ fn render_page(frame: &mut Frame, state: &WizardState) {
                 "↑↓: select   Enter: next   Tab: back   Ctrl+C: cancel"
             }
         }
-        AgentField::Channels => {
-            "Space: toggle   Enter: next   Tab: back   Ctrl+C: cancel"
-        }
+        AgentField::Channels => "Space: toggle   Enter: next   Tab: back   Ctrl+C: cancel",
         _ => "Enter: next   Tab: back   Ctrl+C: cancel",
     };
     let footer_text = match &state.page {
@@ -1535,12 +1538,8 @@ fn render_agent_page(
             .title(" Description "),
     );
     frame.render_widget(desc_widget, agent_chunks[6]);
-    let desc_hint = Paragraph::new(if has_channels {
-        "  optional — press Enter to continue"
-    } else {
-        "  optional — press Enter to continue"
-    })
-    .style(Style::default().fg(Color::DarkGray));
+    let desc_hint = Paragraph::new("  optional — press Enter to continue")
+        .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(desc_hint, agent_chunks[7]);
 
     // --- Channels checkbox (orchestrator + claude-code + telegram available) ---
@@ -1551,11 +1550,7 @@ fn render_agent_page(
         } else {
             Color::DarkGray
         };
-        let checkbox = if draft.notify_telegram {
-            "[x]"
-        } else {
-            "[ ]"
-        };
+        let checkbox = if draft.notify_telegram { "[x]" } else { "[ ]" };
         let ch_widget = Paragraph::new(Line::from(vec![
             Span::styled(
                 format!(" {} ", checkbox),
@@ -1576,9 +1571,8 @@ fn render_agent_page(
                 .title(" Channels "),
         );
         frame.render_widget(ch_widget, agent_chunks[channels_idx]);
-        let ch_hint =
-            Paragraph::new("  Space: toggle   Enter: continue")
-                .style(Style::default().fg(Color::DarkGray));
+        let ch_hint = Paragraph::new("  Space: toggle   Enter: continue")
+            .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(ch_hint, agent_chunks[channels_idx + 1]);
     }
 }

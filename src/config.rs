@@ -68,9 +68,9 @@ pub struct AgentConfig {
     pub provider: String,     // CONF-04: provider name (e.g. claude-code, gemini-cli, antigravity)
     #[serde(default = "default_role")]
     pub role: String,
-    pub model: Option<String>, // CONF-02: optional model override
+    pub model: Option<String>,       // CONF-02: optional model override
     pub description: Option<String>, // CONF-02: optional description
-                               // command field is REMOVED (CONF-03: provider infers launch command)
+    // command field is REMOVED (CONF-03: provider infers launch command)
     pub channels: Option<Vec<String>>, // MCP channels (e.g., ["plugin:telegram@claude-plugins-official"])
 }
 

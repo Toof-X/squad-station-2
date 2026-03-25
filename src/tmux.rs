@@ -13,10 +13,7 @@ pub trait TmuxLayer: Send + Sync {
         text: &str,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
-    fn session_exists(
-        &self,
-        session_name: &str,
-    ) -> impl std::future::Future<Output = bool> + Send;
+    fn session_exists(&self, session_name: &str) -> impl std::future::Future<Output = bool> + Send;
 
     fn capture_pane_last_line(
         &self,

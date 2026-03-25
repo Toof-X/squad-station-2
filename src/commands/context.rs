@@ -562,7 +562,13 @@ pub async fn run(inject: bool) -> anyhow::Result<()> {
     let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);
     // INTEL-05: metrics passed as parameter — build_orchestrator_md remains pure
     let orch_channels = config.orchestrator.channels.as_deref();
-    let prompt_content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &metrics, orch_channels);
+    let prompt_content = build_orchestrator_md(
+        &agents,
+        &project_root_str,
+        sdd_configs,
+        &metrics,
+        orch_channels,
+    );
 
     // Write slash command in provider-specific format and directory
     let (cmd_subdir, filename, file_content) = match config.orchestrator.provider.as_str() {
@@ -641,7 +647,8 @@ pub fn write_initial_context(
     let project_root_str = project_root.to_string_lossy().to_string();
     let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);
     let orch_channels = config.orchestrator.channels.as_deref();
-    let prompt_content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[], orch_channels);
+    let prompt_content =
+        build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[], orch_channels);
 
     let (cmd_subdir, filename, file_content) = match config.orchestrator.provider.as_str() {
         "gemini-cli" => {
@@ -755,7 +762,8 @@ async fn run_inject(
     let project_root_str = project_root.to_string_lossy().to_string();
     let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);
     let orch_channels = config.orchestrator.channels.as_deref();
-    let content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[], orch_channels);
+    let content =
+        build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[], orch_channels);
 
     // Output in provider-appropriate format.
     // Use the current session's provider (not orchestrator's) so each tool gets its format.
