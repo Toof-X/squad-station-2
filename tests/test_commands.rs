@@ -306,7 +306,7 @@ async fn test_build_orchestrator_md_contains_all_sections() {
     .unwrap();
 
     let agents = db::agents::list_agents(&db).await.unwrap();
-    let content = build_orchestrator_md(&agents, "/project/root", &[], &[]);
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &[], None);
 
     assert!(
         content.contains("You are the orchestrator"),
@@ -381,7 +381,7 @@ async fn test_build_orchestrator_md_with_sdd() {
         name: "get-shit-done".to_string(),
         playbook: playbook_path,
     }];
-    let content = build_orchestrator_md(&agents, "/project/root", &sdd, &[]);
+    let content = build_orchestrator_md(&agents, "/project/root", &sdd, &[], None);
 
     assert!(
         content.contains("## SDD Orchestration"),
@@ -417,11 +417,38 @@ async fn test_build_orchestrator_md_without_sdd() {
         .unwrap();
 
     let agents = db::agents::list_agents(&db).await.unwrap();
-    let content = build_orchestrator_md(&agents, "/project/root", &[], &[]);
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &[], None);
 
     assert!(
         !content.contains("## SDD Orchestration"),
         "SDD section should not appear when no SDDs configured"
+    );
+}
+
+#[tokio::test]
+async fn test_build_orchestrator_md_telegram_channel_preflight() {
+    use squad_station::commands::context::build_orchestrator_md;
+
+    let db = helpers::setup_test_db().await;
+    db::agents::insert_agent(&db, "p-worker", "claude-code", "worker", None, None, None)
+        .await
+        .unwrap();
+
+    let agents = db::agents::list_agents(&db).await.unwrap();
+
+    // With telegram channel → should contain /telegram:configure
+    let channels = vec!["plugin:telegram@claude-plugins-official".to_string()];
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &[], Some(&channels));
+    assert!(
+        content.contains("/telegram:configure"),
+        "PRE-FLIGHT must include Telegram configure step when channel is set"
+    );
+
+    // Without channels → should NOT contain /telegram:configure
+    let content_no_ch = build_orchestrator_md(&agents, "/project/root", &[], &[], None);
+    assert!(
+        !content_no_ch.contains("/telegram:configure"),
+        "PRE-FLIGHT must NOT include Telegram configure step when no channel"
     );
 }
 
@@ -630,7 +657,7 @@ async fn test_build_orchestrator_md_fleet_status_table() {
         },
     ];
 
-    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics, None);
 
     assert!(
         content.contains("## Fleet Status"),
@@ -677,7 +704,7 @@ async fn test_build_orchestrator_md_fleet_status_excludes_orchestrator() {
         alignment: AlignmentResult::None,
     }];
 
-    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics, None);
 
     let fleet_section_exists = content.contains("## Fleet Status");
     if fleet_section_exists {
@@ -722,7 +749,7 @@ async fn test_build_orchestrator_md_fleet_status_excludes_dead() {
         alignment: AlignmentResult::None,
     }];
 
-    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics, None);
 
     let fleet_section_exists = content.contains("## Fleet Status");
     if fleet_section_exists {
@@ -757,7 +784,7 @@ async fn test_build_orchestrator_md_fleet_status_empty_metrics() {
     .unwrap();
 
     let agents = db::agents::list_agents(&db).await.unwrap();
-    let content = build_orchestrator_md(&agents, "/project/root", &[], &[]);
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &[], None);
 
     assert!(
         !content.contains("## Fleet Status"),
@@ -793,7 +820,7 @@ async fn test_build_orchestrator_md_fleet_status_alignment_warning() {
         },
     }];
 
-    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics, None);
 
     assert!(
         content.contains("## Fleet Status"),
@@ -834,7 +861,7 @@ async fn test_build_orchestrator_md_fleet_status_requery_commands() {
         alignment: AlignmentResult::None,
     }];
 
-    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics, None);
 
     assert!(
         content.contains("squad-station agents"),
@@ -879,7 +906,7 @@ async fn test_build_orchestrator_md_fleet_status_section_order() {
         alignment: AlignmentResult::None,
     }];
 
-    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics);
+    let content = build_orchestrator_md(&agents, "/project/root", &[], &metrics, None);
 
     let preflight_pos = content
         .find("## PRE-FLIGHT")
@@ -1008,7 +1035,7 @@ async fn test_context_metrics_pipeline_end_to_end() {
         });
     }
 
-    let content = build_orchestrator_md(&agents, "/test/project", &[], &metrics);
+    let content = build_orchestrator_md(&agents, "/test/project", &[], &metrics, None);
 
     assert!(
         content.contains("| proj-worker-a | 2 |"),

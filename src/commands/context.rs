@@ -132,6 +132,7 @@ pub fn build_orchestrator_md(
     project_root: &str,
     sdd_configs: &[SddConfig],
     metrics: &[AgentMetrics],
+    channels: Option<&[String]>,
 ) -> String {
     let mut out = String::new();
 
@@ -163,6 +164,13 @@ pub fn build_orchestrator_md(
         }
         out.push('\n');
         out.push_str("Only proceed after reading. The playbook defines your workflow.\n\n");
+    }
+    // Telegram channel setup: instruct orchestrator to configure on startup
+    let has_telegram = channels
+        .map(|chs| chs.iter().any(|c| c.contains("telegram")))
+        .unwrap_or(false);
+    if has_telegram {
+        out.push_str("- [ ] Configure Telegram channel: `/telegram:configure` — **non-blocking:** if this fails or the plugin is unavailable, log a warning and continue. Do NOT stop the workflow.\n");
     }
     out.push_str(&format!("- [ ] Project root: `{}`\n", project_root));
     out.push_str("- [ ] Verify agents are alive: `squad-station agents`\n\n");
@@ -553,7 +561,8 @@ pub async fn run(inject: bool) -> anyhow::Result<()> {
     let project_root_str = project_root.to_string_lossy().to_string();
     let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);
     // INTEL-05: metrics passed as parameter — build_orchestrator_md remains pure
-    let prompt_content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &metrics);
+    let orch_channels = config.orchestrator.channels.as_deref();
+    let prompt_content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &metrics, orch_channels);
 
     // Write slash command in provider-specific format and directory
     let (cmd_subdir, filename, file_content) = match config.orchestrator.provider.as_str() {
@@ -631,7 +640,8 @@ pub fn write_initial_context(
 
     let project_root_str = project_root.to_string_lossy().to_string();
     let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);
-    let prompt_content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[]);
+    let orch_channels = config.orchestrator.channels.as_deref();
+    let prompt_content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[], orch_channels);
 
     let (cmd_subdir, filename, file_content) = match config.orchestrator.provider.as_str() {
         "gemini-cli" => {
@@ -744,7 +754,8 @@ async fn run_inject(
 
     let project_root_str = project_root.to_string_lossy().to_string();
     let sdd_configs = config.sdd.as_deref().unwrap_or(&[]);
-    let content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[]);
+    let orch_channels = config.orchestrator.channels.as_deref();
+    let content = build_orchestrator_md(&agents, &project_root_str, sdd_configs, &[], orch_channels);
 
     // Output in provider-appropriate format.
     // Use the current session's provider (not orchestrator's) so each tool gets its format.

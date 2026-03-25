@@ -112,7 +112,7 @@ async fn run(cli: cli::Cli) -> Result<()> {
                 #[cfg(not(feature = "browser"))]
                 Browser { .. } => {
                     eprintln!(
-                        "Browser feature not enabled. Rebuild with: cargo build --features browser"
+                        "Browser feature not enabled. Reinstall with: cargo install --path . --features browser"
                     );
                     std::process::exit(1);
                 }

@@ -18,6 +18,35 @@ use ratatui::{
 };
 
 // ----------------------------------------------------------------------------
+// Telegram MCP detection
+// ----------------------------------------------------------------------------
+
+/// Check if the Telegram MCP plugin is enabled in Claude Code settings.
+/// Looks for "telegram" in `enabledPlugins` within `~/.claude/settings.json`.
+fn detect_telegram_mcp() -> bool {
+    let home = match std::env::var("HOME") {
+        Ok(h) => h,
+        Err(_) => return false,
+    };
+    let path = std::path::Path::new(&home).join(".claude/settings.json");
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let json: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    if let Some(plugins) = json.get("enabledPlugins").and_then(|v| v.as_object()) {
+        plugins.iter().any(|(key, val)| {
+            key.starts_with("telegram") && val.as_bool().unwrap_or(false)
+        })
+    } else {
+        false
+    }
+}
+
+// ----------------------------------------------------------------------------
 // Public API types
 // ----------------------------------------------------------------------------
 
@@ -171,7 +200,7 @@ pub struct AgentInput {
     pub model: Option<String>,
     pub description: Option<String>,
     pub routing_hints: Option<String>, // Phase 24: JSON-serialized routing keywords
-    pub channels: Option<Vec<String>>, // MCP channels (e.g., ["plugin:telegram"])
+    pub channels: Option<Vec<String>>, // MCP channels (e.g., ["plugin:telegram@claude-plugins-official"])
 }
 
 // ----------------------------------------------------------------------------
@@ -448,6 +477,7 @@ pub enum AgentField {
     Provider,
     Model,
     Description,
+    Channels, // Telegram notify toggle (orchestrator + claude-code only)
 }
 
 pub struct AgentDraft {
@@ -461,6 +491,7 @@ pub struct AgentDraft {
     pub description: TextInputState,
     pub focused_field: AgentField,
     pub routing_hints: Option<Vec<&'static str>>, // set by template selection
+    pub notify_telegram: bool, // enable Telegram channel for orchestrator
 }
 
 impl AgentDraft {
@@ -476,6 +507,7 @@ impl AgentDraft {
             description: TextInputState::new(),
             focused_field: AgentField::Name,
             routing_hints: None,
+            notify_telegram: false,
         }
     }
 }
@@ -519,6 +551,7 @@ struct WizardState {
     // Existing agents passed in during add-agents flow, shown on review page
     existing_orchestrator: Option<String>, // "name (provider)" label
     existing_workers: Vec<String>,         // "name (provider)" labels
+    telegram_available: bool, // true when Telegram MCP plugin is detected
 }
 
 impl WizardState {
@@ -550,6 +583,7 @@ impl WizardState {
             worker_only: false,
             existing_orchestrator: None,
             existing_workers: Vec::new(),
+            telegram_available: detect_telegram_mcp(),
         }
     }
 
@@ -620,6 +654,11 @@ fn draft_to_agent_input(d: AgentDraft, role: &str) -> AgentInput {
         .routing_hints
         .as_ref()
         .map(|hints| serde_json::to_string(hints).unwrap_or_default());
+    let channels = if d.notify_telegram {
+        Some(vec!["plugin:telegram@claude-plugins-official".to_string()])
+    } else {
+        None
+    };
     AgentInput {
         name: d.name.value.trim().to_string(),
         role: role.to_string(),
@@ -627,7 +666,7 @@ fn draft_to_agent_input(d: AgentDraft, role: &str) -> AgentInput {
         model,
         description,
         routing_hints,
-        channels: None, // workers do not get channels by default
+        channels,
     }
 }
 
@@ -771,9 +810,11 @@ fn handle_key(state: &mut WizardState, key: KeyCode) -> KeyAction {
             },
         },
         WizardPage::OrchestratorConfig => {
+            let telegram = state.telegram_available;
             handle_agent_key(
                 key,
                 &mut state.orchestrator,
+                telegram,
                 /* on_done */ || WizardPage::WorkerCount,
                 /* on_back */ || WizardPage::Project,
             )
@@ -824,7 +865,7 @@ fn handle_key(state: &mut WizardState, key: KeyCode) -> KeyAction {
                     WizardPage::WorkerConfig { index: index - 1 }
                 }
             };
-            handle_agent_key(key, &mut state.workers[index], on_done, on_back).apply(state);
+            handle_agent_key(key, &mut state.workers[index], false, on_done, on_back).apply(state);
         }
         WizardPage::Summary => match key {
             KeyCode::Enter => return KeyAction::Complete,
@@ -857,12 +898,18 @@ impl PageTransition {
     }
 }
 
+/// Returns true if the Channels field should be shown for this draft.
+fn show_channels_field(draft: &AgentDraft, telegram_available: bool) -> bool {
+    draft.is_orchestrator && draft.provider == Provider::ClaudeCode && telegram_available
+}
+
 /// Shared key handler for a single AgentDraft (orchestrator or worker).
-/// `on_done` is called when the user advances past Description.
+/// `on_done` is called when the user advances past the last field.
 /// `on_back` is called when Esc is pressed on the Name field.
 fn handle_agent_key(
     key: KeyCode,
     draft: &mut AgentDraft,
+    telegram_available: bool,
     on_done: impl FnOnce() -> WizardPage,
     on_back: impl FnOnce() -> WizardPage,
 ) -> PageTransition {
@@ -1002,7 +1049,13 @@ fn handle_agent_key(
             _ => {}
         },
         AgentField::Description => match key {
-            KeyCode::Enter => return PageTransition::Go(on_done()),
+            KeyCode::Enter => {
+                if show_channels_field(draft, telegram_available) {
+                    draft.focused_field = AgentField::Channels;
+                } else {
+                    return PageTransition::Go(on_done());
+                }
+            }
             KeyCode::Backspace => draft.description.pop(),
             KeyCode::Left => draft.description.cursor_left(),
             KeyCode::Right => draft.description.cursor_right(),
@@ -1014,6 +1067,13 @@ fn handle_agent_key(
                     draft.focused_field = AgentField::Model;
                 }
             }
+            _ => {}
+        },
+        AgentField::Channels => match key {
+            KeyCode::Enter => return PageTransition::Go(on_done()),
+            KeyCode::Char(' ') => draft.notify_telegram = !draft.notify_telegram,
+            KeyCode::Up | KeyCode::Down => draft.notify_telegram = !draft.notify_telegram,
+            KeyCode::Esc | KeyCode::Tab => draft.focused_field = AgentField::Description,
             _ => {}
         },
     }
@@ -1053,7 +1113,7 @@ fn render_page(frame: &mut Frame, state: &WizardState) {
             render_project_page(frame, chunks[1], state);
         }
         WizardPage::OrchestratorConfig => {
-            render_agent_page(frame, chunks[1], &state.orchestrator);
+            render_agent_page(frame, chunks[1], &state.orchestrator, state.telegram_available);
         }
         WizardPage::WorkerCount => render_text_input(
             frame,
@@ -1063,7 +1123,7 @@ fn render_page(frame: &mut Frame, state: &WizardState) {
             true,
         ),
         WizardPage::WorkerConfig { index } => {
-            render_agent_page(frame, chunks[1], &state.workers[*index]);
+            render_agent_page(frame, chunks[1], &state.workers[*index], false);
         }
         WizardPage::Summary => {
             render_summary_page(frame, chunks[1], state);
@@ -1080,6 +1140,9 @@ fn render_page(frame: &mut Frame, state: &WizardState) {
             } else {
                 "↑↓: select   Enter: next   Tab: back   Ctrl+C: cancel"
             }
+        }
+        AgentField::Channels => {
+            "Space: toggle   Enter: next   Tab: back   Ctrl+C: cancel"
         }
         _ => "Enter: next   Tab: back   Ctrl+C: cancel",
     };
@@ -1235,7 +1298,12 @@ fn render_project_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
 
 /// Render a single agent configuration page (orchestrator or worker).
 /// Role is not shown — it is implicit from which page we're on.
-fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &AgentDraft) {
+fn render_agent_page(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    draft: &AgentDraft,
+    telegram_available: bool,
+) {
     let model_opts = ModelSelector::options_for(draft.provider);
     let model_h = if model_opts.is_empty() {
         3u16
@@ -1256,9 +1324,21 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
     };
     let template_h = (templates_list.len() + 1 + 2) as u16; // options + Custom + 2 border lines
 
-    // Section heights (fixed)
-    let heights: [u16; 8] = [3, 1, template_h, 5, model_h, custom_model_h, 3, 1];
+    let has_channels = show_channels_field(draft, telegram_available);
+    let channels_h: u16 = if has_channels { 3 } else { 0 };
+    let channels_hint_h: u16 = if has_channels { 1 } else { 0 };
+
+    // Section heights: Name, name_hint, template, provider, model, custom_model, desc, desc_hint, [channels, channels_hint]
+    let mut heights: Vec<u16> = vec![3, 1, template_h, 5, model_h, custom_model_h, 3, 1];
+    if has_channels {
+        heights.push(channels_h);
+        heights.push(channels_hint_h);
+    }
+    let section_count = heights.len();
     let total_h: u16 = heights.iter().sum();
+
+    // Index of the Channels section (if present)
+    let channels_idx = 8; // first channels section slot
 
     // Compute scroll offset so the focused field is visible
     let focused_idx: usize = match draft.focused_field {
@@ -1273,13 +1353,14 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
             }
         }
         AgentField::Description => 6,
+        AgentField::Channels => channels_idx,
     };
     let scroll_y = if total_h <= area.height {
         0u16
     } else {
         let focused_top: u16 = heights[..focused_idx].iter().sum();
         let focused_h = heights[focused_idx]
-            + if focused_idx + 1 < 8 && heights[focused_idx + 1] == 1 {
+            + if focused_idx + 1 < section_count && heights[focused_idx + 1] == 1 {
                 1
             } else {
                 0
@@ -1299,19 +1380,11 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
         width: area.width,
         height: total_h.max(area.height),
     };
+    let mut constraints: Vec<Constraint> = heights.iter().map(|&h| Constraint::Length(h)).collect();
+    constraints.push(Constraint::Min(0));
     let all_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(heights[0]),
-            Constraint::Length(heights[1]),
-            Constraint::Length(heights[2]),
-            Constraint::Length(heights[3]),
-            Constraint::Length(heights[4]),
-            Constraint::Length(heights[5]),
-            Constraint::Length(heights[6]),
-            Constraint::Length(heights[7]),
-            Constraint::Min(0),
-        ])
+        .constraints(constraints)
         .split(virtual_rect);
 
     // Apply scroll: shift each chunk's y position and clip to visible area
@@ -1462,9 +1535,52 @@ fn render_agent_page(frame: &mut Frame, area: ratatui::layout::Rect, draft: &Age
             .title(" Description "),
     );
     frame.render_widget(desc_widget, agent_chunks[6]);
-    let desc_hint = Paragraph::new("  optional — press Enter to continue")
-        .style(Style::default().fg(Color::DarkGray));
+    let desc_hint = Paragraph::new(if has_channels {
+        "  optional — press Enter to continue"
+    } else {
+        "  optional — press Enter to continue"
+    })
+    .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(desc_hint, agent_chunks[7]);
+
+    // --- Channels checkbox (orchestrator + claude-code + telegram available) ---
+    if has_channels {
+        let ch_focused = draft.focused_field == AgentField::Channels;
+        let ch_color = if ch_focused {
+            Color::Cyan
+        } else {
+            Color::DarkGray
+        };
+        let checkbox = if draft.notify_telegram {
+            "[x]"
+        } else {
+            "[ ]"
+        };
+        let ch_widget = Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!(" {} ", checkbox),
+                Style::default()
+                    .fg(if draft.notify_telegram {
+                        Color::Green
+                    } else {
+                        ch_color
+                    })
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("Notify to Telegram", Style::default().fg(ch_color)),
+        ]))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ch_color))
+                .title(" Channels "),
+        );
+        frame.render_widget(ch_widget, agent_chunks[channels_idx]);
+        let ch_hint =
+            Paragraph::new("  Space: toggle   Enter: continue")
+                .style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(ch_hint, agent_chunks[channels_idx + 1]);
+    }
 }
 
 fn draft_summary_line(label: &str, d: &AgentDraft) -> String {
@@ -1625,6 +1741,12 @@ fn render_summary_page(frame: &mut Frame, area: ratatui::layout::Rect, state: &W
             "  {}",
             draft_summary_line("orchestrator", &state.orchestrator)
         )));
+        if state.orchestrator.notify_telegram {
+            items.push(ListItem::new(Span::styled(
+                "  channels: [plugin:telegram@claude-plugins-official]",
+                Style::default().fg(Color::Green),
+            )));
+        }
         items.push(ListItem::new(""));
         items.push(ListItem::new(Span::styled(
             format!("Workers ({})", state.worker_count),

@@ -1210,7 +1210,7 @@ fn is_safe_model_value(model: &str) -> bool {
     !model.is_empty()
         && model
             .chars()
-            .all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ':')
+            .all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ':' || c == '@')
 }
 
 /// Build the launch command for a tmux session based on provider and model.
@@ -1388,7 +1388,7 @@ mod tests {
                 model: Some("sonnet".to_string()),
                 description: Some("main orchestrator".to_string()),
                 routing_hints: None,
-                channels: Some(vec!["plugin:telegram".to_string()]),
+                channels: Some(vec!["plugin:telegram@claude-plugins-official".to_string()]),
             },
             agents: vec![AgentInput {
                 name: "backend".to_string(),
@@ -1693,12 +1693,12 @@ mod tests {
             role: "orchestrator".to_string(),
             model: None,
             description: None,
-            channels: Some(vec!["plugin:telegram".to_string()]),
+            channels: Some(vec!["plugin:telegram@claude-plugins-official".to_string()]),
         };
         let cmd = get_launch_command(&agent);
         assert_eq!(
             cmd,
-            "claude --dangerously-skip-permissions --channels plugin:telegram"
+            "claude --dangerously-skip-permissions --channels plugin:telegram@claude-plugins-official"
         );
     }
 
@@ -1710,12 +1710,12 @@ mod tests {
             role: "orchestrator".to_string(),
             model: Some("opus".to_string()),
             description: None,
-            channels: Some(vec!["plugin:telegram".to_string()]),
+            channels: Some(vec!["plugin:telegram@claude-plugins-official".to_string()]),
         };
         let cmd = get_launch_command(&agent);
         assert_eq!(
             cmd,
-            "claude --dangerously-skip-permissions --model opus --channels plugin:telegram"
+            "claude --dangerously-skip-permissions --model opus --channels plugin:telegram@claude-plugins-official"
         );
     }
 
@@ -1741,7 +1741,7 @@ mod tests {
             role: "worker".to_string(),
             model: None,
             description: None,
-            channels: Some(vec!["plugin:telegram".to_string()]),
+            channels: Some(vec!["plugin:telegram@claude-plugins-official".to_string()]),
         };
         let cmd = get_launch_command(&agent);
         assert_eq!(cmd, "gemini -y");
@@ -1757,8 +1757,8 @@ mod tests {
             yaml
         );
         assert!(
-            yaml.contains("plugin:telegram"),
-            "YAML must contain plugin:telegram channel, got:\n{}",
+            yaml.contains("plugin:telegram@claude-plugins-official"),
+            "YAML must contain plugin:telegram@claude-plugins-official channel, got:\n{}",
             yaml
         );
     }
@@ -1779,7 +1779,7 @@ mod tests {
             .channels
             .as_ref()
             .expect("orchestrator must have channels");
-        assert_eq!(channels, &vec!["plugin:telegram".to_string()]);
+        assert_eq!(channels, &vec!["plugin:telegram@claude-plugins-official".to_string()]);
     }
 }
 

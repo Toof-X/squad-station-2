@@ -199,7 +199,7 @@ fn test_routing_matrix_with_hints() {
         make_test_agent("orch", "orchestrator", None),
         make_test_agent("my-coder", "worker", Some(r#"["code","build","fix"]"#)),
     ];
-    let output = build_orchestrator_md(&agents, "/tmp/test", &[], &[]);
+    let output = build_orchestrator_md(&agents, "/tmp/test", &[], &[], None);
     assert!(
         output.contains("## Routing Matrix"),
         "Missing Routing Matrix heading"
@@ -224,7 +224,7 @@ fn test_routing_matrix_empty() {
         make_test_agent("orch", "orchestrator", None),
         make_test_agent("my-worker", "worker", None),
     ];
-    let output = build_orchestrator_md(&agents, "/tmp/test", &[], &[]);
+    let output = build_orchestrator_md(&agents, "/tmp/test", &[], &[], None);
     assert!(
         output.contains("## Routing Matrix"),
         "Missing Routing Matrix heading"
@@ -241,7 +241,7 @@ fn test_routing_matrix_skips_orchestrator() {
         make_test_agent("orch", "orchestrator", Some(r#"["plan","coordinate"]"#)),
         make_test_agent("my-worker", "worker", Some(r#"["code"]"#)),
     ];
-    let output = build_orchestrator_md(&agents, "/tmp/test", &[], &[]);
+    let output = build_orchestrator_md(&agents, "/tmp/test", &[], &[], None);
     assert!(
         !output.contains("| plan | orch |"),
         "Orchestrator must not appear in routing matrix"

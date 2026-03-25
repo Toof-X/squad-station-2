@@ -71,7 +71,7 @@ pub struct AgentConfig {
     pub model: Option<String>, // CONF-02: optional model override
     pub description: Option<String>, // CONF-02: optional description
                                // command field is REMOVED (CONF-03: provider infers launch command)
-    pub channels: Option<Vec<String>>, // MCP channels (e.g., ["plugin:telegram"])
+    pub channels: Option<Vec<String>>, // MCP channels (e.g., ["plugin:telegram@claude-plugins-official"])
 }
 
 /// Sanitize a string for use as a tmux session name.
