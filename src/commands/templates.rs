@@ -258,8 +258,8 @@ pub const ORCHESTRATOR_TEMPLATES: &[AgentTemplate] = &[
         display_name: "Project Manager",
         description: "Coordinates delivery: tracks task progress, manages milestones, and \
                       enforces deadlines. Distributes work based on agent availability and \
-                      pending queues. Choose this orchestrator when the focus is planning \
-                      and delivery coordination rather than technical or product decisions.",
+                      pending queues. NEVER writes code or edits files directly — ALL execution \
+                      is delegated to worker agents via squad-station send.",
         default_provider: "claude-code",
         claude_model: "opus",
         gemini_model: "gemini-2.5-pro",
@@ -277,8 +277,9 @@ pub const ORCHESTRATOR_TEMPLATES: &[AgentTemplate] = &[
         display_name: "Tech Lead",
         description: "Provides technical authority: makes architecture decisions, enforces \
                       coding standards, and resolves technical conflicts across the team. \
-                      Routes tasks based on technical domain and agent expertise. Choose this \
-                      orchestrator when routing requires deep technical judgment.",
+                      Routes tasks based on technical domain and agent expertise. NEVER writes \
+                      code or edits files directly — ALL execution is delegated to worker \
+                      agents via squad-station send.",
         default_provider: "claude-code",
         claude_model: "opus",
         gemini_model: "gemini-2.5-pro",
@@ -296,8 +297,8 @@ pub const ORCHESTRATOR_TEMPLATES: &[AgentTemplate] = &[
         display_name: "Scrum Master",
         description: "Facilitates process: manages sprint backlog, removes blockers, and \
                       tracks velocity. Ensures agents follow the agreed workflow and ceremonies. \
-                      Choose this orchestrator when the primary responsibility is process \
-                      facilitation and blocker removal rather than direct task decisions.",
+                      NEVER writes code or edits files directly — ALL execution is delegated \
+                      to worker agents via squad-station send.",
         default_provider: "claude-code",
         claude_model: "opus",
         gemini_model: "gemini-2.5-pro",
@@ -316,8 +317,8 @@ pub const ORCHESTRATOR_TEMPLATES: &[AgentTemplate] = &[
         description: "Owns product vision: prioritises backlog by business value, defines \
                       acceptance criteria, and ensures deliverables align with stakeholder \
                       expectations. Routes tasks to maximise product impact across engineering, \
-                      design, and business agents. Choose this orchestrator for cross-functional \
-                      teams mixing technical and business roles.",
+                      design, and business agents. NEVER writes code or edits files directly — \
+                      ALL execution is delegated to worker agents via squad-station send.",
         default_provider: "claude-code",
         claude_model: "opus",
         gemini_model: "gemini-2.5-pro",

@@ -117,7 +117,8 @@ impl SddWorkflow {
 
     /// Returns the non-interactive install command for this SDD workflow.
     /// The command installs the SDD locally into the current project directory.
-    /// Returns None if the SDD has no automated installer (e.g. Superpower uses /plugin).
+    /// Returns None if the SDD requires post-launch injection (e.g. Superpower for Claude Code).
+    /// For Gemini CLI, Superpower returns a git clone command.
     pub fn install_command(self, provider: &str) -> Option<Vec<&'static str>> {
         match self {
             SddWorkflow::Bmad => {
@@ -166,8 +167,18 @@ impl SddWorkflow {
                     _ => vec!["npx", "get-shit-done-cc@latest", "--claude", "--local"],
                 })
             }
-            // Superpower uses /plugin install — not automatable via CLI
-            SddWorkflow::Superpower => None,
+            SddWorkflow::Superpower => match provider {
+                // Gemini CLI: clone repo locally, Gemini auto-detects via gemini-extension.json
+                "gemini-cli" => Some(vec![
+                    "git",
+                    "clone",
+                    "https://github.com/obra/superpowers.git",
+                    ".superpowers",
+                ]),
+                // Claude Code: requires post-launch injection via tmux send-keys
+                // Handled by install_superpower_post_launch() in init.rs
+                _ => None,
+            },
         }
     }
 
@@ -176,7 +187,27 @@ impl SddWorkflow {
         match self {
             SddWorkflow::Bmad => &["_bmad"],
             SddWorkflow::GetShitDone => &[".claude/commands/gsd", ".gemini/commands/gsd"],
-            SddWorkflow::Superpower => &[],
+            SddWorkflow::Superpower => &[".claude/plugins/superpowers", ".superpowers"],
+        }
+    }
+
+    /// Whether this SDD requires post-launch tmux injection for installation.
+    /// Returns true for workflows that can only be installed inside a running agent session.
+    pub fn needs_post_launch_install(self, provider: &str) -> bool {
+        matches!(
+            (self, provider),
+            (SddWorkflow::Superpower, "claude-code")
+        )
+    }
+
+    /// Returns the command string to inject into a running agent's tmux session
+    /// for post-launch installation. Only applicable when needs_post_launch_install() is true.
+    pub fn post_launch_install_command(self) -> Option<&'static str> {
+        match self {
+            SddWorkflow::Superpower => {
+                Some("/plugin install superpowers@claude-plugins-official")
+            }
+            _ => None,
         }
     }
 
@@ -2189,15 +2220,32 @@ mod tests {
 
     #[test]
     fn test_sdd_install_command_superpower_none() {
+        // Claude Code: returns None (handled by post-launch tmux injection)
         assert!(SddWorkflow::Superpower
             .install_command("claude-code")
             .is_none());
+        // Gemini CLI: returns git clone command
+        let gemini_cmd = SddWorkflow::Superpower.install_command("gemini-cli");
+        assert!(gemini_cmd.is_some());
+        let args = gemini_cmd.unwrap();
+        assert_eq!(args[0], "git");
+        assert_eq!(args[1], "clone");
+    }
+
+    #[test]
+    fn test_sdd_superpower_post_launch() {
+        assert!(SddWorkflow::Superpower.needs_post_launch_install("claude-code"));
+        assert!(!SddWorkflow::Superpower.needs_post_launch_install("gemini-cli"));
+        assert!(!SddWorkflow::Bmad.needs_post_launch_install("claude-code"));
+        assert!(SddWorkflow::Superpower.post_launch_install_command().is_some());
+        assert!(SddWorkflow::Bmad.post_launch_install_command().is_none());
     }
 
     #[test]
     fn test_sdd_detect_dirs() {
         assert!(SddWorkflow::Bmad.detect_dirs().contains(&"_bmad"));
         assert!(!SddWorkflow::GetShitDone.detect_dirs().is_empty());
-        assert!(SddWorkflow::Superpower.detect_dirs().is_empty());
+        assert!(SddWorkflow::Superpower.detect_dirs().contains(&".claude/plugins/superpowers"));
+        assert!(SddWorkflow::Superpower.detect_dirs().contains(&".superpowers"));
     }
 }

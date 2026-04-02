@@ -140,16 +140,24 @@ pub fn build_orchestrator_md(
     let workers: Vec<&Agent> = agents.iter().filter(|a| a.role != "orchestrator").collect();
 
     // ── Role ─────────────────────────────────────────────────────────────
-    out.push_str("You are the orchestrator. You DO NOT directly write code, modify files, or run workflows.\n");
-    out.push_str("You COORDINATE agents on behalf of the user via `squad-station send`.\n\n");
+    out.push_str("You are the orchestrator. Your ONLY job is to DELEGATE work to agents and SYNTHESIZE their results.\n\n");
+
+    // ── ABSOLUTE RESTRICTIONS ────────────────────────────────────────────
+    out.push_str("## ABSOLUTE RESTRICTIONS — NEVER VIOLATE\n\n");
+    out.push_str("**You are a COORDINATOR, not an executor. You MUST delegate ALL work.**\n\n");
+    out.push_str("NEVER do any of the following — these are hard violations:\n");
+    out.push_str("- **NEVER write, edit, or create code files** — delegate to an agent via `squad-station send`\n");
+    out.push_str("- **NEVER run build commands, tests, or linters** — delegate to an agent\n");
+    out.push_str("- **NEVER use the Write, Edit, or NotebookEdit tools** on source code — agents do this\n");
+    out.push_str("- **NEVER spawn Agent subagents** to do work — use `squad-station send` instead\n");
+    out.push_str("- **NEVER run SDD slash commands** (e.g., `/gsd:plan-phase`, `/brainstorm`) — send them to agents\n");
+    out.push_str("- **NEVER use `tmux send-keys`** — it bypasses message tracking\n");
+    out.push_str("- **NEVER poll `tmux capture-pane`** in a loop — wait for `[SQUAD SIGNAL]`\n\n");
+    out.push_str("If you catch yourself about to write code, STOP. Ask: \"Which agent should do this?\" Then delegate.\n\n");
 
     // ── Communication Rule ───────────────────────────────────────────────
     out.push_str("## MANDATORY — Communication Rule\n\n");
     out.push_str("**`squad-station send` is the ONLY way to communicate with agents.**\n\n");
-    out.push_str("FORBIDDEN — never do any of these:\n");
-    out.push_str("- `tmux send-keys` — bypasses message tracking, breaks workflow visibility\n");
-    out.push_str("- `tmux capture-pane` to poll progress — wait for `[SQUAD SIGNAL]` instead\n");
-    out.push_str("- Direct tmux interaction of any kind (except reading output AFTER signal)\n\n");
     out.push_str("Every task, command, or `/clear` MUST go through `squad-station send`.\n");
     out.push_str("This ensures the message database tracks all workflow state, enables the\n");
     out.push_str("browser visualization (`squad-station browser`), and triggers proper\n");
@@ -319,8 +327,8 @@ pub fn build_orchestrator_md(
     // ── SDD Orchestration ────────────────────────────────────────────────
     if !sdd_configs.is_empty() {
         out.push_str("## SDD Orchestration\n\n");
-        out.push_str("The agents have SDD tools (slash commands, workflows) installed in their sessions. **You do NOT.**\n");
-        out.push_str("Your job is to send the playbook's commands to the correct agent. Do not run them yourself.\n\n");
+        out.push_str("The agents have SDD tools (slash commands, workflows) installed in their sessions. **You do NOT have them.**\n");
+        out.push_str("Your ONLY job is to send the playbook's commands to the correct agent. **NEVER run them yourself.**\n\n");
         out.push_str("**How it works:**\n");
         out.push_str("1. Read the playbook (PRE-FLIGHT) → identify the workflow steps and their slash commands\n");
         out.push_str("2. **Analyze dependencies** — identify which steps are independent (can run in parallel) vs sequential (output feeds next step)\n");
@@ -336,12 +344,12 @@ pub fn build_orchestrator_md(
         out.push_str("   ```\n");
         out.push_str("5. STOP. Wait for `[SQUAD SIGNAL]`.\n");
         out.push_str("6. Read output → evaluate → send next step to the appropriate agent.\n\n");
-        out.push_str("**CRITICAL:**\n");
-        out.push_str("- Do NOT send raw task descriptions like \"build the login page\".\n");
-        out.push_str("- Do NOT run slash commands, workflows, or Agent subagents yourself.\n");
-        out.push_str(
-            "- Send the playbook's exact commands. The agent knows how to execute them.\n\n",
-        );
+        out.push_str("**CRITICAL — SDD delegation rules:**\n");
+        out.push_str("- **NEVER** run slash commands yourself (e.g., /gsd:plan-phase, /brainstorm, /tdd) — send them to agents\n");
+        out.push_str("- **NEVER** write code, edit files, or run builds — agents handle ALL execution\n");
+        out.push_str("- **NEVER** spawn Agent subagents — use `squad-station send` exclusively\n");
+        out.push_str("- Send the playbook's exact commands. The agent knows how to execute them.\n");
+        out.push_str("- If you find yourself typing code or editing files, STOP and delegate instead.\n\n");
     }
 
     // ── Parallel Task Management ─────────────────────────────────────────

@@ -545,6 +545,35 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
             }
         }
 
+        // 6b. Post-launch SDD install (e.g. SuperPower plugin injection into tmux sessions)
+        {
+            let sdd_workflow = deferred_sdd.or_else(|| {
+                config.sdd.as_ref().and_then(|sdds| {
+                    sdds.first().and_then(|s| {
+                        crate::commands::wizard::SddWorkflow::from_name(&s.name)
+                    })
+                })
+            });
+            if let Some(sdd) = sdd_workflow {
+                if sdd.needs_post_launch_install(&config.orchestrator.provider) {
+                    // Collect all launched sessions with their provider
+                    let mut sessions: Vec<(String, String)> = vec![];
+                    if !config.orchestrator.is_db_only() {
+                        sessions.push((orch_name.clone(), config.orchestrator.provider.clone()));
+                    }
+                    for agent in &config.agents {
+                        let role_suffix = agent.name.as_deref().unwrap_or(&agent.role);
+                        let agent_name = config::sanitize_session_name(&format!(
+                            "{}-{}",
+                            config.project, role_suffix
+                        ));
+                        sessions.push((agent_name, agent.provider.clone()));
+                    }
+                    install_superpower_post_launch(sdd, &sessions).await;
+                }
+            }
+        }
+
         // 7. Create monitor session
         let mut monitor_sessions: Vec<String> = vec![];
         if !config.orchestrator.is_db_only() {
@@ -882,11 +911,18 @@ fn install_sdd_if_needed(
     let args = match sdd.install_command(provider) {
         Some(args) => args,
         None => {
-            // No automated installer (e.g. Superpower)
-            eprintln!(
-                "  SDD '{}': no automated installer — follow the playbook's install instructions manually",
-                sdd.as_str()
-            );
+            if sdd.needs_post_launch_install(provider) {
+                // Will be handled by install_superpower_post_launch() after sessions launch
+                println!(
+                    "  SDD '{}': deferred to post-launch (requires running agent session)",
+                    sdd.as_str()
+                );
+            } else {
+                eprintln!(
+                    "  SDD '{}': no automated installer — follow the playbook's install instructions manually",
+                    sdd.as_str()
+                );
+            }
             return Ok(false);
         }
     };
@@ -932,6 +968,58 @@ fn install_sdd_from_config(sdd_configs: &[crate::config::SddConfig], provider: &
                 Ok(true) => {}  // message already printed
                 Ok(false) => {} // skipped or manual
                 Err(e) => eprintln!("  SDD '{}': error ({})", sdd_cfg.name, e),
+            }
+        }
+    }
+}
+
+/// Install SDD plugins that require post-launch tmux injection (e.g. SuperPower for Claude Code).
+/// Must be called AFTER agent tmux sessions have been launched.
+/// Injects the install command into each agent's tmux session that uses the matching provider.
+async fn install_superpower_post_launch(
+    sdd: crate::commands::wizard::SddWorkflow,
+    agent_sessions: &[(String, String)], // (session_name, provider)
+) {
+    // Check if already installed
+    let cwd = std::env::current_dir().unwrap_or_default();
+    for dir in sdd.detect_dirs() {
+        if cwd.join(dir).exists() {
+            return; // already installed
+        }
+    }
+
+    // Also check home dir for user-level plugin installation
+    if let Ok(home) = std::env::var("HOME") {
+        if std::path::Path::new(&home)
+            .join(".claude/plugins/superpowers")
+            .exists()
+        {
+            return; // installed at user level
+        }
+    }
+
+    let install_cmd = match sdd.post_launch_install_command() {
+        Some(cmd) => cmd,
+        None => return,
+    };
+
+    // Give agents a moment to initialize before injecting commands
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    for (session_name, provider) in agent_sessions {
+        if provider != "claude-code" {
+            continue;
+        }
+        println!("  SDD 'superpower': installing plugin in session '{}'...", session_name);
+        match crate::tmux::send_keys_literal(session_name, install_cmd).await {
+            Ok(()) => {
+                println!("  SDD 'superpower': install command sent to '{}'", session_name);
+            }
+            Err(e) => {
+                eprintln!(
+                    "  SDD 'superpower': failed to inject install into '{}' ({})",
+                    session_name, e
+                );
             }
         }
     }

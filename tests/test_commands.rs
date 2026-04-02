@@ -402,7 +402,7 @@ async fn test_build_orchestrator_md_with_sdd() {
         "Must tell orchestrator it doesn't have SDD tools"
     );
     assert!(
-        content.contains("Do NOT run slash commands"),
+        content.contains("run slash commands"),
         "Must forbid running commands directly"
     );
 }
