@@ -190,7 +190,7 @@ pub async fn send_keys_literal(target: &str, text: &str) -> Result<()> {
 async fn inject_single(target: &str, text: &str) -> Result<()> {
     let temp_path =
         std::env::temp_dir().join(format!("squad-station-msg-{}", uuid::Uuid::new_v4()));
-    std::fs::write(&temp_path, text)?;
+    tokio::fs::write(&temp_path, text).await?;
 
     let path_str = temp_path
         .to_str()
@@ -200,13 +200,13 @@ async fn inject_single(target: &str, text: &str) -> Result<()> {
     let load_args = load_buffer_args(&path_str);
     let status = Command::new("tmux").args(&load_args).status().await?;
     if !status.success() {
-        let _ = std::fs::remove_file(&temp_path);
+        let _ = tokio::fs::remove_file(&temp_path).await;
         bail!("tmux load-buffer failed for target: {}", target);
     }
 
     let paste_args = paste_buffer_args(target);
     let status = Command::new("tmux").args(&paste_args).status().await?;
-    let _ = std::fs::remove_file(&temp_path);
+    let _ = tokio::fs::remove_file(&temp_path).await;
     if !status.success() {
         bail!("tmux paste-buffer failed for target: {}", target);
     }
@@ -320,8 +320,11 @@ pub async fn create_view_window(window_name: &str, sessions: &[String]) -> Resul
         return Ok(());
     }
 
-    // First pane: new-window with first session
-    let first_cmd = format!("tmux attach-session -t {}", sessions[0]);
+    // First pane: new-window with first session (shell-safe quoting)
+    let first_cmd = format!(
+        "tmux attach-session -t '{}'",
+        shell_escape_single_quote(&sessions[0])
+    );
     let status = Command::new("tmux")
         .args(new_window_args(window_name, &first_cmd))
         .status()
@@ -330,9 +333,12 @@ pub async fn create_view_window(window_name: &str, sessions: &[String]) -> Resul
         bail!("tmux new-window failed for window: {}", window_name);
     }
 
-    // Remaining panes: split-window
+    // Remaining panes: split-window (shell-safe quoting)
     for session in sessions.iter().skip(1) {
-        let cmd = format!("tmux attach-session -t {}", session);
+        let cmd = format!(
+            "tmux attach-session -t '{}'",
+            shell_escape_single_quote(session)
+        );
         Command::new("tmux")
             .args(split_window_args(window_name, &cmd))
             .status()
@@ -360,8 +366,11 @@ pub async fn create_view_session(session_name: &str, agent_sessions: &[String]) 
         return Ok(());
     }
 
-    // First pane (left): orchestrator — always agent_sessions[0]
-    let orch_cmd = format!("sh -c 'TMUX= tmux attach-session -t {}'", agent_sessions[0]);
+    // First pane (left): orchestrator — always agent_sessions[0] (shell-safe quoting)
+    let orch_cmd = format!(
+        "sh -c 'TMUX= tmux attach-session -t '\"'\"'{}'\"'\"''",
+        shell_escape_single_quote(&agent_sessions[0])
+    );
     let status = Command::new("tmux")
         .args(launch_args(session_name, &orch_cmd))
         .status()
@@ -374,17 +383,22 @@ pub async fn create_view_session(session_name: &str, agent_sessions: &[String]) 
     }
 
     if agent_sessions.len() > 1 {
-        // Split horizontally: left = orchestrator, right = first worker
-        let first_worker_cmd =
-            format!("sh -c 'TMUX= tmux attach-session -t {}'", agent_sessions[1]);
+        // Split horizontally: left = orchestrator, right = first worker (shell-safe quoting)
+        let first_worker_cmd = format!(
+            "sh -c 'TMUX= tmux attach-session -t '\"'\"'{}'\"'\"''",
+            shell_escape_single_quote(&agent_sessions[1])
+        );
         Command::new("tmux")
             .args(["split-window", "-t", session_name, "-h", &first_worker_cmd])
             .status()
             .await?;
 
-        // Remaining workers: split vertically within the right column
+        // Remaining workers: split vertically within the right column (shell-safe quoting)
         for agent in agent_sessions.iter().skip(2) {
-            let cmd = format!("sh -c 'TMUX= tmux attach-session -t {}'", agent);
+            let cmd = format!(
+                "sh -c 'TMUX= tmux attach-session -t '\"'\"'{}'\"'\"''",
+                shell_escape_single_quote(agent)
+            );
             // Target the last pane (right column) for vertical split
             Command::new("tmux")
                 .args(["split-window", "-t", session_name, "-v", &cmd])
@@ -437,16 +451,23 @@ pub async fn session_name_from_pane(pane_id: &str) -> Option<String> {
         .map(String::from)
 }
 
+/// Escape a string for safe inclusion inside a POSIX single-quoted shell string.
+/// Replaces each `'` with `'\''` (end quote, escaped quote, reopen quote).
+fn shell_escape_single_quote(s: &str) -> String {
+    s.replace('\'', "'\\''")
+}
+
 /// Wrap a command with environment setup so hook subprocesses can reliably
 /// identify which agent they belong to and find the squad-station binary.
 /// - `SQUAD_AGENT_NAME` — agent identity for signal/hook scripts
 /// - `PATH` prepend — ensures `squad-station` is findable inside tmux sessions
 ///   even when ~/.local/bin or ~/.cargo/bin aren't in the default tmux PATH.
 fn wrap_with_agent_env(session_name: &str, command: &str) -> String {
+    let safe_name = shell_escape_single_quote(session_name);
     format!(
         "export SQUAD_AGENT_NAME='{}'; \
          export PATH=\"$HOME/.local/bin:$HOME/.cargo/bin:$PATH\"; {}",
-        session_name, command
+        safe_name, command
     )
 }
 
@@ -641,6 +662,21 @@ mod tests {
     }
 
     #[test]
+    fn test_shell_escape_single_quote_no_quotes() {
+        assert_eq!(shell_escape_single_quote("hello-world"), "hello-world");
+    }
+
+    #[test]
+    fn test_shell_escape_single_quote_with_quotes() {
+        assert_eq!(shell_escape_single_quote("it's"), "it'\\''s");
+    }
+
+    #[test]
+    fn test_shell_escape_single_quote_multiple() {
+        assert_eq!(shell_escape_single_quote("a'b'c"), "a'\\''b'\\''c");
+    }
+
+    #[test]
     fn test_wrap_with_agent_env() {
         let result =
             wrap_with_agent_env("kindle-implement", "claude --dangerously-skip-permissions");
@@ -655,6 +691,13 @@ mod tests {
         let result = wrap_with_agent_env("my-agent", "gemini -y --model gemini-3.1-pro");
         assert!(result.contains("SQUAD_AGENT_NAME='my-agent'"));
         assert!(result.ends_with("gemini -y --model gemini-3.1-pro"));
+    }
+
+    #[test]
+    fn test_wrap_with_agent_env_escapes_single_quotes() {
+        let result = wrap_with_agent_env("it's-bad", "echo test");
+        // The single quote in the name must be escaped to prevent shell injection
+        assert!(result.contains("SQUAD_AGENT_NAME='it'\\''s-bad'"));
     }
 
     #[test]

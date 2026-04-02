@@ -8,6 +8,9 @@ use squad_station::{cli, commands, config};
 async fn main() {
     // SAFE-04: Reset SIGPIPE to default behavior before any I/O
     #[cfg(unix)]
+    // SAFETY: signal(SIGPIPE, SIG_DFL) restores the default SIGPIPE handler.
+    // SIG_DFL is not a user-defined function, so no custom code runs in signal
+    // context. This is safe to call before any I/O and is async-signal-safe.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
@@ -94,17 +97,14 @@ async fn run(cli: cli::Cli) -> Result<()> {
                     cooldown,
                     debounce,
                 } => {
-                    commands::watch::run(
-                        interval,
-                        stall_threshold,
-                        daemon,
-                        stop,
+                    let watch_cfg = commands::watch::WatchConfig {
+                        interval_secs: interval,
+                        stall_threshold_mins: stall_threshold,
+                        cooldown_secs: cooldown,
+                        debounce_cycles: debounce,
                         dry_run,
-                        status,
-                        cooldown,
-                        debounce,
-                    )
-                    .await
+                    };
+                    commands::watch::run(watch_cfg, daemon, stop, status).await
                 }
                 Clean { config, yes, all } => {
                     commands::clean::run(config, yes, all, cli.json).await

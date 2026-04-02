@@ -6,8 +6,8 @@ pub struct Agent {
     pub name: String,
     pub tool: String, // AGNT-03: renamed from provider
     pub role: String,
-    #[allow(dead_code)]
-    pub command: Option<String>, // legacy column; schema has NOT NULL but we ignore value
+    #[allow(dead_code)] // Mapped from legacy DB column — kept for sqlx::FromRow compatibility
+    pub command: Option<String>,
     pub created_at: String,
     pub status: String,
     pub status_updated_at: String,

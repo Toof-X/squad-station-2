@@ -57,6 +57,9 @@ pub fn stop_watchdog(squad_dir: &Path) -> bool {
         if let Ok(pid) = content.trim().parse::<i32>() {
             // Check if process is alive and kill it
             #[cfg(unix)]
+            // SAFETY: kill(pid, 0) is a standard POSIX liveness check (no signal sent).
+            // kill(pid, SIGTERM) sends a termination signal to a process we spawned.
+            // Both calls are safe for any valid pid_t value.
             unsafe {
                 if libc::kill(pid, 0) == 0 {
                     libc::kill(pid, libc::SIGTERM);

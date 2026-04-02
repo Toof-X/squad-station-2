@@ -125,9 +125,15 @@ pub async fn reconcile_agents_with(
                             "[SQUAD RECONCILE] Agent '{}' completed {} task(s) (signal was lost). Run: squad-station status",
                             agent.name, completed_count
                         );
-                        let _ = tmux_layer
+                        if let Err(e) = tmux_layer
                             .send_keys_literal(&orch.name, &notification)
-                            .await;
+                            .await
+                        {
+                            eprintln!(
+                                "[RECONCILE] Failed to notify orchestrator '{}': {}",
+                                orch.name, e
+                            );
+                        }
                     }
                 }
 

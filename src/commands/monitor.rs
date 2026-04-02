@@ -26,7 +26,7 @@ struct MonitorApp {
 
 struct AgentPane {
     name: String,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Retained for future TUI display; populated during refresh
     role: String,
     status: String,
     output: String, // captured tmux pane content

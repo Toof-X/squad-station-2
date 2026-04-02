@@ -117,6 +117,22 @@ impl DeadlockState {
     }
 }
 
+/// Mutable state tracked across ticks.
+struct TickState {
+    nudge: NudgeState,
+    deadlock: DeadlockState,
+    last_msg_count: Option<i64>,
+}
+
+/// Configuration for the watchdog loop, replacing many individual parameters.
+pub struct WatchConfig {
+    pub interval_secs: u64,
+    pub stall_threshold_mins: u64,
+    pub cooldown_secs: u64,
+    pub debounce_cycles: u32,
+    pub dry_run: bool,
+}
+
 /// Watchdog status written to .squad/watch.status.json each tick.
 /// Read by --status subcommand without IPC.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -198,8 +214,23 @@ fn write_status(
     };
 
     let status_file = squad_dir.join("watch.status.json");
-    if let Ok(json) = serde_json::to_string_pretty(&status) {
-        let _ = std::fs::write(&status_file, json);
+    match serde_json::to_string_pretty(&status) {
+        Ok(json) => {
+            if let Err(e) = std::fs::write(&status_file, json) {
+                log_watch(
+                    squad_dir,
+                    "WARN",
+                    &format!("failed to write status file: {}", e),
+                );
+            }
+        }
+        Err(e) => {
+            log_watch(
+                squad_dir,
+                "WARN",
+                &format!("failed to serialize status: {}", e),
+            );
+        }
     }
 }
 
@@ -223,6 +254,8 @@ fn show_status(squad_dir: &std::path::Path) -> Result<()> {
     let alive = {
         #[cfg(unix)]
         {
+            // SAFETY: kill(pid, 0) is a POSIX liveness check — no signal is delivered.
+            // Safe for any pid_t value; returns 0 if process exists, -1 otherwise.
             unsafe { libc::kill(pid, 0) == 0 }
         }
         #[cfg(not(unix))]
@@ -302,17 +335,14 @@ fn show_status(squad_dir: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn run(
-    interval_secs: u64,
-    stall_threshold_mins: u64,
-    daemon: bool,
-    stop: bool,
-    dry_run: bool,
-    status: bool,
-    cooldown_secs: u64,
-    debounce_cycles: u32,
-) -> Result<()> {
+pub async fn run(cfg: WatchConfig, daemon: bool, stop: bool, status: bool) -> Result<()> {
+    let WatchConfig {
+        interval_secs,
+        stall_threshold_mins,
+        cooldown_secs,
+        debounce_cycles,
+        dry_run,
+    } = &cfg;
     if status {
         let config_path = std::path::Path::new(crate::config::DEFAULT_CONFIG_FILE);
         let config = config::load_config(config_path)?;
@@ -339,6 +369,9 @@ pub async fn run(
             if let Ok(content) = std::fs::read_to_string(&pid_file) {
                 if let Ok(pid) = content.trim().parse::<i32>() {
                     #[cfg(unix)]
+                    // SAFETY: kill(pid, 0) is a POSIX liveness check (no signal sent).
+                    // kill(pid, SIGTERM) sends termination to a daemon we spawned.
+                    // Both calls are safe for any valid pid_t value.
                     unsafe {
                         if libc::kill(pid, 0) == 0 {
                             libc::kill(pid, libc::SIGTERM);
@@ -363,6 +396,7 @@ pub async fn run(
             if let Ok(pid) = content.trim().parse::<i32>() {
                 #[cfg(unix)]
                 {
+                    // SAFETY: kill(pid, 0) is a POSIX liveness check — no signal delivered.
                     let alive = unsafe { libc::kill(pid, 0) == 0 };
                     if alive {
                         bail!(
@@ -393,7 +427,7 @@ pub async fn run(
                 .arg(cooldown_secs.to_string())
                 .arg("--debounce")
                 .arg(debounce_cycles.to_string());
-            if dry_run {
+            if *dry_run {
                 cmd.arg("--dry-run");
             }
             // Explicitly set CWD to ensure the child finds squad.yml
@@ -420,9 +454,11 @@ pub async fn run(
     setup_signal_handlers();
 
     let started_at = chrono::Utc::now().to_rfc3339();
-    let mut nudge_state = NudgeState::new(cooldown_secs, 3);
-    let mut deadlock_state = DeadlockState::new(cooldown_secs, 3, debounce_cycles);
-    let mut last_msg_count: Option<i64> = None;
+    let mut tick_state = TickState {
+        nudge: NudgeState::new(*cooldown_secs, 3),
+        deadlock: DeadlockState::new(*cooldown_secs, 3, *debounce_cycles),
+        last_msg_count: None,
+    };
 
     log_watch(
         &squad_dir,
@@ -446,11 +482,8 @@ pub async fn run(
             &real_time,
             &pool,
             &squad_dir,
-            stall_threshold_mins,
-            &mut nudge_state,
-            &mut deadlock_state,
-            &mut last_msg_count,
-            dry_run,
+            &cfg,
+            &mut tick_state,
         )
         .await
         {
@@ -459,16 +492,16 @@ pub async fn run(
 
         write_status(
             &squad_dir,
-            &nudge_state,
-            &deadlock_state,
-            interval_secs,
-            stall_threshold_mins,
-            dry_run,
+            &tick_state.nudge,
+            &tick_state.deadlock,
+            *interval_secs,
+            *stall_threshold_mins,
+            *dry_run,
             &started_at,
         );
 
         // Sleep in small increments so we can check the shutdown flag
-        for _ in 0..interval_secs {
+        for _ in 0..*interval_secs {
             if !is_running() {
                 break;
             }
@@ -488,6 +521,9 @@ static SHUTDOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 
 fn setup_signal_handlers() {
     #[cfg(unix)]
+    // SAFETY: signal(2) is async-signal-safe. The signal_trampoline handler only
+    // writes to a static AtomicBool via Relaxed ordering, which is async-signal-safe
+    // in Rust. No allocator, mutex, or non-reentrant code is touched in the handler.
     unsafe {
         libc::signal(libc::SIGTERM, signal_trampoline as *const () as usize);
         libc::signal(libc::SIGINT, signal_trampoline as *const () as usize);
@@ -499,18 +535,19 @@ extern "C" fn signal_trampoline(_sig: libc::c_int) {
     SHUTDOWN.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn tick(
     tmux_layer: &impl tmux::TmuxLayer,
     time: &impl TimeProvider,
     pool: &sqlx::SqlitePool,
     squad_dir: &std::path::Path,
-    stall_threshold_mins: u64,
-    nudge_state: &mut NudgeState,
-    deadlock_state: &mut DeadlockState,
-    last_msg_count: &mut Option<i64>,
-    dry_run: bool,
+    cfg: &WatchConfig,
+    state: &mut TickState,
 ) -> Result<()> {
+    let stall_threshold_mins = cfg.stall_threshold_mins;
+    let dry_run = cfg.dry_run;
+    let nudge_state = &mut state.nudge;
+    let deadlock_state = &mut state.deadlock;
+    let last_msg_count = &mut state.last_msg_count;
     // Pass 1: Individual agent reconciliation
     let results = reconcile::reconcile_agents_with(tmux_layer, pool, dry_run).await?;
     for r in &results {
@@ -1175,6 +1212,39 @@ mod tests {
         id
     }
 
+    /// Helper to call tick with the old-style separate args (wraps into WatchConfig + TickState).
+    #[allow(clippy::too_many_arguments)]
+    async fn tick_compat(
+        tmux_layer: &impl tmux::TmuxLayer,
+        time: &impl TimeProvider,
+        pool: &sqlx::SqlitePool,
+        squad_dir: &std::path::Path,
+        stall_threshold_mins: u64,
+        nudge_state: &mut NudgeState,
+        deadlock_state: &mut DeadlockState,
+        last_msg_count: &mut Option<i64>,
+        dry_run: bool,
+    ) -> Result<()> {
+        let cfg = WatchConfig {
+            interval_secs: 30,
+            stall_threshold_mins,
+            cooldown_secs: 600,
+            debounce_cycles: 3,
+            dry_run,
+        };
+        let mut state = TickState {
+            nudge: std::mem::replace(nudge_state, NudgeState::new(600, 3)),
+            deadlock: std::mem::replace(deadlock_state, DeadlockState::new(600, 3, 3)),
+            last_msg_count: *last_msg_count,
+        };
+        let result = tick(tmux_layer, time, pool, squad_dir, &cfg, &mut state).await;
+        // Write state back
+        *nudge_state = state.nudge;
+        *deadlock_state = state.deadlock;
+        *last_msg_count = state.last_msg_count;
+        result
+    }
+
     // ── Integration tests: full tick loop ────────────────────────────────
 
     #[tokio::test]
@@ -1203,7 +1273,7 @@ mod tests {
 
         // Tick 1 & 2: debounce accumulates, no alert yet
         for i in 0..2 {
-            tick(
+            tick_compat(
                 &mock_tmux,
                 &time,
                 &pool,
@@ -1227,7 +1297,7 @@ mod tests {
         }
 
         // Tick 3: debounce threshold reached → deadlock alert fires
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -1283,7 +1353,7 @@ mod tests {
 
         // Run 5 ticks — no deadlock should fire (no processing messages)
         for _ in 0..5 {
-            tick(
+            tick_compat(
                 &mock_tmux,
                 &time,
                 &pool,
@@ -1328,7 +1398,7 @@ mod tests {
         let mut last_count = None;
 
         for _ in 0..5 {
-            tick(
+            tick_compat(
                 &mock_tmux,
                 &time,
                 &pool,
@@ -1373,7 +1443,7 @@ mod tests {
 
         // Run 2 ticks to accumulate debounce
         for _ in 0..2 {
-            tick(
+            tick_compat(
                 &mock_tmux,
                 &time,
                 &pool,
@@ -1405,7 +1475,7 @@ mod tests {
         // Next tick sees count change → resets deadlock state first,
         // then re-evaluates and finds deadlock condition still holds (old msg still processing),
         // so consecutive_ticks goes from 0 → 1 within the same tick.
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -1448,7 +1518,7 @@ mod tests {
         let mut last_count = None;
 
         // Tick 1: alert fires (debounce=1, first nudge)
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -1471,7 +1541,7 @@ mod tests {
 
         // Tick 2-5: still within cooldown → no additional alert
         for _ in 0..4 {
-            tick(
+            tick_compat(
                 &mock_tmux,
                 &time,
                 &pool,
@@ -1499,7 +1569,7 @@ mod tests {
         // Advance time past cooldown
         time.advance(chrono::Duration::seconds(601));
 
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -1543,7 +1613,7 @@ mod tests {
         let mut last_count = None;
 
         // Run with dry_run = true
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -1612,7 +1682,7 @@ mod tests {
 
         // stall_threshold = 5 mins, message is 30s old → not stale
         for _ in 0..5 {
-            tick(
+            tick_compat(
                 &mock_tmux,
                 &time,
                 &pool,
@@ -1661,7 +1731,7 @@ mod tests {
 
         // 2 ticks → debounce at 2
         for _ in 0..2 {
-            tick(
+            tick_compat(
                 &mock_tmux,
                 &time,
                 &pool,
@@ -1680,7 +1750,7 @@ mod tests {
         // Complete the message → condition clears
         db::messages::complete_by_id(&pool, &msg_id).await.unwrap();
 
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -1724,7 +1794,7 @@ mod tests {
         // Fire 3 nudges
         for i in 0..3 {
             time.advance(chrono::Duration::seconds(1));
-            tick(
+            tick_compat(
                 &mock_tmux,
                 &time,
                 &pool,
@@ -1747,7 +1817,7 @@ mod tests {
 
         // 4th tick: max reached, no more alerts
         time.advance(chrono::Duration::seconds(1));
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -1804,7 +1874,7 @@ mod tests {
         let mut deadlock = DeadlockState::new(600, 3, 3);
         let mut last_count = None;
 
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -1864,7 +1934,7 @@ mod tests {
 
         // Nudge 0: "SEND THIS ALERT TO THE USER"
         time.advance(chrono::Duration::seconds(1));
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -1891,7 +1961,7 @@ mod tests {
 
         // Nudge 1: "ALERT THE USER"
         time.advance(chrono::Duration::seconds(1));
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -1918,7 +1988,7 @@ mod tests {
 
         // Nudge 2: CRITICAL — "ALERT THE USER"
         time.advance(chrono::Duration::seconds(1));
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -1980,7 +2050,7 @@ mod tests {
         let mut deadlock = DeadlockState::new(600, 3, 3);
         let mut last_count = None;
 
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -2036,7 +2106,7 @@ mod tests {
         let mut deadlock = DeadlockState::new(600, 3, 1); // 1-tick debounce
         let mut last_count = None;
 
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -2119,7 +2189,7 @@ mod tests {
         let mut last_count = None;
 
         // stall_threshold = 1 min, last activity = 10 mins ago → idle nudge fires
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
@@ -2184,7 +2254,7 @@ mod tests {
         let mut deadlock = DeadlockState::new(600, 3, 1);
         let mut last_count = None;
 
-        tick(
+        tick_compat(
             &mock_tmux,
             &time,
             &pool,
