@@ -549,9 +549,8 @@ pub async fn run(mut config_path: PathBuf, json: bool, tui: bool) -> anyhow::Res
         {
             let sdd_workflow = deferred_sdd.or_else(|| {
                 config.sdd.as_ref().and_then(|sdds| {
-                    sdds.first().and_then(|s| {
-                        crate::commands::wizard::SddWorkflow::from_name(&s.name)
-                    })
+                    sdds.first()
+                        .and_then(|s| crate::commands::wizard::SddWorkflow::from_name(&s.name))
                 })
             });
             if let Some(sdd) = sdd_workflow {
@@ -1010,10 +1009,16 @@ async fn install_superpower_post_launch(
         if provider != "claude-code" {
             continue;
         }
-        println!("  SDD 'superpower': installing plugin in session '{}'...", session_name);
+        println!(
+            "  SDD 'superpower': installing plugin in session '{}'...",
+            session_name
+        );
         match crate::tmux::send_keys_literal(session_name, install_cmd).await {
             Ok(()) => {
-                println!("  SDD 'superpower': install command sent to '{}'", session_name);
+                println!(
+                    "  SDD 'superpower': install command sent to '{}'",
+                    session_name
+                );
             }
             Err(e) => {
                 eprintln!(

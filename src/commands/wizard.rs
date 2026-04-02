@@ -194,19 +194,14 @@ impl SddWorkflow {
     /// Whether this SDD requires post-launch tmux injection for installation.
     /// Returns true for workflows that can only be installed inside a running agent session.
     pub fn needs_post_launch_install(self, provider: &str) -> bool {
-        matches!(
-            (self, provider),
-            (SddWorkflow::Superpower, "claude-code")
-        )
+        matches!((self, provider), (SddWorkflow::Superpower, "claude-code"))
     }
 
     /// Returns the command string to inject into a running agent's tmux session
     /// for post-launch installation. Only applicable when needs_post_launch_install() is true.
     pub fn post_launch_install_command(self) -> Option<&'static str> {
         match self {
-            SddWorkflow::Superpower => {
-                Some("/plugin install superpowers@claude-plugins-official")
-            }
+            SddWorkflow::Superpower => Some("/plugin install superpowers@claude-plugins-official"),
             _ => None,
         }
     }
@@ -2237,7 +2232,9 @@ mod tests {
         assert!(SddWorkflow::Superpower.needs_post_launch_install("claude-code"));
         assert!(!SddWorkflow::Superpower.needs_post_launch_install("gemini-cli"));
         assert!(!SddWorkflow::Bmad.needs_post_launch_install("claude-code"));
-        assert!(SddWorkflow::Superpower.post_launch_install_command().is_some());
+        assert!(SddWorkflow::Superpower
+            .post_launch_install_command()
+            .is_some());
         assert!(SddWorkflow::Bmad.post_launch_install_command().is_none());
     }
 
@@ -2245,7 +2242,11 @@ mod tests {
     fn test_sdd_detect_dirs() {
         assert!(SddWorkflow::Bmad.detect_dirs().contains(&"_bmad"));
         assert!(!SddWorkflow::GetShitDone.detect_dirs().is_empty());
-        assert!(SddWorkflow::Superpower.detect_dirs().contains(&".claude/plugins/superpowers"));
-        assert!(SddWorkflow::Superpower.detect_dirs().contains(&".superpowers"));
+        assert!(SddWorkflow::Superpower
+            .detect_dirs()
+            .contains(&".claude/plugins/superpowers"));
+        assert!(SddWorkflow::Superpower
+            .detect_dirs()
+            .contains(&".superpowers"));
     }
 }

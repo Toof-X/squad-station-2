@@ -148,8 +148,12 @@ pub fn build_orchestrator_md(
     out.push_str("NEVER do any of the following — these are hard violations:\n");
     out.push_str("- **NEVER write, edit, or create code files** — delegate to an agent via `squad-station send`\n");
     out.push_str("- **NEVER run build commands, tests, or linters** — delegate to an agent\n");
-    out.push_str("- **NEVER use the Write, Edit, or NotebookEdit tools** on source code — agents do this\n");
-    out.push_str("- **NEVER spawn Agent subagents** to do work — use `squad-station send` instead\n");
+    out.push_str(
+        "- **NEVER use the Write, Edit, or NotebookEdit tools** on source code — agents do this\n",
+    );
+    out.push_str(
+        "- **NEVER spawn Agent subagents** to do work — use `squad-station send` instead\n",
+    );
     out.push_str("- **NEVER run SDD slash commands** (e.g., `/gsd:plan-phase`, `/brainstorm`) — send them to agents\n");
     out.push_str("- **NEVER use `tmux send-keys`** — it bypasses message tracking\n");
     out.push_str("- **NEVER poll `tmux capture-pane`** in a loop — wait for `[SQUAD SIGNAL]`\n\n");
@@ -346,10 +350,16 @@ pub fn build_orchestrator_md(
         out.push_str("6. Read output → evaluate → send next step to the appropriate agent.\n\n");
         out.push_str("**CRITICAL — SDD delegation rules:**\n");
         out.push_str("- **NEVER** run slash commands yourself (e.g., /gsd:plan-phase, /brainstorm, /tdd) — send them to agents\n");
-        out.push_str("- **NEVER** write code, edit files, or run builds — agents handle ALL execution\n");
+        out.push_str(
+            "- **NEVER** write code, edit files, or run builds — agents handle ALL execution\n",
+        );
         out.push_str("- **NEVER** spawn Agent subagents — use `squad-station send` exclusively\n");
-        out.push_str("- Send the playbook's exact commands. The agent knows how to execute them.\n");
-        out.push_str("- If you find yourself typing code or editing files, STOP and delegate instead.\n\n");
+        out.push_str(
+            "- Send the playbook's exact commands. The agent knows how to execute them.\n",
+        );
+        out.push_str(
+            "- If you find yourself typing code or editing files, STOP and delegate instead.\n\n",
+        );
     }
 
     // ── Parallel Task Management ─────────────────────────────────────────
